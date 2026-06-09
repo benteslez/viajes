@@ -379,6 +379,7 @@ h2.section-title {
 .dot-prep  { background:var(--status-prep); }
 .dot-prox  { background:var(--status-prox); }
 .dot-pas   { background:var(--status-pas); }
+.dot-todos { background:linear-gradient(135deg, var(--accent), var(--accent-2)); }
 
 /* ========================================================================
    Tarjetas (genéricas)
@@ -3091,11 +3092,12 @@ const Trips = {
     const all = await DB.listByProfile('trips', dataProfile());
 
     // contadores por filtro
-    const groups = { curso:[], prep:[], prox:[], pas:[] };
+    const groups = { todos:[], curso:[], prep:[], prox:[], pas:[] };
     const today = todayIso();
     for (const t of all) {
       const s = tripStatus(t);
       groups[s].push(t);
+      groups.todos.push(t);
       // Si está "En preparación" pero la fecha es futura, también aparece en "Próximos"
       if (s === 'prep' && t.start_date && t.start_date > today) {
         groups.prox.push(t);
@@ -3111,12 +3113,13 @@ const Trips = {
     }
     STATE.filter = defaultFilter;
 
-    // construcción de chips: 'En curso' solo si hay alguno
+    // construcción de chips: 'En curso' solo si hay alguno; 'Todos' siempre
     const chips = [];
     if (groups.curso.length) chips.push({id:'curso', label:'En curso', n:groups.curso.length});
     chips.push({id:'prep', label:'En preparación', n:groups.prep.length});
     chips.push({id:'prox', label:'Próximos', n:groups.prox.length});
     chips.push({id:'pas',  label:'Pasados', n:groups.pas.length});
+    chips.push({id:'todos',label:'Todos', n:groups.todos.length});
 
     let filtered = groups[STATE.filter] || [];
     // sort
