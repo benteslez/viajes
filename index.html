@@ -1650,7 +1650,9 @@ const isReadonly = () => !canEdit();
 // Así "modo lector" significa "ver el viaje de Rubén", no un perfil vacío propio.
 // Los datos personales (travel_docs, packing_templates, visited_countries)
 // siguen siendo por perfil — no se comparten.
-const OWNER_PROFILE = 'rubén';
+// Perfil "dueño" de los datos — Sergio e Invitado ven los datos de este perfil.
+// Tras la migración a IDs ASCII puros, es 'ruben' (sin tilde).
+const OWNER_PROFILE = 'ruben';
 const dataProfile = () => {
   const me = STATE.profile;
   return (me === 'sergio' || me === 'invitado') ? OWNER_PROFILE : me;
@@ -2389,13 +2391,15 @@ const SYNC = {
     const since = sinceRaw
       ? new Date(Date.parse(sinceRaw) - 60_000).toISOString()
       : '1970-01-01T00:00:00.000Z';
-    // Para tablas con `profile`: filtramos por profile directo.
+    // Para tablas con `profile`: filtramos por el perfil dueño (no STATE.profile),
+    // así Sergio/Invitado descargan los datos de Rubén.
     // Para tablas hijas: confiamos en la RLS de Supabase (la cabecera x-app-profile lo restringe).
+    const ownerForRead = dataProfile();
     for (const t of DB.STORES) {
       try {
         let q = this.client.from(t).select('*').gt('updated_at', since);
         if (['trips','packing_templates','travel_docs','visited_countries'].includes(t)) {
-          q = q.eq('profile', STATE.profile);
+          q = q.eq('profile', ownerForRead);
         }
         const { data, error } = await q;
         if (error) throw error;

@@ -358,33 +358,70 @@ end$$;
 -- ============================================================
 -- RLS — basada en cabecera x-app-profile
 -- ============================================================
+-- Modelo: 'ruben' es el dueño y único que puede modificar.
+-- 'sergio' e 'invitado' son LECTORES de los datos de 'ruben'.
+-- SELECT permisivo para los 3; INSERT/UPDATE/DELETE solo para el dueño.
+
+-- Helper: ¿el perfil activo puede leer los datos de `owner`?
+create or replace function app_can_read(owner text) returns boolean
+language sql stable as $$
+  select owner = app_profile()
+      or (app_profile() in ('sergio','invitado') and owner = 'ruben');
+$$;
+
 -- Tablas con `profile` directo
 alter table trips enable row level security;
 alter table packing_templates enable row level security;
 alter table travel_docs enable row level security;
 alter table visited_countries enable row level security;
 
+-- Drop de TODAS las políticas anteriores (legacy + nuevas) — re-ejecutable.
 drop policy if exists p_trips on trips;
-create policy p_trips on trips
-  using (profile = app_profile())
-  with check (profile = app_profile());
+drop policy if exists p_trips_select on trips;
+drop policy if exists p_trips_insert on trips;
+drop policy if exists p_trips_update on trips;
+drop policy if exists p_trips_delete on trips;
+
+create policy p_trips_select on trips
+  for select using (app_can_read(profile));
+create policy p_trips_insert on trips
+  for insert with check (profile = app_profile());
+create policy p_trips_update on trips
+  for update using (profile = app_profile())
+                with check (profile = app_profile());
+create policy p_trips_delete on trips
+  for delete using (profile = app_profile());
 
 drop policy if exists p_packing_templates on packing_templates;
-create policy p_packing_templates on packing_templates
-  using (profile = app_profile())
-  with check (profile = app_profile());
+drop policy if exists p_packing_templates_select on packing_templates;
+drop policy if exists p_packing_templates_modify on packing_templates;
+create policy p_packing_templates_select on packing_templates
+  for select using (app_can_read(profile));
+create policy p_packing_templates_modify on packing_templates
+  for all using (profile = app_profile())
+          with check (profile = app_profile());
 
 drop policy if exists p_travel_docs on travel_docs;
-create policy p_travel_docs on travel_docs
-  using (profile = app_profile())
-  with check (profile = app_profile());
+drop policy if exists p_travel_docs_select on travel_docs;
+drop policy if exists p_travel_docs_modify on travel_docs;
+create policy p_travel_docs_select on travel_docs
+  for select using (app_can_read(profile));
+create policy p_travel_docs_modify on travel_docs
+  for all using (profile = app_profile())
+          with check (profile = app_profile());
 
 drop policy if exists p_visited_countries on visited_countries;
-create policy p_visited_countries on visited_countries
-  using (profile = app_profile())
-  with check (profile = app_profile());
+drop policy if exists p_visited_countries_select on visited_countries;
+drop policy if exists p_visited_countries_modify on visited_countries;
+create policy p_visited_countries_select on visited_countries
+  for select using (app_can_read(profile));
+create policy p_visited_countries_modify on visited_countries
+  for all using (profile = app_profile())
+          with check (profile = app_profile());
 
--- Tablas hijas — RLS por join al trip
+-- Tablas hijas — RLS por join al trip.
+-- SELECT: ver hijos de cualquier trip que pueda leerse.
+-- MODIFY: solo si el trip pertenece al perfil activo.
 do $$
 declare
   t text;
@@ -397,10 +434,27 @@ begin
   ]) loop
     execute format('alter table %I enable row level security;', t);
     execute format('drop policy if exists p_%I on %I;', t, t);
+    execute format('drop policy if exists p_%I_select on %I;', t, t);
+    execute format('drop policy if exists p_%I_modify on %I;', t, t);
     execute format($p$
-      create policy p_%I on %I
-        using (exists (select 1 from trips where trips.id = %I.trip_id and trips.profile = app_profile()))
-        with check (exists (select 1 from trips where trips.id = %I.trip_id and trips.profile = app_profile()));
+      create policy p_%I_select on %I
+        for select using (
+          exists (select 1 from trips
+                  where trips.id = %I.trip_id
+                  and app_can_read(trips.profile))
+        );
+    $p$, t, t, t);
+    execute format($p$
+      create policy p_%I_modify on %I
+        for all using (
+          exists (select 1 from trips
+                  where trips.id = %I.trip_id
+                  and trips.profile = app_profile())
+        ) with check (
+          exists (select 1 from trips
+                  where trips.id = %I.trip_id
+                  and trips.profile = app_profile())
+        );
     $p$, t, t, t, t);
   end loop;
 end$$;
