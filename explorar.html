@@ -109,8 +109,8 @@ main { max-width:1100px; margin:0 auto; padding:32px 20px 64px; }
   min-width:22px; text-align:center;
 }
 .tab.active .tab-count { background:rgba(255,255,255,.22); color:#fff; }
-.tab .disc-dot {
-  width:7px; height:7px; border-radius:50%; background:#fb923c;
+.tab .sel-dot {
+  width:7px; height:7px; border-radius:50%; background:#22c55e;
 }
 
 /* Filtros */
@@ -699,11 +699,11 @@ function passesFilters(dest) {
 function renderTabs() {
   document.getElementById('tabs').innerHTML = PUENTES.map(p => {
     const activos = p.destinos.filter(d => !isDiscarded(p.id, d.id)).length;
-    const desc = countDiscarded(p.id);
+    const haySeleccion = !!selected[p.id];
     return `<button class="tab ${p.id === PUENTES[current].id ? 'active' : ''}" role="tab" aria-selected="${p.id === PUENTES[current].id}" onclick="selectPuente('${p.id}')">
       <span>${escHtml(p.label)}</span>
       <span class="tab-count">${activos}</span>
-      ${desc > 0 ? '<span class="disc-dot" title="Hay descartados"></span>' : ''}
+      ${haySeleccion ? '<span class="sel-dot" title="Destino seleccionado"></span>' : ''}
     </button>`;
   }).join('');
 }
@@ -888,6 +888,7 @@ function toggleSelect(puenteId, destId) {
   if (selected[puenteId] === destId) delete selected[puenteId];
   else selected[puenteId] = destId;
   saveSelected();
+  renderTabs();
   renderContent();
   renderHeader();
 }

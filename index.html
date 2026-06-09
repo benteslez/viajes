@@ -401,10 +401,14 @@ h2.section-title {
    ====================================================================== */
 .trip-grid {
   display:grid; gap:24px;
-  grid-template-columns:1fr;
+  grid-template-columns: minmax(0, 1fr);
+  /* minmax(0, 1fr) en lugar de 1fr evita que el grid item se "estire" al ancho
+     intrínseco del contenido (imgs grandes, títulos largos), que es la causa
+     habitual del desbordamiento horizontal en móvil. */
 }
+.trip-grid > * { min-width:0; max-width:100%; }
 @media (min-width:720px) {
-  .trip-grid { grid-template-columns:1fr 1fr; gap:28px; }
+  .trip-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap:28px; }
 }
 
 .trip-card { position:relative; overflow:hidden; cursor:pointer; min-width:0; max-width:100%; }
@@ -423,9 +427,10 @@ h2.section-title {
      incluso sobre fotos claras o de cielo. Stop intermedio para una curva más natural
      y evitar el corte duro del tope. */
   background:linear-gradient(to top,
-    rgba(0,0,0,.80) 0%,
-    rgba(0,0,0,.55) 30%,
-    rgba(0,0,0,.15) 65%,
+    rgba(0,0,0,.92) 0%,
+    rgba(0,0,0,.78) 25%,
+    rgba(0,0,0,.45) 55%,
+    rgba(0,0,0,.10) 80%,
     rgba(0,0,0,0)   100%);
   pointer-events:none;
 }
@@ -1948,6 +1953,18 @@ const fmtDayLong = (iso) => fmtDate(iso, {weekday:'long', day:'numeric', month:'
 // Formato medio inequívoco: "vie 2 ago" (con día de la semana corto delante).
 // Antes era solo "2 ago", que se confundía con "hace 2".
 const fmtDateShort = (iso) => fmtDate(iso, {weekday:'short', day:'numeric', month:'short'});
+// Para tarjetas de viaje: "9 oct – 12 oct 2026". Si abarca dos años:
+// "29 dec 2025 – 5 ene 2026". Sin día de la semana para que quepa.
+const fmtTripDateRange = (start, end) => {
+  if (!start || !end) return 'Sin fechas';
+  const d1 = new Date(start + 'T00:00:00');
+  const d2 = new Date(end + 'T00:00:00');
+  const y1 = d1.getFullYear(), y2 = d2.getFullYear();
+  const part = (d, withYear) => d.toLocaleDateString('es-ES',
+    { day:'numeric', month:'short', ...(withYear ? { year:'numeric' } : {}) });
+  if (y1 === y2) return `${part(d1, false)} – ${part(d2, true)}`;
+  return `${part(d1, true)} – ${part(d2, true)}`;
+};
 const daysBetween = (a, b) => {
   if (!a || !b) return 0;
   const ms = parseDate(b) - parseDate(a);
@@ -3264,10 +3281,12 @@ const Trips = {
     // Prioridad: foto local (cover_blob_id) > URL externa (cover_photo_url) > gradient
     // Si el blob_id quedó huérfano (registro sin blob real), caemos en URL.
     if (t.cover_blob_id) {
+      // No usamos atributos HTML width/height en imgs absolutas — pueden hacer que
+      // el grid item considere la anchura intrínseca (1100) como mínimo y desborde
+      // el viewport en móvil. El img usa width:100% via CSS sobre position:absolute.
       const img = el('img', {
         src: '', alt:'',
         loading:'lazy', decoding:'async',
-        width:'1100', height:'420',
         onerror: function(){ this.remove(); }
       });
       MediaCache.urlFor(t.cover_blob_id).then(url => {
@@ -3277,7 +3296,7 @@ const Trips = {
           img.remove();
           if (t.cover_photo_url) {
             cover.appendChild(el('img', { src: t.cover_photo_url, alt:'',
-              loading:'lazy', decoding:'async', width:'1100', height:'420',
+              loading:'lazy', decoding:'async',
               onerror: function(){ this.remove(); } }));
           }
           // Auto-limpieza
@@ -3290,14 +3309,13 @@ const Trips = {
       cover.appendChild(el('img', {
         src: t.cover_photo_url, alt:'',
         loading:'lazy', decoding:'async',
-        width:'1100', height:'420',
         onerror: function(){ this.remove(); }
       }));
     }
     cover.appendChild(el('div', { class:'trip-card-status' }, [ el('span', { class:`dot dot-${status}` }), statusLabel(status) ]));
     cover.appendChild(el('div', { class:'trip-card-name', text: t.name }));
     cover.appendChild(el('div', { class:'trip-card-meta' }, [
-      t.start_date && t.end_date ? `${fmtDateShort(t.start_date)} – ${fmtDateShort(t.end_date)}` : 'Sin fechas',
+      fmtTripDateRange(t.start_date, t.end_date),
       el('span', { class:'sep', text:'•' }),
       statusDays(t),
     ]));
