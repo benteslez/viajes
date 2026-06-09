@@ -2797,28 +2797,127 @@ document.addEventListener('keydown', (e) => {
 });
 
 const GlobalSearch = {
+  // Normalización: quita acentos/diacríticos y pasa a minúscula.
+  // "Curaçao" → "curacao", "Andalucía" → "andalucia", "2026" → "2026".
+  _norm(s) {
+    // Normaliza para que la búsqueda ignore tildes, acentos y caracteres especiales.
+    //   1) NFD descompone "á" en "a" + "´", "ç" en "c" + "¸", "ñ" en "n" + "~".
+    //   2) Quita las marcas combinantes (U+0300–U+036F).
+    //   3) Pasa a minúscula.
+    //   4) Sustituye cualquier carácter que no sea letra/dígito por espacio
+    //      (así "Curaçao · Willemstad + lagunas" → "curacao willemstad lagunas").
+    //   5) Colapsa espacios.
+    return (s || '').toString()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  // Tokens textuales asociados a una fecha ISO (yyyy-mm-dd):
+  //  - "octubre", "oct", "2026", "octubre 2026", "oct 2026", "10", "10/2026", "2026-10".
+  // Así "octubre" o "oct 26" matchea, y "2026" o "2026-10" también.
+  _dateTokens(iso) {
+    if (!iso) return '';
+    const MONTHS = ['enero','febrero','marzo','abril','mayo','junio',
+                    'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const SHORT  = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return '';
+    const m = d.getMonth();
+    const y = d.getFullYear();
+    const mm = String(m + 1).padStart(2, '0');
+    return [
+      MONTHS[m], SHORT[m],
+      `${MONTHS[m]} ${y}`, `${SHORT[m]} ${y}`,
+      `${y}`, `${y}-${mm}`, `${mm}/${y}`,
+      `${m+1}`,
+      iso,
+    ].join(' ');
+  },
+
+  // Construye el "haystack": cadena normalizada con TODA la info searchable de un item.
+  _buildHaystack(parts) {
+    return this._norm(parts.filter(Boolean).join(' '));
+  },
+
   async open() {
     if (!STATE.profile) return;
     const trips = await DB.listByProfile('trips', dataProfile());
-    // Recolectar items relacionados de los viajes del perfil
     const corpus = [];
     for (const t of trips) {
-      corpus.push({ type:'trip', tripId:t.id, label:t.name, sub:[t.city,t.country].filter(Boolean).join(', '), tab:'resumen' });
-      const plan  = await DB.listByTrip('planning_items', t.id);
-      plan.forEach(p => corpus.push({ type:'parada', tripId:t.id, tripName:t.name, label:p.title, sub:[p.place_name, p.address, p.notes].filter(Boolean).join(' · '), tab:'planning' }));
+      // Haystack del viaje: nombre + ciudad + país + tokens de fechas (mes/año)
+      const tripParts = [
+        t.name, t.city, t.country,
+        this._dateTokens(t.start_date),
+        this._dateTokens(t.end_date),
+      ];
+      const tripHaystack = this._buildHaystack(tripParts);
+      corpus.push({
+        type:'trip', tripId:t.id,
+        label:t.name,
+        sub:[t.city, t.country].filter(Boolean).join(', '),
+        tab:'resumen',
+        haystack: tripHaystack,
+      });
+
+      // Hijos heredan el haystack del viaje + sus propios campos.
+      // Así si buscas "Curaçao" salen también las paradas del viaje a Curaçao.
+      const plan = await DB.listByTrip('planning_items', t.id);
+      plan.forEach(p => {
+        corpus.push({
+          type:'parada', tripId:t.id, tripName:t.name,
+          label:p.title,
+          sub:[p.place_name, p.address, p.notes].filter(Boolean).join(' · '),
+          tab:'planning',
+          haystack: tripHaystack + ' ' + this._buildHaystack([
+            p.title, p.place_name, p.address, p.notes,
+            this._dateTokens(p.day_date),
+            this._dateTokens(p.consultation_planned_d1),
+          ]),
+        });
+      });
+
       if (canSeeMoney()) {
         const bud = await DB.listByTrip('budget_items', t.id);
-        bud.forEach(b => corpus.push({ type:'gasto', tripId:t.id, tripName:t.name, label:b.concept, sub:`${fmtMoney(b.amount, b.currency||'EUR')} · ${b.notes||''}`, tab:'presu' }));
+        bud.forEach(b => {
+          corpus.push({
+            type:'gasto', tripId:t.id, tripName:t.name,
+            label:b.concept,
+            sub:`${fmtMoney(b.amount, b.currency || 'EUR')} · ${b.notes || ''}`,
+            tab:'presu',
+            haystack: tripHaystack + ' ' + this._buildHaystack([
+              b.concept, b.notes, b.category, this._dateTokens(b.date),
+            ]),
+          });
+        });
       }
+
       const bks = await DB.listByTrip('bookings', t.id);
-      bks.forEach(b => corpus.push({ type:'reserva', tripId:t.id, tripName:t.name, label:(b.type+' · '+(b.structured_data?.nombre||b.structured_data?.aerolinea||'')).trim(), sub: Object.values(b.structured_data||{}).filter(Boolean).slice(0,3).join(' · '), tab:'reservas' }));
+      bks.forEach(b => {
+        const sd = b.structured_data || {};
+        corpus.push({
+          type:'reserva', tripId:t.id, tripName:t.name,
+          label:(b.type + ' · ' + (sd.nombre || sd.aerolinea || '')).trim(),
+          sub: Object.values(sd).filter(Boolean).slice(0,3).join(' · '),
+          tab:'reservas',
+          haystack: tripHaystack + ' ' + this._buildHaystack([
+            b.type, ...Object.values(sd),
+            this._dateTokens(b.date),
+          ]),
+        });
+      });
     }
 
     const body = el('div', {}, [
       el('div', { class:'form-row' }, [
-        el('input', { id:'gs-input', type:'search', placeholder:'Buscar en todos los viajes…', autocomplete:'off',
+        el('input', { id:'gs-input', type:'search',
+          placeholder:'Nombre, destino, país, "octubre 2026"…',
+          autocomplete:'off',
           oninput: (e) => render(e.target.value) }),
-        el('div', { class:'field-hint', text: `${corpus.length} elementos indexados. Cierra con Esc.` }),
+        el('div', { class:'field-hint', text: `${corpus.length} elementos. Busca por nombre, ciudad, país, mes o año (varias palabras = todas deben coincidir). Esc cierra.` }),
       ]),
       el('div', { id:'gs-results', class:'list', style:{maxHeight:'50vh', overflowY:'auto', marginTop:'8px'} }),
     ]);
@@ -2827,13 +2926,15 @@ const GlobalSearch = {
       const box = document.getElementById('gs-results');
       if (!box) return;
       box.innerHTML = '';
-      const needle = (q || '').trim().toLowerCase();
+      const needle = this._norm((q || '').trim());
       if (!needle) return;
-      const hits = corpus.filter(it =>
-        (it.label||'').toLowerCase().includes(needle) ||
-        (it.sub||'').toLowerCase().includes(needle) ||
-        (it.tripName||'').toLowerCase().includes(needle)
-      ).slice(0, 30);
+      // Tokens AND: cada palabra debe estar en el haystack (orden libre).
+      const tokens = needle.split(/\s+/).filter(Boolean);
+      const hits = corpus.filter(it => {
+        const h = it.haystack || '';
+        return tokens.every(tok => h.includes(tok));
+      }).slice(0, 50);
+
       hits.forEach(it => {
         const TYPES = { trip:'Viaje', parada:'Parada', gasto:'Gasto', reserva:'Reserva' };
         box.appendChild(el('div', { class:'list-item', style:{cursor:'pointer'},
@@ -2850,11 +2951,14 @@ const GlobalSearch = {
               ' ',
               el('span', { text: it.label || '(sin título)' }),
             ]),
-            el('div', { class:'li-sub', text: [it.tripName && it.type !== 'trip' ? `en ${it.tripName}` : null, it.sub].filter(Boolean).join(' — ') }),
+            el('div', { class:'li-sub', text: [
+              it.tripName && it.type !== 'trip' ? `en ${it.tripName}` : null,
+              it.sub
+            ].filter(Boolean).join(' — ') }),
           ]),
         ]));
       });
-      if (!hits.length) box.appendChild(el('div', { class:'muted', text:'Sin resultados.' }));
+      if (!hits.length) box.appendChild(el('div', { class:'muted', style:{padding:'12px'}, text:'Sin resultados.' }));
     };
 
     UI.openSheet({
