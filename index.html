@@ -407,7 +407,7 @@ h2.section-title {
   .trip-grid { grid-template-columns:1fr 1fr; gap:28px; }
 }
 
-.trip-card { position:relative; overflow:hidden; cursor:pointer; }
+.trip-card { position:relative; overflow:hidden; cursor:pointer; min-width:0; max-width:100%; }
 .trip-card-cover {
   position:relative; height:210px;
   background:linear-gradient(135deg, var(--accent-bg), var(--bg-soft));
@@ -446,6 +446,10 @@ h2.section-title {
   font-family:var(--font-titulo); font-weight:800;
   font-size:22px; letter-spacing:-.02em; line-height:1.15;
   text-shadow:0 1px 3px rgba(0,0,0,.4);
+  /* Partir nombres largos en lugar de empujar la card más allá del viewport.
+     "Curaçao · Willemstad + lagunas" es legal partir donde haga falta. */
+  word-break:break-word; overflow-wrap:break-word; hyphens:auto;
+  max-width:100%;
 }
 .trip-card-meta {
   margin-top:6px;
@@ -455,6 +459,7 @@ h2.section-title {
   font-size:13.5px; font-weight:600; letter-spacing:-.01em;
   text-shadow:0 1px 2px rgba(0,0,0,.3);
   display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  max-width:100%; min-width:0;
 }
 .trip-card-meta .sep { opacity:.55; }
 .trip-card-foot {
@@ -462,8 +467,12 @@ h2.section-title {
   padding:14px 18px;
   border-top:1px solid var(--line-soft);
   background:var(--bg-elev);
+  gap:12px;
 }
-.trip-card-foot .destino { color:var(--text-muted); font-size:13px; }
+.trip-card-foot .destino {
+  color:var(--text-muted); font-size:13px;
+  min-width:0; word-break:break-word; overflow-wrap:break-word;
+}
 
 /* Toggle "en preparación" */
 .switch {
