@@ -1157,13 +1157,14 @@ body.dragging-planning .day-head { color: var(--accent); }
 /* Timeline vertical en planning */
 .day-group { position:relative; padding-left:0; }
 .timeline-list { position:relative; }
-.timeline-list::before {
-  content:''; position:absolute; left:14px; top:8px; bottom:8px;
-  width:2px; background:var(--line-soft);
-}
+/* La línea vertical del timeline ya no aplica — los items son cards independientes
+   con su emoji y la "línea" creaba ruido visual con padding asimétrico. */
 .timeline-item {
-  position:relative; padding-left:38px;
+  position:relative;
   margin-bottom:8px;
+  /* padding-left:38px se eliminó — el círculo del timeline ya no se renderiza
+     (lo sustituye el emoji dentro de la card), así que ese padding solo creaba
+     asimetría y empujaba contenido hacia la derecha en móviles estrechos. */
 }
 .timeline-item::before {
   content:''; position:absolute; left:8px; top:18px;
