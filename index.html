@@ -146,32 +146,83 @@ header.topbar {
 .topbar-extras { display:flex; align-items:center; gap:6px; }
 .topbar-extras:empty { display:none; }
 
-/* En móviles muy estrechos: el título del viaje puede llegar a ser largo. Le ponemos
-   ellipsis cuando hay extras a la derecha para no romper el layout. */
-@media (max-width: 540px) {
-  body.view-trip .topbar-title {
-    min-width:0; flex:1;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    font-size:16px;
-  }
+/* En móvil, el título grande estilo Apple va en el cuerpo de la vista — no en el topbar.
+   Así dejamos espacio para back + extras + iconos sin truncar nada. */
+@media (max-width: 720px) {
+  body.view-trip .topbar-title { display:none; }
   body.view-trip .status-pill { display:none; }
 }
 
-/* Subtítulo compacto del detalle de viaje (sin foto, estilo Apple). */
+/* Título grande "Apple-style" para el detalle de viaje — copiado del estilo
+   de las recetas: degradado de color, peso 700, letter-spacing negativo. */
+.trip-detail-title {
+  font-family:var(--font-titulo);
+  font-size:40px; font-weight:700;
+  letter-spacing:-.03em; line-height:1.12;
+  margin:14px 0 6px; padding-bottom:.08em;
+  word-break:break-word; overflow-wrap:break-word;
+  background-image:linear-gradient(135deg,
+    var(--accent) 0%,
+    color-mix(in srgb, var(--accent) 72%, #000 28%) 100%);
+  -webkit-background-clip:text; background-clip:text;
+  color:transparent; -webkit-text-fill-color:transparent;
+}
+@media (min-width:720px) {
+  .trip-detail-title { font-size:56px; letter-spacing:-.035em; }
+}
+:root[data-tema="oscuro"] .trip-detail-title {
+  background-image:linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 85%, #fff 15%) 0%,
+    var(--accent) 100%);
+}
+
+/* Subtítulo: fechas + faltan X días. Sin destino. */
 .trip-detail-sub {
-  padding:8px 0 14px;
-  display:flex; flex-direction:column; gap:2px;
-}
-.trip-detail-sub-line1 {
-  font-family:var(--font-titulo); font-size:15px; font-weight:600;
-  color:var(--text-muted); letter-spacing:-.005em;
+  margin:0 0 18px;
+  font-size:14px; color:var(--text-muted);
   font-feature-settings:"tnum","ss01";
 }
-.trip-detail-sub-line2 {
-  font-size:13px; color:var(--text-muted);
-  font-feature-settings:"tnum","ss01";
+.trip-detail-sub .sep { opacity:.55; margin:0 2px; }
+
+/* Portada con foto del viaje — visible solo en escritorio (≥720px).
+   En móvil la ocultamos por completo para más limpieza visual. */
+.trip-detail-cover-wrap {
+  display:none;
+  margin:0 0 14px;
 }
-.trip-detail-sub-line2 .sep { opacity:.6; }
+.trip-detail-cover-inner {
+  position:relative; overflow:hidden;
+  border-radius:var(--r-lg); border:1px solid var(--line);
+  height:240px;
+}
+.trip-detail-cover-inner img {
+  position:absolute; inset:0;
+  width:100%; height:100%; object-fit:cover;
+  display:block;
+}
+@media (min-width:720px) {
+  .trip-detail-cover-wrap { display:block; }
+}
+
+/* Menú de acciones del viaje (sheet desde el hamburguesa) */
+.action-menu { display:flex; flex-direction:column; gap:4px; }
+.action-menu-item {
+  display:flex; align-items:center; gap:14px;
+  padding:14px 12px; border-radius:var(--r-md);
+  background:transparent; border:1px solid transparent;
+  cursor:pointer; text-align:left;
+  font:inherit; color:var(--text); font-size:15px; font-weight:500;
+  transition:background .12s var(--ease);
+}
+.action-menu-item:hover { background:var(--bg-soft); }
+.action-menu-icon {
+  display:flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:50%;
+  background:var(--bg-soft); border:1px solid var(--line);
+  color:var(--accent); flex-shrink:0;
+}
+.action-menu-icon svg { width:18px; height:18px; }
+.action-menu-label { flex:1; }
 
 .icon-btn {
   border:1px solid var(--line); background:var(--bg-elev); color:var(--text);
@@ -2201,6 +2252,7 @@ const ICONS = {
   pdf:     '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h6"/>',
   search:  '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   external:'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+  menu:    '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>',
   refresh: '<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15A9 9 0 0 1 5.64 18.36L1 14"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   upload:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
@@ -2355,6 +2407,26 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault(); close();
   }, { passive: false });
 })();
+// Enter dentro de un sheet (en input, no en textarea) → dispara el botón primario
+// del footer. Permite guardar formularios sin levantar el dedo del teclado.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+  const sheet = document.getElementById('sheet');
+  if (!sheet || !sheet.classList.contains('show')) return;
+  const tag = (e.target?.tagName || '').toUpperCase();
+  // Ignorar dentro de textarea, botones (su Enter ya dispara click) o contenteditable
+  if (tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT') return;
+  if (e.target?.isContentEditable) return;
+  // Dentro de un input → buscamos el botón principal y lo pulsamos
+  if (tag !== 'INPUT') return;
+  const primary = sheet.querySelector('.sheet-foot .btn-primary')
+    || sheet.querySelector('.sheet-foot button:last-child:not(.btn-ghost):not(.btn-danger)');
+  if (primary && !primary.disabled) {
+    e.preventDefault();
+    primary.click();
+  }
+});
+
 // Tecla Escape también cierra
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.getElementById('sheet')?.classList.contains('show')) {
@@ -3245,6 +3317,42 @@ const Trips = {
    VIEW — Trip detail
    ============================================================ */
 const TripDetail = {
+  // Menú "..." de acciones del viaje (Editar, PDF, Compartir, etc.).
+  // Se abre desde el botón hamburguesa del topbar.
+  _openActionsMenu(t) {
+    const items = [];
+    if (canEdit()) {
+      items.push({
+        icon: svg('edit'), label: 'Editar viaje',
+        onclick: () => { UI.closeSheet(); Trips.openTripEditor(t); }
+      });
+    }
+    if (canSeeDocs()) {
+      items.push({
+        icon: svg('pdf'), label: 'Exportar PDF',
+        onclick: () => { UI.closeSheet(); Exporter.tripToPdf(t); }
+      });
+    }
+    if (canEdit()) {
+      items.push({
+        icon: svg('external'), label: 'Compartir viaje',
+        onclick: () => { UI.closeSheet(); Exporter.openShareSheet(t); }
+      });
+    }
+    const list = el('div', { class:'action-menu' });
+    items.forEach(item => {
+      list.appendChild(el('button', { class:'action-menu-item', onclick: item.onclick }, [
+        el('span', { class:'action-menu-icon', html: item.icon }),
+        el('span', { class:'action-menu-label', text: item.label }),
+      ]));
+    });
+    UI.openSheet({
+      title: t.name,
+      body: list,
+      footer: [el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar')],
+    });
+  },
+
   async render(root, title, fab) {
     const t = await DB.get('trips', STATE.currentTripId);
     if (!t) { Router.go('trips'); return; }
@@ -3252,43 +3360,44 @@ const TripDetail = {
     title.textContent = t.name;
     root.innerHTML = '';
 
-    // Acciones (Editar / PDF / Compartir) → inyectadas en el topbar como icon-btn
-    // junto a perfil/buscar/etc. Más limpio en móvil que un bloque grande dentro de la vista.
+    // Topbar: un único botón de menú hamburguesa con todas las acciones del viaje.
+    // Más limpio que 3 iconos sueltos en móvil.
     const extras = document.getElementById('topbar-extras');
     if (extras) {
       extras.innerHTML = '';
-      if (canEdit()) {
-        extras.appendChild(el('button', {
-          class:'icon-btn', title:'Editar viaje', 'aria-label':'Editar viaje',
-          onclick: () => Trips.openTripEditor(t), html: svg('edit')
-        }));
-      }
-      if (canSeeDocs()) {
-        extras.appendChild(el('button', {
-          class:'icon-btn', title:'Exportar PDF', 'aria-label':'Exportar PDF',
-          onclick: () => Exporter.tripToPdf(t), html: svg('pdf')
-        }));
-      }
-      if (canEdit()) {
-        extras.appendChild(el('button', {
-          class:'icon-btn', title:'Compartir viaje', 'aria-label':'Compartir viaje',
-          onclick: () => Exporter.openShareSheet(t), html: svg('external')
-        }));
-      }
+      extras.appendChild(el('button', {
+        class:'icon-btn', title:'Más opciones', 'aria-label':'Más opciones de este viaje',
+        onclick: () => TripDetail._openActionsMenu(t),
+        html: svg('menu'),
+      }));
     }
 
-    // Subtítulo compacto al estilo Apple: fechas + estado + destino, sin foto.
-    // El nombre del viaje ya está en el topbar — no repetimos.
+    // Portada (foto del viaje) — visible solo en desktop, oculta en móvil por CSS.
+    if (t.cover_blob_id || t.cover_photo_url) {
+      const coverWrap = el('div', { class:'trip-detail-cover-wrap', style:{ overflow:'hidden' } });
+      const cover = el('div', { class:'trip-card-cover trip-detail-cover-inner' });
+      if (t.cover_blob_id) {
+        const img = el('img', { src:'', alt:'', loading:'lazy', decoding:'async',
+          onerror: function(){ this.remove(); } });
+        MediaCache.urlFor(t.cover_blob_id).then(url => { if (url) img.src = url; else img.remove(); });
+        cover.appendChild(img);
+      } else if (t.cover_photo_url) {
+        cover.appendChild(el('img', { src: t.cover_photo_url, alt:'', loading:'lazy', decoding:'async',
+          onerror: function(){ this.remove(); } }));
+      }
+      coverWrap.appendChild(cover);
+      root.appendChild(coverWrap);
+    }
+
+    // Título grande estilo Apple (como las recetas) + subtítulo con fechas + faltan X días.
+    // Sin destino (ya estaba duplicado con el nombre del viaje en muchos casos).
+    root.appendChild(el('h1', { class:'trip-detail-title', text: t.name }));
     const subDates = (t.start_date && t.end_date)
       ? `${fmtDateShort(t.start_date)} – ${fmtDateShort(t.end_date)}` : 'Sin fechas';
-    const destStr = [t.city, t.country].filter(Boolean).join(', ');
     root.appendChild(el('div', { class:'trip-detail-sub' }, [
-      el('div', { class:'trip-detail-sub-line1', text: subDates }),
-      el('div', { class:'trip-detail-sub-line2' }, [
-        el('span', { text: statusDays(t) }),
-        destStr ? el('span', { class:'sep', text:' · ' }) : null,
-        destStr ? el('span', { text: destStr }) : null,
-      ].filter(Boolean)),
+      el('span', { text: subDates }),
+      el('span', { class:'sep', text:' · ' }),
+      el('span', { text: statusDays(t) }),
     ]));
 
     // Banner modo lector
@@ -4540,7 +4649,10 @@ const TripDetail = {
       consultaBlock,
       el('div', { class:'form-row', id:'f-amount-row' }, [
         el('label', { text:'Importe asociado (crea gasto)' }),
-        el('div', { class:'form-grid-2' }, [
+        // Concepto opcional — por defecto el título de la parada al guardar si lo dejas vacío
+        el('input', { id:'f-concept', type:'text', placeholder:'Concepto (por defecto: título)',
+          value: linkedBudget?.concept || '' }),
+        el('div', { class:'form-grid-2', style:{marginTop:'8px'} }, [
           el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00',
             value: linkedBudget ? String(linkedBudget.amount) : '' }),
           el('input', { id:'f-cur', type:'text', placeholder:t.default_currency || 'EUR',
@@ -4658,6 +4770,8 @@ const TripDetail = {
           const amtRaw = ($('#f-amount').value || '').trim();
           const amt = parseFloat(amtRaw);
           const cur = (($('#f-cur').value || '').trim() || 'EUR').toUpperCase();
+          // Concepto opcional — si vacío, usa el título de la parada
+          const concept = ($('#f-concept')?.value || '').trim() || it.title;
           if (linkedBudget) {
             if (amtRaw === '' || isNaN(amt) || amt <= 0) {
               // Usuario borró el importe → eliminamos el budget vinculado
@@ -4669,7 +4783,7 @@ const TripDetail = {
               linkedBudget.currency = cur;
               linkedBudget.rate_to_eur = rate;
               linkedBudget.amount_eur = +(amt * rate).toFixed(2);
-              linkedBudget.concept = it.title;
+              linkedBudget.concept = concept;
               linkedBudget.date = it.day_date;
               await DB.put('budget_items', linkedBudget);
             }
@@ -4679,7 +4793,7 @@ const TripDetail = {
             await DB.put('budget_items', {
               id: uuid(), trip_id: t.id, planning_item_id: it.id,
               category: it.type === 'comida' ? 'comida' : (it.type === 'transporte' ? 'transporte' : 'actividades'),
-              concept: it.title, amount: amt, currency: cur,
+              concept, amount: amt, currency: cur,
               rate_to_eur: rate, amount_eur: +(amt * rate).toFixed(2),
               status: 'planeado', date: it.day_date,
             });
