@@ -162,6 +162,8 @@ body.view-trip .topbar-title { display:none; }
   letter-spacing:-.03em; line-height:1.12;
   margin:14px 0 6px; padding-bottom:.08em;
   word-break:break-word; overflow-wrap:break-word;
+  hyphens:auto;
+  max-width:100%;
   background-image:linear-gradient(135deg,
     var(--accent) 0%,
     color-mix(in srgb, var(--accent) 72%, #000 28%) 100%);
@@ -264,8 +266,14 @@ main {
   max-width:1100px; margin:0 auto;
   padding:16px 16px 48px;
   flex:1; width:100%;
+  /* `clip` evita scroll horizontal accidental por elementos que sobresalen
+     (títulos con gradiente, cards con contenido ancho, tablists). Sin él,
+     algunas pantallas iOS Safari hacen scroll lateral y "descentran". */
+  overflow-x: clip;
   animation: fadeIn .18s var(--ease);
 }
+/* Defensa global: el body nunca debe permitir scroll horizontal. */
+html, body { overflow-x: clip; }
 @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
 
 /* ========================================================================
@@ -582,23 +590,63 @@ h2.section-title {
   gap:12px; margin-bottom:16px; flex-wrap:wrap;
 }
 
-/* Toolbar de iconos (vista Trips): solo icon-btns alineados a la izquierda */
-.toolbar.toolbar-icons {
-  justify-content:flex-start;
-  gap:8px;
+/* Botón de perfil en topbar — muestra la inicial del perfil activo en lugar
+   del icono de muñeco. Color por perfil (R/S/I). */
+.profile-initial-btn { padding:0; }
+.profile-initial {
+  display:flex; align-items:center; justify-content:center;
+  width:100%; height:100%;
+  font-family:var(--font-titulo);
+  font-weight:700; font-size:14px; letter-spacing:-.01em;
+  color:#fff;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius:inherit;
 }
-.toolbar.toolbar-icons .icon-btn {
-  width:40px; height:40px;
+.profile-initial.profile-ruben    { background:linear-gradient(135deg,#3b82f6,#06b6d4); }
+.profile-initial.profile-sergio   { background:linear-gradient(135deg,#a855f7,#ec4899); }
+.profile-initial.profile-invitado { background:linear-gradient(135deg,#64748b,#94a3b8); }
+
+/* Cabecera de vista — título a la izquierda, icon-btns a la derecha */
+.view-header {
+  display:flex; align-items:flex-end; justify-content:space-between;
+  gap:12px; margin:0 0 8px;
+  flex-wrap:wrap;
+  max-width:100%;
 }
-.toolbar.toolbar-icons .icon-btn.icon-btn-primary {
+.view-header .view-title {
+  margin:0; flex:1; min-width:0;
+  word-break:break-word; overflow-wrap:break-word;
+}
+.view-header-actions {
+  display:flex; align-items:center; gap:8px; flex-shrink:0;
+}
+.view-header-actions .icon-btn { width:40px; height:40px; }
+.view-header-actions .icon-btn.icon-btn-primary {
   background:linear-gradient(135deg, var(--accent), var(--accent-2));
   border-color:transparent; color:#fff;
 }
-.toolbar.toolbar-icons .icon-btn.icon-btn-primary svg { stroke:#fff; }
-.toolbar.toolbar-icons .icon-btn.has-active {
+.view-header-actions .icon-btn.icon-btn-primary svg { stroke:#fff; }
+.view-header-actions .icon-btn.has-active {
   background:var(--accent-bg);
   border-color:color-mix(in srgb, var(--accent) 40%, var(--line));
   color:var(--accent);
+}
+
+.view-readonly-line { margin:0 0 16px; display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-muted); }
+.view-readonly-extra { font-size:13px; }
+
+/* Dropdown de filtros (sustituye al sheet) — bloque inline tipo card */
+.filters-dropdown {
+  margin:8px 0 16px; padding:16px;
+  background:var(--bg-elev); border:1px solid var(--line);
+  border-radius:var(--r-md);
+  box-shadow: var(--sh-1);
+  animation: filtersDropdownIn .14s var(--ease);
+  transform-origin: top right;
+}
+@keyframes filtersDropdownIn {
+  from { opacity:0; transform: translateY(-4px); }
+  to   { opacity:1; transform: translateY(0); }
 }
 
 /* Mini-resumen del filtro activo bajo la toolbar */
@@ -1486,8 +1534,8 @@ body.readonly .timeline-item { cursor:default; }
           <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
         </svg>
       </button>
-      <button class="icon-btn" id="btn-profile-menu" aria-label="Perfil">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>
+      <button class="icon-btn profile-initial-btn" id="btn-profile-menu" aria-label="Perfil">
+        <span class="profile-initial" id="profile-initial">?</span>
       </button>
     </div>
   </header>
@@ -2844,6 +2892,13 @@ const Router = {
     if (extras) extras.innerHTML = '';
     // Quitar/poner clase del body para que el CSS sepa la vista activa
     document.body.classList.toggle('view-trip', STATE.view === 'trip');
+    // Actualizar el avatar del topbar con la inicial del perfil activo
+    const initEl = document.getElementById('profile-initial');
+    if (initEl) {
+      const pf = PROFILES.find(p => p.id === STATE.profile);
+      initEl.textContent = pf?.initial || '?';
+      initEl.className = 'profile-initial profile-' + (STATE.profile || 'invitado');
+    }
 
     root.classList.remove('fade');
     root.style.animation = 'none'; root.offsetHeight; root.style.animation = '';
@@ -3074,52 +3129,58 @@ const Trips = {
     }
 
     root.innerHTML = '';
-    root.appendChild(el('h1', { class:'view-title', text: canEdit() ? 'Tus viajes' : 'Viajes' }));
-    const profileName = PROFILES.find(p=>p.id===STATE.profile)?.name || STATE.profile;
-    const ownerName = PROFILES.find(p=>p.id===OWNER_PROFILE)?.name || OWNER_PROFILE;
-    const viewingOther = isReadonly() && dataProfile() !== STATE.profile;
-    const subRow = el('p', { class:'view-sub' }, [
-      `Perfil: ${profileName}`,
-      viewingOther ? ` · viendo datos de ${ownerName}` : '',
-      isReadonly() ? ' · ' : null,
-      isReadonly() ? el('span', { class:'readonly-badge' }, [ el('span', { html: svg('lock') }), STATE.profile === 'invitado' ? 'Invitado' : 'Modo lector' ]) : null,
-    ].filter(Boolean));
-    root.appendChild(subRow);
 
-    // Toolbar compacta — 3 icon-btns: filtro, nuevo viaje, explorar opciones.
-    // El filtro abre un sheet con todos los controles (ordenar, agrupar, estado).
-    const toolbar = el('div', { class:'toolbar toolbar-icons' });
-    // Icono filtro — con punto si hay algún filtro no-por-defecto activo
+    // Cabecera: título grande a la izquierda, 3 icon-btns a la derecha.
+    // El filtro abre un dropdown inline (no sheet) justo debajo de los botones.
     const filterActive = (STATE.sort && STATE.sort !== 'fecha') ||
                          (STATE.groupBy && STATE.groupBy !== 'ninguno');
-    toolbar.appendChild(el('button', {
+    const filterBtn = el('button', {
       class:'icon-btn' + (filterActive ? ' has-active' : ''),
       title:'Filtros y orden', 'aria-label':'Filtros y orden',
-      onclick: () => Trips._openFiltersSheet(chips),
+      'aria-haspopup':'menu', 'aria-expanded':'false', id:'btn-filter-toggle',
+      onclick: (e) => { e.stopPropagation(); Trips._toggleFiltersDropdown(chips); },
       html: svg('filter'),
-    }));
+    });
+    const headerRight = el('div', { class:'view-header-actions' }, [filterBtn]);
     if (canEdit()) {
-      toolbar.appendChild(el('button', {
+      headerRight.appendChild(el('button', {
         class:'icon-btn icon-btn-primary',
         title:'Nuevo viaje', 'aria-label':'Nuevo viaje',
         onclick: () => Trips.openTripEditor(),
         html: svg('plus'),
       }));
     }
-    // Por defecto enlaza al explorar.html que vive en la misma carpeta.
     const externalUrl = (localStorage.getItem('viajes_planner_url') || CFG.externalPlannerUrl || './explorar.html').trim();
     if (externalUrl && canEdit()) {
-      toolbar.appendChild(el('button', {
+      headerRight.appendChild(el('button', {
         class:'icon-btn',
         title:'Explorar opciones', 'aria-label':'Explorar opciones',
         onclick: () => { window.location.href = externalUrl; },
         html: svg('compass'),
       }));
     }
-    root.appendChild(toolbar);
+    root.appendChild(el('div', { class:'view-header view-header-trips' }, [
+      el('h1', { class:'view-title', text: canEdit() ? 'Tus viajes' : 'Viajes' }),
+      headerRight,
+    ]));
 
-    // Mini-resumen del filtro activo bajo la toolbar — siempre visible, una sola línea.
-    // Permite ver de un vistazo qué pestaña está activa sin abrir el sheet.
+    // Banner modo lector — solo si aplica, ya no en la subtitle.
+    const viewingOther = isReadonly() && dataProfile() !== STATE.profile;
+    if (isReadonly() || viewingOther) {
+      const ownerName = PROFILES.find(p=>p.id===OWNER_PROFILE)?.name || OWNER_PROFILE;
+      root.appendChild(el('div', { class:'view-readonly-line' }, [
+        el('span', { class:'readonly-badge' }, [
+          el('span', { html: svg('lock') }),
+          STATE.profile === 'invitado' ? 'Invitado' : 'Modo lector',
+        ]),
+        viewingOther ? el('span', { class:'view-readonly-extra', text: ` · viendo datos de ${ownerName}` }) : null,
+      ].filter(Boolean)));
+    }
+
+    // Contenedor donde se monta el dropdown de filtros (vacío salvo cuando está abierto).
+    root.appendChild(el('div', { id:'filters-dropdown-host' }));
+
+    // Mini-resumen del filtro activo — chip horizontal del estado seleccionado.
     const activeChip = chips.find(c => c.id === STATE.filter);
     if (activeChip) {
       root.appendChild(el('div', { class:'view-filter-summary' }, [
@@ -3252,11 +3313,24 @@ const Trips = {
     }, [ cover, foot ]);
   },
 
-  // Sheet con todos los controles de orden + agrupación + estado.
-  // Recibe los chips ya calculados por render() para poder mostrar conteos.
-  _openFiltersSheet(chips) {
-    const renderSheet = () => {
-      const body = el('div', { class:'filters-body' });
+  // Dropdown inline con todos los controles de orden + agrupación + estado.
+  // Se monta debajo del header — sin sheet. Recibe los chips ya calculados por render().
+  _toggleFiltersDropdown(chips) {
+    const host = document.getElementById('filters-dropdown-host');
+    const btn  = document.getElementById('btn-filter-toggle');
+    if (!host) return;
+    // Si ya está abierto, cerrar.
+    if (host.querySelector('.filters-dropdown')) {
+      host.innerHTML = '';
+      btn?.setAttribute('aria-expanded', 'false');
+      return;
+    }
+
+    const renderDropdown = () => {
+      host.innerHTML = '';
+      const body = el('div', { class:'filters-body filters-dropdown',
+        role:'menu', 'aria-label':'Filtros y orden',
+        onclick: (e) => e.stopPropagation() });
 
       // ESTADO
       body.appendChild(el('div', { class:'filters-section' }, [
@@ -3267,7 +3341,7 @@ const Trips = {
             const isActive = c.id === STATE.filter;
             wrap.appendChild(el('button', {
               class: 'filters-status-btn' + (isActive ? ' active' : ''),
-              onclick: () => { STATE.filter = c.id; Router.render(); renderSheet(); }
+              onclick: () => { STATE.filter = c.id; Router.render(); renderDropdown(); }
             }, [
               el('span', { class:`dot dot-${c.id}`, 'aria-hidden':'true' }),
               el('span', { class:'filters-status-label', text: c.label }),
@@ -3286,7 +3360,7 @@ const Trips = {
           [['fecha','Por fecha'],['abc','A–Z']].forEach(([id,lbl]) => {
             seg.appendChild(el('button', {
               class: STATE.sort === id ? 'active' : '',
-              onclick: () => { STATE.sort = id; Router.render(); renderSheet(); }
+              onclick: () => { STATE.sort = id; Router.render(); renderDropdown(); }
             }, lbl));
           });
           return seg;
@@ -3301,20 +3375,25 @@ const Trips = {
           [['ninguno','Sin agrupar'],['año','Por año'],['país','Por país']].forEach(([id,lbl]) => {
             seg.appendChild(el('button', {
               class: STATE.groupBy === id ? 'active' : '',
-              onclick: () => { STATE.groupBy = id; Router.render(); renderSheet(); }
+              onclick: () => { STATE.groupBy = id; Router.render(); renderDropdown(); }
             }, lbl));
           });
           return seg;
         })(),
       ]));
 
-      UI.openSheet({
-        title: 'Filtros',
-        body,
-        footer: [el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar')],
-      });
+      host.appendChild(body);
     };
-    renderSheet();
+    renderDropdown();
+    btn?.setAttribute('aria-expanded', 'true');
+    // Cierre al clicar fuera del dropdown
+    const closeOnOutside = (e) => {
+      if (e.target.closest('.filters-dropdown') || e.target.closest('#btn-filter-toggle')) return;
+      host.innerHTML = '';
+      btn?.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', closeOnOutside, true);
+    };
+    setTimeout(() => document.addEventListener('click', closeOnOutside, true), 0);
   },
 
   openTripEditor(existing=null) {
