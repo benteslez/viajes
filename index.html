@@ -146,10 +146,11 @@ header.topbar {
 .topbar-extras { display:flex; align-items:center; gap:6px; }
 .topbar-extras:empty { display:none; }
 
-/* En móvil, el título grande estilo Apple va en el cuerpo de la vista — no en el topbar.
-   Así dejamos espacio para back + extras + iconos sin truncar nada. */
+/* En el detalle de viaje el título grande estilo Apple va en el cuerpo de la vista,
+   no en el topbar — para no duplicarlo. Ocultamos el topbar-title en todas las
+   resoluciones cuando estamos dentro de un viaje. La sync-pill se oculta solo en móvil. */
+body.view-trip .topbar-title { display:none; }
 @media (max-width: 720px) {
-  body.view-trip .topbar-title { display:none; }
   body.view-trip .status-pill { display:none; }
 }
 
@@ -202,6 +203,32 @@ header.topbar {
 }
 @media (min-width:720px) {
   .trip-detail-cover-wrap { display:block; }
+}
+
+/* Panel de detalle de sincronización (sheet desde el sync-pill) */
+.sync-detail { display:flex; flex-direction:column; gap:10px; }
+.sync-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-md);
+  background:var(--bg-elev);
+}
+.sync-label { font-size:13px; color:var(--text-muted); }
+.sync-val   { font-size:13px; font-weight:600; color:var(--text);
+  font-feature-settings:"tnum","ss01"; }
+.sync-error-box {
+  padding:12px 14px; border-radius:var(--r-md);
+  background:color-mix(in srgb, var(--danger) 10%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+.sync-error-title {
+  font-size:12px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--danger); margin-bottom:6px;
+}
+.sync-error-msg {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size:11.5px; line-height:1.4;
+  margin:0; white-space:pre-wrap; word-break:break-word;
+  color:var(--text);
 }
 
 /* Menú de acciones del viaje (sheet desde el hamburguesa) */
@@ -553,6 +580,75 @@ h2.section-title {
 .toolbar {
   display:flex; align-items:center; justify-content:space-between;
   gap:12px; margin-bottom:16px; flex-wrap:wrap;
+}
+
+/* Toolbar de iconos (vista Trips): solo icon-btns alineados a la izquierda */
+.toolbar.toolbar-icons {
+  justify-content:flex-start;
+  gap:8px;
+}
+.toolbar.toolbar-icons .icon-btn {
+  width:40px; height:40px;
+}
+.toolbar.toolbar-icons .icon-btn.icon-btn-primary {
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color:transparent; color:#fff;
+}
+.toolbar.toolbar-icons .icon-btn.icon-btn-primary svg { stroke:#fff; }
+.toolbar.toolbar-icons .icon-btn.has-active {
+  background:var(--accent-bg);
+  border-color:color-mix(in srgb, var(--accent) 40%, var(--line));
+  color:var(--accent);
+}
+
+/* Mini-resumen del filtro activo bajo la toolbar */
+.view-filter-summary {
+  display:inline-flex; align-items:center; gap:8px;
+  margin:0 0 14px;
+  font-size:13px; color:var(--text-muted);
+  font-weight:500;
+}
+.view-filter-summary .dot { width:8px; height:8px; }
+.view-filter-summary .view-filter-name { color:var(--text); font-weight:600; }
+.view-filter-summary .view-filter-count {
+  font-feature-settings:"tnum","ss01";
+}
+
+/* Sheet de filtros */
+.filters-body { display:flex; flex-direction:column; gap:18px; }
+.filters-section { display:flex; flex-direction:column; gap:8px; }
+.filters-section-title {
+  font-size:12px; font-weight:600; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--text-muted);
+}
+.filters-segmented { width:100%; }
+.filters-segmented button { flex:1; }
+.filters-status-list { display:flex; flex-direction:column; gap:6px; }
+.filters-status-btn {
+  display:flex; align-items:center; gap:10px;
+  padding:12px 14px; border-radius:var(--r-md);
+  background:var(--bg-elev); border:1px solid var(--line);
+  cursor:pointer; text-align:left;
+  font:inherit; color:var(--text); font-size:14.5px;
+  transition:background .12s var(--ease), border-color .12s var(--ease);
+}
+.filters-status-btn:hover { background:var(--bg-soft); }
+.filters-status-btn.active {
+  border-color:color-mix(in srgb, var(--accent) 50%, var(--line));
+  background:var(--accent-bg);
+  font-weight:600;
+}
+.filters-status-btn .dot { width:10px; height:10px; flex-shrink:0; }
+.filters-status-label { flex:1; }
+.filters-status-count {
+  font-feature-settings:"tnum","ss01";
+  font-size:13px; color:var(--text-muted);
+  background:var(--bg-soft); padding:1px 8px; border-radius:var(--r-pill);
+  min-width:24px; text-align:center;
+}
+.filters-status-btn.active .filters-status-count {
+  background:color-mix(in srgb, var(--accent) 18%, var(--bg-elev));
+  color:var(--accent);
 }
 
 /* ========================================================================
@@ -2097,6 +2193,8 @@ const SYNC = {
   enabled: false,
   flushTimer: null,
   status: 'idle', // 'idle'|'syncing'|'offline'|'error'
+  lastError: null,    // último mensaje de error de upsert/pull (para mostrarlo en el pill)
+  lastErrorTable: null,
 
   init() {
     if (!CFG.supabaseUrl || !CFG.supabaseAnonKey) {
@@ -2114,6 +2212,7 @@ const SYNC = {
       auth: { persistSession: false }
     });
     this.enabled = true;
+    this.lastError = null;
     this._setStatus(navigator.onLine ? 'idle' : 'offline');
   },
 
@@ -2144,10 +2243,16 @@ const SYNC = {
         await DB.db.delete('_pending', item.id);
       } catch (e) {
         console.warn('sync upsert error', item.table, e);
+        // Guardamos detalle del error para enseñarlo en el pill
+        this.lastError = `[${item.table}] ` + (e?.message || e?.error_description || JSON.stringify(e).slice(0, 400));
+        this.lastErrorTable = item.table;
         this._setStatus('error');
         return;
       }
     }
+    // Si llegamos aquí, todo fue OK
+    this.lastError = null;
+    this.lastErrorTable = null;
     // pull tras el push
     try { await this.pullAll(); } catch (e) { console.warn('pull', e); }
     this._setStatus(navigator.onLine ? 'idle' : 'offline');
@@ -2253,6 +2358,8 @@ const ICONS = {
   search:  '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   external:'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
   menu:    '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>',
+  filter:  '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
+  compass: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
   refresh: '<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15A9 9 0 0 1 5.64 18.36L1 14"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   upload:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
@@ -2353,12 +2460,79 @@ const UI = {
     if (!SYNC.enabled) {
       p.classList.add('online');
       t.textContent = navigator.onLine ? 'Local' : 'Sin conexión';
+      p.style.cursor = 'default';
+      p.onclick = null;
       return;
     }
-    if (SYNC.status === 'offline') { p.classList.add('offline'); t.textContent = 'Sin conexión'; return; }
-    if (SYNC.status === 'syncing') { p.classList.add('online'); t.textContent = 'Sincronizando…'; return; }
-    if (SYNC.status === 'error') { p.classList.add('error'); t.textContent = 'Error sync'; return; }
-    p.classList.add('online'); t.textContent = 'Sincronizado';
+    if (SYNC.status === 'offline') { p.classList.add('offline'); t.textContent = 'Sin conexión'; }
+    else if (SYNC.status === 'syncing') { p.classList.add('online'); t.textContent = 'Sincronizando…'; }
+    else if (SYNC.status === 'error') { p.classList.add('error'); t.textContent = 'Error sync'; }
+    else { p.classList.add('online'); t.textContent = 'Sincronizado'; }
+    // En estado "error" hacemos el pill clickable: muestra detalle + permite acciones.
+    p.style.cursor = 'pointer';
+    p.title = SYNC.status === 'error' ? 'Toca para ver el error y reintentar' : 'Toca para ver detalle de sync';
+    p.onclick = () => UI._openSyncDetail();
+  },
+
+  _openSyncDetail() {
+    const body = el('div', { class:'sync-detail' });
+    body.appendChild(el('div', { class:'sync-row' }, [
+      el('span', { class:'sync-label', text:'Estado' }),
+      el('span', { class:'sync-val', text:
+        !SYNC.enabled ? 'Local (sin Supabase)' :
+        SYNC.status === 'error' ? 'Error' :
+        SYNC.status === 'syncing' ? 'Sincronizando…' :
+        SYNC.status === 'offline' ? 'Sin conexión' : 'Sincronizado'
+      }),
+    ]));
+    body.appendChild(el('div', { class:'sync-row' }, [
+      el('span', { class:'sync-label', text:'Perfil enviado' }),
+      el('span', { class:'sync-val', text: STATE.profile || '—' }),
+    ]));
+    if (SYNC.lastError) {
+      body.appendChild(el('div', { class:'sync-error-box' }, [
+        el('div', { class:'sync-error-title', text:'Último error' }),
+        el('pre', { class:'sync-error-msg', text: String(SYNC.lastError).slice(0, 600) }),
+      ]));
+    }
+    // Contar elementos pendientes
+    DB.db?.getAll('_pending').then(p => {
+      const cnt = (p || []).length;
+      body.appendChild(el('div', { class:'sync-row' }, [
+        el('span', { class:'sync-label', text:'Cambios pendientes en cola' }),
+        el('span', { class:'sync-val', text: String(cnt) }),
+      ]));
+    }).catch(() => {});
+
+    const retryBtn = el('button', { class:'btn btn-primary', onclick: async () => {
+      UI.closeSheet();
+      UI.toast('Reintentando…');
+      SYNC._setStatus('syncing');
+      try { await SYNC.flush(); UI.toast('Sync completado'); Router.render(); }
+      catch (e) { console.warn(e); UI.toast('Falló — vuelve a abrir el detalle'); }
+    }}, 'Reintentar');
+
+    const clearBtn = el('button', { class:'btn btn-danger', onclick: async () => {
+      if (!confirm('¿Vaciar la cola de cambios pendientes? Los datos locales NO se borran; quedará todo sin enviar a Supabase hasta que vuelvas a editar algo.')) return;
+      try {
+        const all = await DB.db.getAll('_pending');
+        for (const p of all) await DB.db.delete('_pending', p.id);
+        SYNC.lastError = null;
+        SYNC._setStatus('idle');
+        UI.closeSheet();
+        UI.toast('Cola vaciada');
+      } catch (e) { console.warn(e); UI.toast('No se pudo vaciar la cola'); }
+    }}, 'Vaciar cola');
+
+    UI.openSheet({
+      title: 'Sincronización',
+      body,
+      footer: [
+        el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'),
+        clearBtn,
+        retryBtn,
+      ],
+    });
   },
 };
 
@@ -2827,60 +3001,48 @@ const Trips = {
     ].filter(Boolean));
     root.appendChild(subRow);
 
-    // Toolbar
-    const toolbar = el('div', { class:'toolbar' });
-    const segm = el('div', { class:'segmented' });
-    [['fecha','Por fecha'],['abc','A–Z']].forEach(([id,lbl]) => {
-      const b = el('button', { class: STATE.sort === id ? 'active' : '',
-        'aria-pressed': STATE.sort === id ? 'true' : 'false',
-        onclick: () => { STATE.sort = id; Router.render(); } }, lbl);
-      segm.appendChild(b);
-    });
-    toolbar.appendChild(segm);
-    // Agrupar
-    const groupSeg = el('div', { class:'segmented', style:{marginLeft:'8px'} });
-    [['ninguno','Sin agrupar'],['año','Por año'],['país','Por país']].forEach(([id,lbl]) => {
-      const b = el('button', { class: STATE.groupBy === id ? 'active' : '',
-        'aria-pressed': STATE.groupBy === id ? 'true' : 'false',
-        onclick: () => { STATE.groupBy = id; Router.render(); } }, lbl);
-      groupSeg.appendChild(b);
-    });
-    toolbar.appendChild(groupSeg);
-    toolbar.appendChild(el('div', { class:'gap' }));
+    // Toolbar compacta — 3 icon-btns: filtro, nuevo viaje, explorar opciones.
+    // El filtro abre un sheet con todos los controles (ordenar, agrupar, estado).
+    const toolbar = el('div', { class:'toolbar toolbar-icons' });
+    // Icono filtro — con punto si hay algún filtro no-por-defecto activo
+    const filterActive = (STATE.sort && STATE.sort !== 'fecha') ||
+                         (STATE.groupBy && STATE.groupBy !== 'ninguno');
+    toolbar.appendChild(el('button', {
+      class:'icon-btn' + (filterActive ? ' has-active' : ''),
+      title:'Filtros y orden', 'aria-label':'Filtros y orden',
+      onclick: () => Trips._openFiltersSheet(chips),
+      html: svg('filter'),
+    }));
     if (canEdit()) {
-      const newBtn = el('button', { class:'btn btn-primary', onclick: () => Trips.openTripEditor() }, [
-        el('span', { class:'i', html: svg('plus') }), 'Nuevo viaje'
-      ]);
-      toolbar.appendChild(newBtn);
+      toolbar.appendChild(el('button', {
+        class:'icon-btn icon-btn-primary',
+        title:'Nuevo viaje', 'aria-label':'Nuevo viaje',
+        onclick: () => Trips.openTripEditor(),
+        html: svg('plus'),
+      }));
     }
     // Por defecto enlaza al explorar.html que vive en la misma carpeta.
-    // El usuario puede sobrescribirlo desde el perfil con su propia URL.
     const externalUrl = (localStorage.getItem('viajes_planner_url') || CFG.externalPlannerUrl || './explorar.html').trim();
     if (externalUrl && canEdit()) {
-      // Misma pestaña — sensación de "app única". Como volvemos por ./index.html,
-      // no perdemos el perfil (localStorage) ni los datos (IndexedDB).
-      toolbar.appendChild(el('button', { class:'btn', onclick: () => { window.location.href = externalUrl; } }, [
-        el('span', { html: svg('external') }), 'Explorar opciones'
-      ]));
+      toolbar.appendChild(el('button', {
+        class:'icon-btn',
+        title:'Explorar opciones', 'aria-label':'Explorar opciones',
+        onclick: () => { window.location.href = externalUrl; },
+        html: svg('compass'),
+      }));
     }
     root.appendChild(toolbar);
 
-    // Chips filtro
-    const cr = el('div', { class:'chip-row', role:'group', 'aria-label':'Filtros de viaje' });
-    chips.forEach(c => {
-      const isActive = c.id === STATE.filter;
-      const ch = el('button', {
-        class: 'chip' + (isActive ? ' active' : ''),
-        'aria-pressed': isActive ? 'true' : 'false',
-        onclick: () => { STATE.filter = c.id; Router.render(); }
-      }, [
-        el('span', { class:`dot dot-${c.id}`, 'aria-hidden':'true' }),
-        c.label,
-        el('span', { class:'badge', 'aria-label': `${c.n} viajes`, text: String(c.n) }),
-      ]);
-      cr.appendChild(ch);
-    });
-    root.appendChild(cr);
+    // Mini-resumen del filtro activo bajo la toolbar — siempre visible, una sola línea.
+    // Permite ver de un vistazo qué pestaña está activa sin abrir el sheet.
+    const activeChip = chips.find(c => c.id === STATE.filter);
+    if (activeChip) {
+      root.appendChild(el('div', { class:'view-filter-summary' }, [
+        el('span', { class:`dot dot-${activeChip.id}`, 'aria-hidden':'true' }),
+        el('span', { class:'view-filter-name', text: activeChip.label }),
+        el('span', { class:'view-filter-count', text: ` (${activeChip.n})` }),
+      ]));
+    }
 
     if (!filtered.length) {
       root.appendChild(el('div', { class:'empty' }, [
@@ -3003,6 +3165,71 @@ const Trips = {
       class:'card trip-card interactive',
       onclick: () => Router.go('trip', { tripId: t.id, tab:'resumen' })
     }, [ cover, foot ]);
+  },
+
+  // Sheet con todos los controles de orden + agrupación + estado.
+  // Recibe los chips ya calculados por render() para poder mostrar conteos.
+  _openFiltersSheet(chips) {
+    const renderSheet = () => {
+      const body = el('div', { class:'filters-body' });
+
+      // ESTADO
+      body.appendChild(el('div', { class:'filters-section' }, [
+        el('div', { class:'filters-section-title', text:'Mostrar' }),
+        (() => {
+          const wrap = el('div', { class:'filters-status-list' });
+          chips.forEach(c => {
+            const isActive = c.id === STATE.filter;
+            wrap.appendChild(el('button', {
+              class: 'filters-status-btn' + (isActive ? ' active' : ''),
+              onclick: () => { STATE.filter = c.id; Router.render(); renderSheet(); }
+            }, [
+              el('span', { class:`dot dot-${c.id}`, 'aria-hidden':'true' }),
+              el('span', { class:'filters-status-label', text: c.label }),
+              el('span', { class:'filters-status-count', text: String(c.n) }),
+            ]));
+          });
+          return wrap;
+        })(),
+      ]));
+
+      // ORDENAR
+      body.appendChild(el('div', { class:'filters-section' }, [
+        el('div', { class:'filters-section-title', text:'Ordenar por' }),
+        (() => {
+          const seg = el('div', { class:'segmented filters-segmented' });
+          [['fecha','Por fecha'],['abc','A–Z']].forEach(([id,lbl]) => {
+            seg.appendChild(el('button', {
+              class: STATE.sort === id ? 'active' : '',
+              onclick: () => { STATE.sort = id; Router.render(); renderSheet(); }
+            }, lbl));
+          });
+          return seg;
+        })(),
+      ]));
+
+      // AGRUPAR
+      body.appendChild(el('div', { class:'filters-section' }, [
+        el('div', { class:'filters-section-title', text:'Agrupar' }),
+        (() => {
+          const seg = el('div', { class:'segmented filters-segmented' });
+          [['ninguno','Sin agrupar'],['año','Por año'],['país','Por país']].forEach(([id,lbl]) => {
+            seg.appendChild(el('button', {
+              class: STATE.groupBy === id ? 'active' : '',
+              onclick: () => { STATE.groupBy = id; Router.render(); renderSheet(); }
+            }, lbl));
+          });
+          return seg;
+        })(),
+      ]));
+
+      UI.openSheet({
+        title: 'Filtros',
+        body,
+        footer: [el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar')],
+      });
+    };
+    renderSheet();
   },
 
   openTripEditor(existing=null) {
