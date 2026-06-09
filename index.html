@@ -142,6 +142,37 @@ header.topbar {
 }
 .topbar-spacer { flex:1; }
 
+/* Slot de acciones específicas de la vista actual (Editar/PDF en detalle de viaje). */
+.topbar-extras { display:flex; align-items:center; gap:6px; }
+.topbar-extras:empty { display:none; }
+
+/* En móviles muy estrechos: el título del viaje puede llegar a ser largo. Le ponemos
+   ellipsis cuando hay extras a la derecha para no romper el layout. */
+@media (max-width: 540px) {
+  body.view-trip .topbar-title {
+    min-width:0; flex:1;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    font-size:16px;
+  }
+  body.view-trip .status-pill { display:none; }
+}
+
+/* Subtítulo compacto del detalle de viaje (sin foto, estilo Apple). */
+.trip-detail-sub {
+  padding:8px 0 14px;
+  display:flex; flex-direction:column; gap:2px;
+}
+.trip-detail-sub-line1 {
+  font-family:var(--font-titulo); font-size:15px; font-weight:600;
+  color:var(--text-muted); letter-spacing:-.005em;
+  font-feature-settings:"tnum","ss01";
+}
+.trip-detail-sub-line2 {
+  font-size:13px; color:var(--text-muted);
+  font-feature-settings:"tnum","ss01";
+}
+.trip-detail-sub-line2 .sep { opacity:.6; }
+
 .icon-btn {
   border:1px solid var(--line); background:var(--bg-elev); color:var(--text);
   width:38px; height:38px; border-radius:var(--r-md);
@@ -476,18 +507,31 @@ h2.section-title {
 /* ========================================================================
    Listas — items con divisores ligeros
    ====================================================================== */
-.list { display:flex; flex-direction:column; gap:10px; }
+.list { display:flex; flex-direction:column; gap:8px; }
 .list-item {
   background:var(--bg-elev); border:1px solid var(--line);
-  border-radius:var(--r-md); padding:14px 16px;
-  display:flex; align-items:center; gap:12px;
+  border-radius:var(--r-md); padding:10px 12px;
+  display:flex; align-items:center; gap:10px;
   transition:transform .18s var(--ease), box-shadow .18s var(--ease);
+  min-height:0;
 }
 .list-item:hover { box-shadow:var(--sh-1); }
 .list-item .li-main { flex:1; min-width:0; }
-.list-item .li-title { font-weight:500; color:var(--text); }
-.list-item .li-sub { font-size:13px; color:var(--text-muted); margin-top:2px; }
-.list-item .li-actions { display:flex; gap:6px; }
+.list-item .li-title { font-weight:500; color:var(--text); font-size:14.5px; letter-spacing:-.005em; }
+.list-item .li-sub { font-size:12.5px; color:var(--text-muted); margin-top:1px; line-height:1.35; }
+.list-item .li-actions { display:flex; gap:4px; }
+/* Cards de planning específicamente — más compactas, sin sombra exagerada */
+.timeline-item.list-item { padding:8px 10px; }
+.timeline-item.list-item .item-emoji { width:36px; height:36px; font-size:18px; border-width:1.5px; }
+.timeline-item.list-item .drag-handle { padding:2px; }
+.timeline-item.list-item .icon-btn { width:30px; height:30px; }
+.timeline-item.list-item .icon-btn svg { width:16px; height:16px; }
+.timeline-item.list-item .li-actions .btn.btn-sm { height:28px; padding:0 9px; font-size:12px; }
+/* Sub-texto en 1-2 líneas máximo con ellipsis para que no expanda la card */
+.timeline-item.list-item .li-sub {
+  overflow:hidden; text-overflow:ellipsis;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+}
 
 /* Estados de los planning items con reserva (hotel, vuelo, transporte, coche, actividad).
    El fondo de color comunica el estado de un vistazo. Las visitas a lugares y comidas
@@ -1284,6 +1328,8 @@ body.readonly .timeline-item { cursor:default; }
       </button>
       <div class="topbar-title" id="topbar-title">Viajes</div>
       <div class="topbar-spacer"></div>
+      <!-- Acciones específicas de la vista actual (rellenadas por TripDetail / Trips) -->
+      <div class="topbar-extras" id="topbar-extras"></div>
       <div class="status-pill" id="sync-pill"><span class="dot"></span><span class="t">…</span></div>
       <button class="icon-btn" id="btn-search" aria-label="Buscar (Cmd+K)" title="Buscar (Cmd+K)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -1362,7 +1408,9 @@ const CFG = {
 };
 
 const PROFILES = [
-  { id: 'rubén',    name: 'Rubén',    cls: 'avatar-r', initial: 'R', tag: 'Personal', readonly: false },
+  // id ASCII puro — viaja como cabecera HTTP x-app-profile en Supabase, no puede llevar tildes.
+  // El nombre visible "Rubén" se muestra desde el campo .name, no desde el id.
+  { id: 'ruben',    name: 'Rubén',    cls: 'avatar-r', initial: 'R', tag: 'Personal', readonly: false },
   { id: 'sergio',   name: 'Sergio',   cls: 'avatar-s', initial: 'S', tag: 'Solo lectura',         readonly: true },
   { id: 'invitado', name: 'Invitado', cls: 'avatar-i', initial: 'I', tag: 'Solo lectura',         readonly: true },
 ];
@@ -1774,9 +1822,11 @@ const DB = {
     // Migrar inquiries antiguas a planning_items con in_consultation=true.
     // Se ejecuta una vez por dispositivo (marcado en _meta).
     const runMigration = async (db) => {
+      // Cada migración en su propio try/catch + flag — así una posterior no se salta
+      // si la anterior ya estaba aplicada.
       try {
         const done = await db.get('_meta', 'mig_inquiries_to_planning');
-        if (done) return;
+        if (done) throw 'skip';
         const inquiries = await db.getAll('inquiries').catch(() => []);
         for (const i of inquiries) {
           if (i.deleted_at) continue;
@@ -1808,7 +1858,48 @@ const DB = {
           await db.put('inquiries', i);
         }
         await db.put('_meta', { key:'mig_inquiries_to_planning', value:true });
-      } catch (e) { console.warn('Migración inquiries→planning falló:', e); }
+      } catch (e) { if (e !== 'skip') console.warn('Migración inquiries→planning falló:', e); }
+
+      // Migración: pasar perfil 'rubén' → 'ruben' (ASCII) en todas las tablas con campo profile.
+      // Necesario porque las cabeceras HTTP no llevan bien caracteres no-ASCII y rompía la RLS.
+      try {
+        const done = await db.get('_meta', 'mig_ruben_ascii');
+        if (done) throw 'skip';
+        const tablesWithProfile = ['trips','packing_templates','travel_docs','visited_countries'];
+        for (const tbl of tablesWithProfile) {
+          const rows = await db.getAll(tbl).catch(() => []);
+          for (const r of rows) {
+            if (r.profile === 'rubén') {
+              r.profile = 'ruben';
+              r.updated_at = nowIso();
+              await db.put(tbl, r);
+            }
+          }
+        }
+        // localStorage también
+        if (localStorage.getItem('viajes_profile') === 'rubén') {
+          localStorage.setItem('viajes_profile', 'ruben');
+        }
+        // Meta del last_sync con el perfil viejo → renombrar
+        const oldMeta = await db.get('_meta', 'last_sync_rubén');
+        if (oldMeta) {
+          await db.put('_meta', { key:'last_sync_ruben', value: oldMeta.value });
+          await db.delete('_meta', 'last_sync_rubén');
+        }
+        // Cola pendiente — también puede tener records con perfil viejo,
+        // si fallaron a empujarlos antes de la migración.
+        try {
+          const pending = await db.getAll('_pending').catch(() => []);
+          for (const item of pending) {
+            if (item.record?.profile === 'rubén') {
+              item.record.profile = 'ruben';
+              item.record.updated_at = nowIso();
+              await db.put('_pending', item);
+            }
+          }
+        } catch (_) {}
+        await db.put('_meta', { key:'mig_ruben_ascii', value:true });
+      } catch (e) { if (e !== 'skip') console.warn('Migración perfil ASCII falló:', e); }
     };
     // Versión 5: añade store 'media' para fotos locales (cover, etc.).
     // Race contra timeout: si openDB tarda más de 10s (otra pestaña bloqueando, migración colgada…),
@@ -2417,6 +2508,11 @@ const Router = {
       if (STATE.view === 'trip')  return Router.go('trips');
       if (STATE.view === 'perfil')return Router.go('trips');
     };
+    // Limpiar slot de acciones del topbar — cada vista lo rellena si lo necesita.
+    const extras = document.getElementById('topbar-extras');
+    if (extras) extras.innerHTML = '';
+    // Quitar/poner clase del body para que el CSS sepa la vista activa
+    document.body.classList.toggle('view-trip', STATE.view === 'trip');
 
     root.classList.remove('fade');
     root.style.animation = 'none'; root.offsetHeight; root.style.animation = '';
@@ -2511,8 +2607,12 @@ const ProfilePicker = {
     STATE.profile = profileId;
     localStorage.setItem('viajes_profile', profileId);
     SYNC.init();
+    // Pull en background — no bloquea la entrada a la app.
+    // Cuando termine, llama a Router.render() para que aparezcan los datos remotos.
     if (SYNC.enabled) {
-      try { await SYNC.pullAll(); } catch (e) { console.warn('pull inicial', e); }
+      SYNC.pullAll()
+        .then(() => { try { Router.render(); } catch (_) {} })
+        .catch(e => console.warn('pull inicial', e));
     }
     await Router.go('trips');
   },
@@ -3152,33 +3252,44 @@ const TripDetail = {
     title.textContent = t.name;
     root.innerHTML = '';
 
-    // Header con foto/dest + edit
-    const headerCard = el('div', { class:'card', style:{ overflow:'hidden' } });
-    const cover = el('div', { class:'trip-card-cover', style:{ height:'180px' } });
-    if (t.cover_blob_id) {
-      const img = el('img', { src:'', alt:'', loading:'lazy', decoding:'async', width:'1100', height:'360',
-        onerror: function(){ this.remove(); } });
-      MediaCache.urlFor(t.cover_blob_id).then(url => { if (url) img.src = url; else img.remove(); });
-      cover.appendChild(img);
-    } else if (t.cover_photo_url) {
-      cover.appendChild(el('img', { src: t.cover_photo_url, alt:'', loading:'lazy', decoding:'async',
-        width:'1100', height:'360', onerror: function(){ this.remove(); } }));
+    // Acciones (Editar / PDF / Compartir) → inyectadas en el topbar como icon-btn
+    // junto a perfil/buscar/etc. Más limpio en móvil que un bloque grande dentro de la vista.
+    const extras = document.getElementById('topbar-extras');
+    if (extras) {
+      extras.innerHTML = '';
+      if (canEdit()) {
+        extras.appendChild(el('button', {
+          class:'icon-btn', title:'Editar viaje', 'aria-label':'Editar viaje',
+          onclick: () => Trips.openTripEditor(t), html: svg('edit')
+        }));
+      }
+      if (canSeeDocs()) {
+        extras.appendChild(el('button', {
+          class:'icon-btn', title:'Exportar PDF', 'aria-label':'Exportar PDF',
+          onclick: () => Exporter.tripToPdf(t), html: svg('pdf')
+        }));
+      }
+      if (canEdit()) {
+        extras.appendChild(el('button', {
+          class:'icon-btn', title:'Compartir viaje', 'aria-label':'Compartir viaje',
+          onclick: () => Exporter.openShareSheet(t), html: svg('external')
+        }));
+      }
     }
-    cover.appendChild(el('div', { class:'trip-card-name', text: t.name }));
-    cover.appendChild(el('div', { class:'trip-card-meta' }, [
-      t.start_date && t.end_date ? `${fmtDateShort(t.start_date)} – ${fmtDateShort(t.end_date)}` : 'Sin fechas',
-      el('span', { class:'sep', text:'•' }),
-      statusDays(t),
+
+    // Subtítulo compacto al estilo Apple: fechas + estado + destino, sin foto.
+    // El nombre del viaje ya está en el topbar — no repetimos.
+    const subDates = (t.start_date && t.end_date)
+      ? `${fmtDateShort(t.start_date)} – ${fmtDateShort(t.end_date)}` : 'Sin fechas';
+    const destStr = [t.city, t.country].filter(Boolean).join(', ');
+    root.appendChild(el('div', { class:'trip-detail-sub' }, [
+      el('div', { class:'trip-detail-sub-line1', text: subDates }),
+      el('div', { class:'trip-detail-sub-line2' }, [
+        el('span', { text: statusDays(t) }),
+        destStr ? el('span', { class:'sep', text:' · ' }) : null,
+        destStr ? el('span', { text: destStr }) : null,
+      ].filter(Boolean)),
     ]));
-    headerCard.appendChild(cover);
-    const headerActions = el('div', { style:{ padding:'12px 16px', display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap' } }, [
-      el('div', { class:'muted', style:{flex:'1', fontSize:'13px', minWidth:'150px'}, text:[t.city,t.country].filter(Boolean).join(', ') || '—' }),
-      canEdit() ? el('button', { class:'btn btn-sm', onclick: () => Trips.openTripEditor(t) }, [ el('span', { html: svg('edit')}), 'Editar' ]) : null,
-      canSeeDocs() ? el('button', { class:'btn btn-sm', onclick: () => Exporter.tripToPdf(t) }, [ el('span', { html: svg('pdf')}), 'PDF' ]) : null,
-      canEdit() ? el('button', { class:'btn btn-sm', onclick: () => Exporter.openShareSheet(t) }, [ el('span', { html: svg('external')}), 'Compartir' ]) : null,
-    ].filter(Boolean));
-    headerCard.appendChild(headerActions);
-    root.appendChild(headerCard);
 
     // Banner modo lector
     if (isReadonly()) {
@@ -3343,6 +3454,14 @@ const TripDetail = {
     const dayNotes = await DB.listByTrip('day_notes', t.id);
     const noteMap = {};
     dayNotes.forEach(n => noteMap[n.date] = n);
+    // Mapa planning_item_id → budget vinculado, para mostrar el importe en la card.
+    try {
+      const budgets = await DB.listByTrip('budget_items', t.id);
+      this._budgetByPlanningId = {};
+      for (const b of budgets) {
+        if (b.planning_item_id) this._budgetByPlanningId[b.planning_item_id] = b;
+      }
+    } catch (_) { this._budgetByPlanningId = {}; }
 
     // === Expansión de hoteles con rango ===
     // Un hotel con check-in y check-out distintos genera:
@@ -3377,13 +3496,13 @@ const TripDetail = {
     // Orden global: por día asc, luego virtuales/hoteles según planningCompare.
     items.sort((a,b) => (a.day_date || '').localeCompare(b.day_date || '') || planningCompare(a, b));
 
-    // Toolbar con botón "Añadir parada"
-    if (canEdit()) {
-      root.appendChild(el('div', { class:'toolbar' }, [
-        el('button', { class:'btn btn-primary', onclick: () => TripDetail.openPlanningEditor(t) }, [
-          el('span', { html: svg('plus') }), 'Añadir parada'
-        ]),
-      ]));
+    // FAB flotante "+" en la esquina inferior derecha en lugar de un botón inline.
+    // Más limpio en móvil y permite ver el listado completo sin que reste altura.
+    if (canEdit() && fab) {
+      fab.hidden = false;
+      fab.title = 'Añadir parada';
+      fab.setAttribute('aria-label', 'Añadir parada');
+      fab.onclick = () => TripDetail.openPlanningEditor(t);
     }
 
     // Chips de filtro
@@ -3576,6 +3695,17 @@ const TripDetail = {
           const eur = +(it.consultation_price * rate).toFixed(2);
           priceStr += ` (~ ${fmtMoney(eur, 'EUR')})`;
         }
+      }
+      subParts.push(priceStr);
+    }
+    // Importe asociado (budget_item vinculado por planning_item_id) — para tipos sin status
+    // (lugar/playa/comida) y también como fallback cuando hay budget pero no estado en_consulta.
+    const linkedBudget = this._budgetByPlanningId?.[it.id];
+    if (linkedBudget && status !== 'en_consulta' && canSeeMoney() && !isVirtual) {
+      const cur = linkedBudget.currency || 'EUR';
+      let priceStr = fmtMoney(linkedBudget.amount, cur);
+      if (cur !== 'EUR' && linkedBudget.amount_eur) {
+        priceStr += ` (~ ${fmtMoney(linkedBudget.amount_eur, 'EUR')})`;
       }
       subParts.push(priceStr);
     }
@@ -3957,8 +4087,17 @@ const TripDetail = {
     UI.openSheet({ title:'Nota del día', body, footer:[delBtn, el('button',{ class:'btn btn-ghost', onclick:() => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean) });
   },
 
-  openPlanningEditor(t, existing=null) {
+  async openPlanningEditor(t, existing=null) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    // Busca un budget_item vinculado a este planning_item (lo hubo o no).
+    // Sirve para precargar el importe en el editor y para no duplicar al guardar.
+    let linkedBudget = null;
+    if (existing?.id) {
+      try {
+        const all = await DB.listByTrip('budget_items', t.id);
+        linkedBudget = all.find(b => b.planning_item_id === existing.id) || null;
+      } catch (_) {}
+    }
     const it = existing || {
       id: uuid(), trip_id: t.id, type:'lugar',
       day_date: t.start_date || todayIso(), time:'', title:'',
@@ -4402,10 +4541,12 @@ const TripDetail = {
       el('div', { class:'form-row', id:'f-amount-row' }, [
         el('label', { text:'Importe asociado (crea gasto)' }),
         el('div', { class:'form-grid-2' }, [
-          el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00', value:'' }),
-          el('input', { id:'f-cur', type:'text', placeholder:t.default_currency || 'EUR', value: t.default_currency || 'EUR' }),
+          el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00',
+            value: linkedBudget ? String(linkedBudget.amount) : '' }),
+          el('input', { id:'f-cur', type:'text', placeholder:t.default_currency || 'EUR',
+            value: linkedBudget ? (linkedBudget.currency || t.default_currency || 'EUR') : (t.default_currency || 'EUR') }),
         ]),
-        el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado".' }),
+        el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado". Vacíalo a 0 para eliminarlo.' }),
       ]),
     ]);
     setTimeout(() => {
@@ -4514,9 +4655,26 @@ const TripDetail = {
         if (!collect()) return;
         await DB.put('planning_items', it);
         if (!it.in_consultation) {
-          const amt = parseFloat($('#f-amount').value);
-          const cur = ($('#f-cur').value.trim() || 'EUR').toUpperCase();
-          if (!isNaN(amt) && amt > 0) {
+          const amtRaw = ($('#f-amount').value || '').trim();
+          const amt = parseFloat(amtRaw);
+          const cur = (($('#f-cur').value || '').trim() || 'EUR').toUpperCase();
+          if (linkedBudget) {
+            if (amtRaw === '' || isNaN(amt) || amt <= 0) {
+              // Usuario borró el importe → eliminamos el budget vinculado
+              await DB.remove('budget_items', linkedBudget.id);
+            } else {
+              // Actualizamos el existente (mismo id, no duplica)
+              const rate = FX.rateToEur(cur) ?? 1;
+              linkedBudget.amount = amt;
+              linkedBudget.currency = cur;
+              linkedBudget.rate_to_eur = rate;
+              linkedBudget.amount_eur = +(amt * rate).toFixed(2);
+              linkedBudget.concept = it.title;
+              linkedBudget.date = it.day_date;
+              await DB.put('budget_items', linkedBudget);
+            }
+          } else if (!isNaN(amt) && amt > 0) {
+            // No había budget vinculado y el usuario ha puesto importe → crear nuevo
             const rate = FX.rateToEur(cur) ?? 1;
             await DB.put('budget_items', {
               id: uuid(), trip_id: t.id, planning_item_id: it.id,
@@ -4557,19 +4715,29 @@ const TripDetail = {
     });
   },
 
-  // Marca/desmarca un item del planning como "visto". Persistencia + re-render.
+  // Marca/desmarca un item del planning como "visto". Persistencia + actualización
+  // visual local sin re-render — así no se pierde la posición de scroll.
   async toggleVisited(it) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
     it.visited = !it.visited;
     it.visited_at = it.visited ? new Date().toISOString() : null;
     try {
       await DB.put('planning_items', it);
+      // Buscar la card en el DOM por su data-id y togglear las clases / botón.
+      const card = document.querySelector(`.timeline-item[data-id="${CSS.escape(it.id)}"]`);
+      if (card) {
+        card.classList.toggle('visited', !!it.visited);
+        const btn = card.querySelector('.li-actions button[aria-pressed]');
+        if (btn) {
+          btn.classList.toggle('btn-visited-on', !!it.visited);
+          btn.setAttribute('aria-pressed', it.visited ? 'true' : 'false');
+          btn.setAttribute('title', it.visited ? 'Marcar como no visto' : 'Marcar como visto');
+        }
+      }
       UI.toast(it.visited ? 'Marcado como visto' : 'Sin marcar');
-      Router.render();
     } catch (e) {
       console.warn('toggleVisited', e);
-      // Revert si la persistencia falla
-      it.visited = !it.visited;
+      it.visited = !it.visited; // revert estado en memoria
       UI.toast('No se pudo guardar');
     }
   },
