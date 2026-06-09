@@ -436,8 +436,12 @@ h2.section-title {
   pointer-events:none;
   z-index:1; /* el degradado va POR ENCIMA de la imagen, no detrás */
 }
-/* El texto y el badge de estado van encima del degradado */
-.trip-card-cover > *:not(img) { position:relative; z-index:2; }
+/* El texto y el badge de estado van encima del degradado (z-index:2). Explícitos
+   por componente para no depender de la generalización con :not(img), que en algunos
+   contextos no se aplicaba bien por orden de selectores. */
+.trip-card-cover .trip-card-name,
+.trip-card-cover .trip-card-meta { position:relative; z-index:2; }
+.trip-card-cover .trip-card-status { z-index:2; }
 
 .trip-card-status {
   position:absolute; top:14px; left:14px; z-index:2;
