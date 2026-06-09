@@ -2047,6 +2047,19 @@ const DB = {
         } catch (_) {}
         await db.put('_meta', { key:'mig_ruben_ascii', value:true });
       } catch (e) { if (e !== 'skip') console.warn('Migración perfil ASCII falló:', e); }
+
+      // Migración: resetear last_sync_* a 1970 para forzar un pull completo desde Supabase.
+      // Necesario porque cada dispositivo guardó last_sync ANTES de que el otro empezara
+      // a empujar rows, así que las filas viejas (entre devices) quedaban excluidas
+      // del filtro gt(updated_at, since). Esto restaura la coherencia.
+      try {
+        const done = await db.get('_meta', 'mig_reset_lastsync_v1');
+        if (done) throw 'skip';
+        for (const prof of ['ruben','sergio','invitado']) {
+          await db.delete('_meta', 'last_sync_' + prof).catch(() => {});
+        }
+        await db.put('_meta', { key:'mig_reset_lastsync_v1', value:true });
+      } catch (e) { if (e !== 'skip') console.warn('Reset last_sync falló:', e); }
     };
     // Versión 5: añade store 'media' para fotos locales (cover, etc.).
     // Race contra timeout: si openDB tarda más de 10s (otra pestaña bloqueando, migración colgada…),
@@ -2266,7 +2279,12 @@ const SYNC = {
 
   async pullAll() {
     if (!this.enabled || !STATE.profile) return;
-    const since = (await DB.meta('last_sync_' + STATE.profile)) || '1970-01-01T00:00:00.000Z';
+    // Restamos 60s al `since` por seguridad: cubre clock-drift entre cliente y servidor.
+    // Si no hay last_sync previo, usamos 1970 para traer todo desde cero.
+    const sinceRaw = await DB.meta('last_sync_' + STATE.profile);
+    const since = sinceRaw
+      ? new Date(Date.parse(sinceRaw) - 60_000).toISOString()
+      : '1970-01-01T00:00:00.000Z';
     // Para tablas con `profile`: filtramos por profile directo.
     // Para tablas hijas: confiamos en la RLS de Supabase (la cabecera x-app-profile lo restringe).
     for (const t of DB.STORES) {
