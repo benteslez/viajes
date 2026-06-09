@@ -419,7 +419,14 @@ h2.section-title {
 }
 .trip-card-cover::after {
   content:''; position:absolute; inset:0;
-  background:linear-gradient(to top, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 60%);
+  /* Degradado oscuro inferior — más intenso para que el título (blanco) sea legible
+     incluso sobre fotos claras o de cielo. Stop intermedio para una curva más natural
+     y evitar el corte duro del tope. */
+  background:linear-gradient(to top,
+    rgba(0,0,0,.80) 0%,
+    rgba(0,0,0,.55) 30%,
+    rgba(0,0,0,.15) 65%,
+    rgba(0,0,0,0)   100%);
   pointer-events:none;
 }
 .trip-card-cover > * { position:relative; z-index:1; }
