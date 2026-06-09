@@ -2049,16 +2049,17 @@ const DB = {
       } catch (e) { if (e !== 'skip') console.warn('Migración perfil ASCII falló:', e); }
 
       // Migración: resetear last_sync_* a 1970 para forzar un pull completo desde Supabase.
-      // Necesario porque cada dispositivo guardó last_sync ANTES de que el otro empezara
-      // a empujar rows, así que las filas viejas (entre devices) quedaban excluidas
-      // del filtro gt(updated_at, since). Esto restaura la coherencia.
+      // V2: se vuelve a ejecutar ahora que el bug de `amount_eur` (columna generated)
+      // está arreglado y la cola por fin puede vaciarse. La V1 corrió cuando los pushes
+      // aún estaban rotos, así que el dispositivo que la ejecutó pudo terminar sin
+      // ver datos del otro.
       try {
-        const done = await db.get('_meta', 'mig_reset_lastsync_v1');
+        const done = await db.get('_meta', 'mig_reset_lastsync_v2');
         if (done) throw 'skip';
         for (const prof of ['ruben','sergio','invitado']) {
           await db.delete('_meta', 'last_sync_' + prof).catch(() => {});
         }
-        await db.put('_meta', { key:'mig_reset_lastsync_v1', value:true });
+        await db.put('_meta', { key:'mig_reset_lastsync_v2', value:true });
       } catch (e) { if (e !== 'skip') console.warn('Reset last_sync falló:', e); }
     };
     // Versión 5: añade store 'media' para fotos locales (cover, etc.).
@@ -2543,6 +2544,21 @@ const UI = {
       catch (e) { console.warn(e); UI.toast('Falló — vuelve a abrir el detalle'); }
     }}, 'Reintentar');
 
+    // Forzar pull desde cero — borra last_sync y trae todo lo que haya en Supabase.
+    // Útil cuando los dispositivos llevan datos divergentes y no se reconcilian.
+    const forcePullBtn = el('button', { class:'btn', onclick: async () => {
+      try {
+        UI.closeSheet();
+        UI.toast('Trayendo todos los datos…');
+        await DB.db.delete('_meta', 'last_sync_' + STATE.profile).catch(() => {});
+        SYNC._setStatus('syncing');
+        await SYNC.pullAll();
+        SYNC._setStatus('idle');
+        UI.toast('Pull completo OK');
+        Router.render();
+      } catch (e) { console.warn(e); UI.toast('Falló — revisa la consola'); }
+    }}, 'Pull completo');
+
     const clearBtn = el('button', { class:'btn btn-danger', onclick: async () => {
       if (!confirm('¿Vaciar la cola de cambios pendientes? Los datos locales NO se borran; quedará todo sin enviar a Supabase hasta que vuelvas a editar algo.')) return;
       try {
@@ -2561,6 +2577,7 @@ const UI = {
       footer: [
         el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'),
         clearBtn,
+        forcePullBtn,
         retryBtn,
       ],
     });
