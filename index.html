@@ -2273,7 +2273,20 @@ const SYNC = {
 
   async _upsert(table, record) {
     if (!this.client) return;
-    const { error } = await this.client.from(table).upsert(record, { onConflict: 'id' });
+    // Algunas columnas en Supabase son GENERATED (calculadas por la DB) o derivadas
+    // y no admiten valores enviados desde el cliente. Las quitamos antes del upsert.
+    // Si no hacemos esto, Postgres rechaza con "cannot insert a non-DEFAULT value into column …"
+    // y la cola se atasca.
+    const GENERATED_BY_TABLE = {
+      budget_items: ['amount_eur'],
+    };
+    const drop = GENERATED_BY_TABLE[table];
+    let payload = record;
+    if (drop && drop.length) {
+      payload = { ...record };
+      drop.forEach(k => { delete payload[k]; });
+    }
+    const { error } = await this.client.from(table).upsert(payload, { onConflict: 'id' });
     if (error) throw error;
   },
 
