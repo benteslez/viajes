@@ -382,6 +382,18 @@ h2.section-title {
 .resumen-day-date {
   color:var(--text-muted); font-size:13px; font-weight:500;
   text-transform:capitalize; margin-bottom:10px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+/* Chip de clima (clima por día) — junto a la fecha y en cabeceras del planning. */
+.wx-chip {
+  font-size:12px; font-weight:600; color:var(--text);
+  font-feature-settings:"tnum"; white-space:nowrap;
+  text-transform:none; letter-spacing:0;
+}
+.wx-chip:empty { display:none; }
+.day-head .wx-chip {
+  background:var(--bg-soft); border:1px solid var(--line);
+  padding:2px 8px; border-radius:var(--r-pill);
 }
 .resumen-day-empty {
   color:var(--text-muted); font-size:14px;
@@ -899,6 +911,19 @@ h2.section-title {
   color:var(--accent); letter-spacing:-.005em;
 }
 
+/* Importador local: bloque plegable para pegar una reserva y autocompletar */
+.paste-import {
+  border:1px solid var(--line); border-radius:var(--r-md);
+  background:var(--bg-soft); padding:10px 12px; margin-bottom:16px;
+}
+.paste-import > summary {
+  cursor:pointer; font-weight:600; font-size:13.5px; color:var(--accent);
+  display:flex; align-items:center; gap:7px; list-style:none;
+}
+.paste-import > summary::-webkit-details-marker { display:none; }
+.paste-import > summary svg { width:16px; height:16px; }
+.paste-import textarea { width:100%; min-height:90px; resize:vertical; margin-top:4px; }
+
 /* Selector de estado en el editor — pill segmentado vertical con color por opción */
 .status-picker {
   display:grid; gap:8px;
@@ -1007,6 +1032,21 @@ h2.section-title {
   box-shadow:var(--sh-1);
 }
 @media (max-width:719px) { .map-container { height:320px; } }
+
+/* Mini-mapa del día (Resumen) — paradas numeradas + ruta */
+.day-map {
+  width:100%; height:260px; margin-top:14px;
+  border-radius:var(--r-md); overflow:hidden;
+  border:1px solid var(--line); box-shadow:var(--sh-1);
+}
+.day-map-pin { background:transparent; border:none; }
+.day-map-pin span {
+  display:flex; align-items:center; justify-content:center;
+  width:26px; height:26px; border-radius:50%;
+  background:#2563eb; color:#fff; font-weight:700; font-size:13px;
+  border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.45);
+  font-family:var(--font-ui);
+}
 .leaflet-container { font-family:var(--font-ui) !important; }
 
 /* ========================================================================
@@ -1025,6 +1065,46 @@ h2.section-title {
 .metric .label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
 .metric .value { font-feature-settings:"tnum","ss01"; font-weight:700; font-size:22px; margin-top:4px; letter-spacing:-.02em; }
 .metric .sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+
+/* Barra "Próximo evento" con cuenta atrás — arriba del Resumen, pegajosa al hacer scroll. */
+.next-event {
+  position:sticky; top:8px; z-index:6;
+  display:flex; align-items:center; gap:12px;
+  padding:12px 14px; margin-bottom:18px;
+  border-radius:var(--r-md); cursor:pointer;
+  background:linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 16%, var(--bg-elev)),
+    color-mix(in srgb, var(--accent-2, var(--accent)) 10%, var(--bg-elev)));
+  border:1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  box-shadow:var(--sh-1);
+  transition:transform .15s var(--ease), box-shadow .15s var(--ease);
+}
+.next-event:hover { transform:translateY(-1px); box-shadow:var(--sh-2, var(--sh-1)); }
+.next-event .ne-emoji { font-size:22px; flex-shrink:0; line-height:1; }
+.next-event .ne-main { display:flex; flex-direction:column; min-width:0; flex:1; gap:1px; }
+.next-event .ne-tag {
+  font-size:10px; text-transform:uppercase; letter-spacing:.07em; font-weight:700;
+  color:var(--accent);
+}
+.next-event .ne-title {
+  font-weight:700; font-size:14.5px; letter-spacing:-.01em; color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.next-event .ne-count {
+  flex-shrink:0; font-weight:700; font-size:13.5px;
+  font-feature-settings:"tnum"; white-space:nowrap; color:var(--text);
+  background:color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  padding:4px 10px; border-radius:var(--r-pill);
+}
+.next-event .ne-bell {
+  flex-shrink:0; display:inline-flex; align-items:center; justify-content:center;
+  width:34px; height:34px; border-radius:50%;
+  background:var(--bg-elev); border:1px solid var(--line); color:var(--accent);
+  cursor:pointer; transition:background .15s var(--ease);
+}
+.next-event .ne-bell:hover { background:var(--bg-soft); }
+.next-event .ne-bell svg { width:17px; height:17px; }
 
 /* Pills de reservas de hoy — mismo aspecto que las métricas (.metric) pero con
    fondo coloreado según el estado del planning. Clicables. */
@@ -2111,6 +2191,187 @@ const mealLabel = (time) => {
   if (mins >= 1110 && mins <= 1380) return 'Cena';     // 18:30–23:00
   return 'Restaurante';
 };
+
+// Momento principal de un planning item como Date, o null si no tiene hora precisa.
+// Hotel → check-in (consultation_planned_d1 + t1, por defecto 15:00).
+const itemDateTime = (it) => {
+  let d = it.day_date, tm = it.time;
+  if (it.type === 'hotel') { d = it.consultation_planned_d1 || it.day_date; tm = it.consultation_planned_t1 || '15:00'; }
+  if (!d) return null;
+  const hhmm = (tm && /^\d{1,2}:\d{2}/.test(tm)) ? tm.slice(0,5) : null;
+  if (!hhmm) return null;            // sin hora no hay cuenta atrás precisa
+  const dt = new Date(`${d}T${hhmm}:00`);
+  return isNaN(dt.getTime()) ? null : dt;
+};
+// Próximo evento (con hora) cuyo momento es >= fromTs. Adjunta ._ts.
+const nextTimedEvent = (items, fromTs = Date.now()) => {
+  let best = null, bestTs = Infinity;
+  for (const it of items) {
+    const dt = itemDateTime(it);
+    if (!dt) continue;
+    const ts = dt.getTime();
+    if (ts >= fromTs && ts < bestTs) { best = it; bestTs = ts; }
+  }
+  if (best) best._ts = bestTs;
+  return best;
+};
+// Cuenta atrás (ms) → "en 2 d 3 h", "en 3 h 5 min", "en 12 min", "ahora".
+const fmtCountdown = (ms) => {
+  if (ms <= 0) return 'ahora';
+  const totalMin = Math.floor(ms / 60000);
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
+  const m = totalMin % 60;
+  if (d >= 1) return `en ${d} d${h ? ' ' + h + ' h' : ''}`;
+  if (h >= 1) return `en ${h} h${m ? ' ' + m + ' min' : ''}`;
+  if (m >= 1) return `en ${m} min`;
+  return 'en menos de 1 min';
+};
+
+// === Clima (Open-Meteo — gratis, sin clave). Códigos WMO → emoji. ===
+const WMO_EMOJI = {
+  0:'☀️', 1:'🌤️', 2:'⛅', 3:'☁️', 45:'🌫️', 48:'🌫️',
+  51:'🌦️', 53:'🌦️', 55:'🌦️', 56:'🌧️', 57:'🌧️',
+  61:'🌧️', 63:'🌧️', 65:'🌧️', 66:'🌧️', 67:'🌧️',
+  71:'🌨️', 73:'🌨️', 75:'❄️', 77:'🌨️',
+  80:'🌦️', 81:'🌧️', 82:'⛈️', 85:'🌨️', 86:'❄️',
+  95:'⛈️', 96:'⛈️', 99:'⛈️',
+};
+const weatherEmoji = (code) => WMO_EMOJI[code] ?? '🌡️';
+const Weather = {
+  _mem: {},
+  // Devuelve { 'YYYY-MM-DD': {code,max,min,rain} } para unas coords. Cachea en memoria
+  // (3 h) y en IndexedDB (offline-first: si no hay red, usa el último guardado).
+  async forCoords(lat, lng) {
+    if (lat == null || lng == null) return {};
+    const key = `${(+lat).toFixed(2)},${(+lng).toFixed(2)}`;
+    if (this._mem[key] && Date.now() - this._mem[key].ts < 3 * 3600 * 1000) return this._mem[key].daily;
+    let entry = null;
+    if (navigator.onLine) {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}`
+          + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max`
+          + `&timezone=auto&past_days=1&forecast_days=16`;
+        const j = await (await fetch(url, { signal: AbortSignal.timeout(6000) })).json();
+        const daily = {};
+        (j?.daily?.time || []).forEach((d, i) => {
+          daily[d] = {
+            code: j.daily.weather_code[i],
+            max: Math.round(j.daily.temperature_2m_max[i]),
+            min: Math.round(j.daily.temperature_2m_min[i]),
+            rain: j.daily.precipitation_probability_max?.[i] ?? null,
+          };
+        });
+        entry = { ts: Date.now(), daily };
+        this._mem[key] = entry;
+        try { await DB.meta('wx_' + key, entry); } catch (_) {}
+      } catch (_) {}
+    }
+    if (!entry) { try { const c = await DB.meta('wx_' + key); if (c) { this._mem[key] = c; entry = c; } } catch (_) {} }
+    return entry?.daily || {};
+  },
+  // Texto compacto para un día: "⛅ 24°/14° · 💧40%"
+  chipText(w) {
+    if (!w) return null;
+    const rain = (w.rain != null && w.rain >= 30) ? ` · 💧${w.rain}%` : '';
+    return `${weatherEmoji(w.code)} ${w.max}°/${w.min}°${rain}`;
+  },
+};
+// Coordenadas representativas de un viaje: primera parada con lat/lng.
+const tripCoords = (planningItems) => {
+  const p = (planningItems || []).find(i => i.lat != null && i.lng != null);
+  return p ? { lat: p.lat, lng: p.lng } : null;
+};
+
+// === Parser LOCAL de reservas (sin IA, sin coste). Reconoce vuelos, hoteles y
+// transportes pegando el texto de un email de confirmación y extrae lo que puede. ===
+const ReservationParser = {
+  MONTHS: { ene:1,jan:1, feb:2, mar:3, abr:4,apr:4, may:5, jun:6, jul:7, ago:8,aug:8, sep:9, oct:10, nov:11, dic:12,dec:12 },
+  _dates(text) {
+    const found = [];
+    const add = (idx, y, m, d) => {
+      y = +y; m = +m; d = +d; if (y < 100) y += 2000;
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31) found.push({ idx, iso:`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}` });
+    };
+    let m, re;
+    re = /(\d{4})-(\d{2})-(\d{2})/g;                       while ((m = re.exec(text))) add(m.index, m[1], m[2], m[3]);
+    re = /\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})\b/g;      while ((m = re.exec(text))) add(m.index, m[3], m[2], m[1]);
+    re = /\b(\d{1,2})\s*(?:de\s+)?([a-záéíóú]{3,12})\.?\s*(?:de\s+)?(\d{4})\b/gi;
+    while ((m = re.exec(text))) { const mo = this.MONTHS[m[2].toLowerCase().slice(0,3)]; if (mo) add(m.index, m[3], mo, m[1]); }
+    found.sort((a,b) => a.idx - b.idx);
+    const seen = new Set(), out = [];
+    for (const f of found) if (!seen.has(f.iso)) { seen.add(f.iso); out.push(f.iso); }
+    return out;
+  },
+  _times(text) {
+    const out = []; let m, re = /\b([01]?\d|2[0-3]):([0-5]\d)\b/g;
+    while ((m = re.exec(text))) out.push(`${String(+m[1]).padStart(2,'0')}:${m[2]}`);
+    return out;
+  },
+  parse(raw) {
+    if (!raw || raw.trim().length < 4) return null;
+    const text = String(raw).replace(/ /g, ' ');
+    const low = text.toLowerCase();
+    const out = { metadata: {} };
+    const dates = this._dates(text);
+    const times = this._times(text);
+
+    const isHotel  = /\b(hotel|check[\s-]?in|check[\s-]?out|alojamiento|habitaci[oó]n|noches?|booking\.com|airbnb)\b/.test(low);
+    const isTrain  = /\b(tren|renfe|ave|iryo|ouigo|avlo|eurostar|ferry|bus|flixbus|alsa|trenitalia|sncf)\b/.test(low);
+    const route    = text.match(/\b([A-Z]{3})\s*(?:[-–—>→]|\/|\s+a\s+|\s+to\s+)\s*([A-Z]{3})\b/);
+    const flightNo = text.match(/\b([A-Z]{2})\s?-?\s?(\d{2,4})\b/);
+    const looksFlight = /\b(vuelo|flight|boarding|aerol[ií]nea|airline|terminal|puerta|gate|pasabordo|embarque)\b/.test(low) || (!!route && !!flightNo);
+
+    let type;
+    if (isHotel && !looksFlight) type = 'hotel';
+    else if (looksFlight)        type = 'vuelo';
+    else if (isTrain)            type = 'transporte';
+    else if (route)              type = 'vuelo';
+    else return null;
+
+    const loc = text.match(/\b(?:localizador|c[oó]digo de reserva|pnr|booking ref(?:erence)?|confirmation(?: (?:code|number))?|reference)\b[:#\s-]*([A-Z0-9]{5,8})\b/i);
+    if (loc) out.metadata.localizador = loc[1].toUpperCase();
+
+    const seatM = text.match(/\b(?:asientos?|seats?|plaza)\b[:#\s-]*((?:\d{1,2}[A-K])(?:\s*[,/y o&+]+\s*\d{1,2}[A-K])*)/i);
+    if (seatM) {
+      const seats = seatM[1].match(/\d{1,2}[A-K]/gi) || [];
+      if (seats.length) out.metadata.asientos = seats.map(s => ({ nombre:'', asiento: s.toUpperCase() }));
+    }
+
+    if (type === 'vuelo' || type === 'transporte') {
+      if (route) { out.metadata.origen = route[1].toUpperCase(); out.metadata.destino = route[2].toUpperCase(); }
+      if (flightNo) out.metadata.numero = (flightNo[1] + flightNo[2]).toUpperCase();
+      const cap = s => s.replace(/\b\w/g, c => c.toUpperCase());
+      const air = low.match(/\b(iberia|vueling|ryanair|air europa|easyjet|lufthansa|avianca|latam|american|delta|united|emirates|qatar|klm|air france|tap|wizz air|norwegian|british airways)\b/);
+      if (type === 'vuelo' && air) out.metadata.aerolinea = cap(air[1]);
+      const comp = low.match(/\b(renfe|iryo|ouigo|avlo|eurostar|trenitalia|sncf|alsa|flixbus)\b/);
+      if (type === 'transporte' && comp) out.metadata.compania = cap(comp[1]);
+      if (dates[0]) out.day_date = dates[0];
+      if (times[0]) out.time = times[0];
+      const o = out.metadata.origen, d = out.metadata.destino;
+      out.label = `${typeDef(type).label}${o && d ? ' ' + o + '-' + d : ''}`;
+      out.title = (type === 'vuelo' ? 'Vuelo' : 'Transporte')
+        + (out.metadata.numero ? ' ' + out.metadata.numero : '')
+        + (o && d ? ' ' + o + '-' + d : '');
+    } else { // hotel
+      const nameM = text.match(/\b(?:hotel|hostal|aparthotel|apartamento|resort)\b[^\n,;:·]{0,45}/i);
+      if (nameM) {
+        let nm = nameM[0].trim().replace(/\s+/g, ' ')
+          .replace(/\s+(check[\s-]?in|check[\s-]?out|reserva|fecha|noches?|confirmaci|\d).*$/i, '')
+          .replace(/[.\s]+$/, '');
+        if (nm) { out.place_name = nm; out.metadata.nombre = nm; }
+      }
+      if (dates[0]) { out.checkin = dates[0]; out.day_date = dates[0]; }
+      if (dates[1]) out.checkout = dates[1];
+      if (times[0]) out.checkinTime = times[0];
+      if (times[1]) out.checkoutTime = times[1];
+      out.label = 'Hotel';
+      out.title = out.place_name || 'Hotel';
+    }
+    out.type = type;
+    return out;
+  },
+};
 // Formato medio inequívoco: "vie 2 ago" (con día de la semana corto delante).
 // Antes era solo "2 ago", que se confundía con "hace 2".
 const fmtDateShort = (iso) => fmtDate(iso, {weekday:'short', day:'numeric', month:'short'});
@@ -2515,25 +2776,47 @@ const SYNC = {
     if (!all.length) { this._setStatus('idle'); return; }
 
     this._setStatus('syncing');
+    let blocked = false;   // error transitorio (red…) → parar y reintentar luego
+    let skipped = 0;       // filas con error permanente → se dejan en cola sin bloquear al resto
     for (const item of all) {
       try {
         await this._upsert(item.table, item.record);
         await DB.db.delete('_pending', item.id);
       } catch (e) {
-        console.warn('sync upsert error', item.table, e);
-        // Guardamos detalle del error para enseñarlo en el pill
         this.lastError = `[${item.table}] ` + (e?.message || e?.error_description || JSON.stringify(e).slice(0, 400));
         this.lastErrorTable = item.table;
+        if (this._isPermanentRowError(e)) {
+          // Esta fila no pasará hasta que cambie el esquema remoto (p. ej. un CHECK que no
+          // contempla un valor nuevo). La dejamos en cola pero seguimos con el resto del
+          // lote para no bloquear todo. Volverá a intentarse en el próximo flush.
+          console.warn('sync: fila rechazada (permanente), se omite del lote', item.table, e);
+          skipped++;
+          continue;
+        }
+        // Error transitorio (red, 5xx…): paramos y reintentamos en el próximo flush.
+        console.warn('sync upsert error (transitorio)', item.table, e);
         this._setStatus('error');
-        return;
+        blocked = true;
+        break;
       }
     }
+    if (blocked) return;                              // ya en estado error
+    if (skipped > 0) { this._setStatus('error'); return; }  // el resto sí se subió; queda el error visible
     // Si llegamos aquí, todo fue OK
     this.lastError = null;
     this.lastErrorTable = null;
     // pull tras el push
     try { await this.pullAll(); } catch (e) { console.warn('pull', e); }
     this._setStatus(navigator.onLine ? 'idle' : 'offline');
+  },
+
+  // ¿Error de fila que no se resolverá reintentando (constraint/valor inválido)?
+  // Distingue de los transitorios (red) para no bloquear toda la cola por una fila mala.
+  _isPermanentRowError(e) {
+    const code = String((e && (e.code || e.error_code)) || '');
+    if (/^(22|23)/.test(code)) return true;          // data exception / integrity constraint (Postgres)
+    const msg = String(e?.message || e?.error_description || '').toLowerCase();
+    return /violates|check constraint|invalid input|foreign key|not-null|out of range|value too long|duplicate key/.test(msg);
   },
 
   async _upsert(table, record) {
@@ -2687,6 +2970,7 @@ const ICONS = {
   heart:   '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
   grip:    '<circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
   clock:   '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  bell:    '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   note:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
   eye:     '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   lock:    '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
@@ -4300,6 +4584,8 @@ const TripDetail = {
 
   /* ----- Resumen ----- */
   async tabResumen(root, t) {
+    clearInterval(TripDetail._neTimer);   // parar cuenta atrás de un render anterior
+    if (STATE.dayLeaflet) { try { STATE.dayLeaflet.remove(); } catch (_) {} STATE.dayLeaflet = null; }
     const planning = await DB.listByTrip('planning_items', t.id);
     const budget   = await DB.listByTrip('budget_items', t.id);
     const packing  = await DB.listByTrip('packing_items', t.id);
@@ -4307,6 +4593,47 @@ const TripDetail = {
     const totalEur  = budget.reduce((a,b) => a + (Number(b.amount_eur) || (Number(b.amount)||0) * (Number(b.rate_to_eur)||1)), 0);
     const paidEur   = budget.filter(b => b.status === 'pagado').reduce((a,b) => a + (Number(b.amount_eur) || 0), 0);
     const packDone  = packing.filter(p => p.checked).length;
+
+    // === Barra "Próximo evento" con cuenta atrás en vivo ===
+    // Próximo planning item con hora (vuelo, hotel check-in, comida…) aún por venir.
+    const nextEv = nextTimedEvent(planning);
+    if (nextEv) {
+      const td = typeDef(nextEv.type);
+      const s = TripDetail._reservationSummary(nextEv) || { emoji: td.emoji, label: td.label, value: nextEv.title };
+      const titleTxt = `${s.label}${s.value ? ' · ' + s.value : ''}`;
+      const canNotify = ('Notification' in window) && Notification.permission !== 'granted' && canEdit();
+      const bar = el('div', { class:'next-event', id:'next-event-bar',
+        title:'Abrir esta parada',
+        onclick: () => TripDetail.openPlanningEditor(t, nextEv) }, [
+        el('span', { class:'ne-emoji', 'aria-hidden':'true', text: s.emoji || '📌' }),
+        el('div', { class:'ne-main' }, [
+          el('span', { class:'ne-tag', text:'Próximo' }),
+          el('span', { class:'ne-title', text: titleTxt }),
+        ]),
+        el('span', { class:'ne-count', id:'ne-count', text: fmtCountdown(nextEv._ts - Date.now()) }),
+        canNotify ? el('button', { class:'ne-bell', title:'Activar avisos', 'aria-label':'Activar avisos',
+          onclick: async (e) => {
+            e.stopPropagation();
+            try {
+              const p = await Notification.requestPermission();
+              if (p === 'granted') { Notifications.scheduleAll(); UI.toast('Avisos activados'); Router.render(); }
+              else UI.toast('Permiso de notificaciones denegado');
+            } catch (_) { UI.toast('No se pudieron activar'); }
+          } }, el('span', { html: svg('bell') })) : null,
+      ].filter(Boolean));
+      root.appendChild(bar);
+      // Cuenta atrás en vivo (cada segundo). Al llegar a 0, re-render para avanzar al siguiente.
+      TripDetail._neTimer = setInterval(() => {
+        const span = document.getElementById('ne-count');
+        if (!span) { clearInterval(TripDetail._neTimer); return; }
+        const rem = nextEv._ts - Date.now();
+        span.textContent = fmtCountdown(rem);
+        if (rem <= 0) {
+          clearInterval(TripDetail._neTimer);
+          setTimeout(() => { if (STATE.currentTab === 'resumen' && STATE.view === 'trip') Router.render(); }, 1500);
+        }
+      }, 1000);
+    }
 
     // Rejilla de métricas (Días / Planning / Presupuesto / Maleta). Se construye ya,
     // pero su posición depende de si el viaje está en curso (ver más abajo).
@@ -4343,7 +4670,7 @@ const TripDetail = {
     // Reservas de HOY como pills (mismo aspecto que las métricas, con color por estado).
     // Solo aparecen si las hay. Clicables → abren los detalles de la parada.
     const todayResv = TripDetail._expandHotels(planning)
-      .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad','comida','compras'].includes(i.type))
+      .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad'].includes(i.type))
       .sort(planningCompare);
     if (todayResv.length) {
       root.appendChild(el('h2', { class:'section-title', text:'Reservas de hoy' }));
@@ -4406,12 +4733,30 @@ const TripDetail = {
           }, 'Mañana'),
         ]),
       ]));
-      root.appendChild(el('div', { class:'resumen-day-date', text: fmtDayLong(targetDate) }));
+      root.appendChild(el('div', { class:'resumen-day-date' }, [
+        el('span', { text: fmtDayLong(targetDate) }),
+        el('span', { class:'wx-chip', id:'wx-day-chip' }),
+      ]));
+      // Clima del día seleccionado (async, no bloquea el render).
+      const wxCoords = tripCoords(planning);
+      if (wxCoords) {
+        Weather.forCoords(wxCoords.lat, wxCoords.lng).then(daily => {
+          const txt = Weather.chipText(daily[targetDate]);
+          const span = document.getElementById('wx-day-chip');
+          if (span && txt) span.textContent = txt;
+        }).catch(() => {});
+      }
 
       if (dayItems.length) {
         const list = el('div', { class:'list timeline-list' });
         dayItems.forEach(it => list.appendChild(TripDetail._planningItem(it, t)));
         root.appendChild(list);
+        // Mapa del día: paradas con coordenadas, numeradas en orden + ruta a pie.
+        const mapPts = dayItems.filter(i => i.lat != null && i.lng != null);
+        if (mapPts.length) {
+          root.appendChild(el('div', { class:'day-map', id:'day-map-container' }));
+          TripDetail._renderDayMap('day-map-container', dayItems);
+        }
       } else {
         root.appendChild(el('div', { class:'resumen-day-empty', text: view === 'manana'
           ? 'No hay nada planificado para mañana.'
@@ -4512,6 +4857,37 @@ const TripDetail = {
       return { label:'Compras', emoji:'🛍️', value: it.place_name || it.title || 'Compras', sub: time, resvUrl: null, mapsUrl: walkUrl };
     }
     return null;
+  },
+
+  // Mini-mapa del día: paradas con coordenadas, numeradas en orden + ruta (línea).
+  // `items` ya viene ordenado cronológicamente.
+  _renderDayMap(containerId, items) {
+    const pts = items.filter(i => i.lat != null && i.lng != null);
+    setTimeout(() => {
+      if (STATE.dayLeaflet) { try { STATE.dayLeaflet.remove(); } catch (_) {} STATE.dayLeaflet = null; }
+      const cont = document.getElementById(containerId);
+      if (!cont || !pts.length || typeof L === 'undefined') return;
+      const map = L.map(containerId, { scrollWheelZoom:false });
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+      const latlngs = [];
+      const markers = pts.map((p, i) => {
+        const ll = [p.lat, p.lng];
+        latlngs.push(ll);
+        const icon = L.divIcon({ className:'day-map-pin', html:`<span>${i + 1}</span>`, iconSize:[26,26], iconAnchor:[13,13] });
+        const m = L.marker(ll, { icon });
+        const s = TripDetail._reservationSummary(p);
+        const name = (s && s.value) || p.place_name || p.title || '';
+        const gm = gmapsWalkUrl(p.lat, p.lng, p.address) || gmapsUrl(p.lat, p.lng);
+        m.bindPopup(`<b>${i + 1}. ${escHtml(name)}</b>${p.time ? '<br>' + escHtml(p.time) : ''}${gm ? `<br><a href="${gm}" target="_blank" rel="noopener">Cómo llegar a pie</a>` : ''}`);
+        return m;
+      });
+      const group = L.featureGroup(markers).addTo(map);
+      if (latlngs.length > 1) {
+        L.polyline(latlngs, { color:'#2563eb', weight:3, opacity:.65, dashArray:'6 7' }).addTo(map);
+      }
+      try { map.fitBounds(group.getBounds().pad(0.25)); } catch (_) { map.setView(latlngs[0], 14); }
+      STATE.dayLeaflet = map;
+    }, 60);
   },
 
   _bookingSub(b) {
@@ -4642,6 +5018,7 @@ const TripDetail = {
       const head = el('div', { class:'day-head' }, [
         dayNum ? el('span', { class:'day-num', text:`Día ${dayNum}` }) : null,
         el('span', { class:'day-date', text: k === 'sin-fecha' ? 'Sin fecha' : fmtDayLong(k) }),
+        k !== 'sin-fecha' ? el('span', { class:'wx-chip', id:`wx-${k}` }) : null,
         // Pill del título del día — solo si está rellenado
         (dayMeta && dayMeta.title) ? el('span', {
           class: 'day-title-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''),
@@ -4678,6 +5055,19 @@ const TripDetail = {
     }
 
     setTimeout(() => TripDetail._wirePlanningDnD(root, t), 0);
+
+    // Clima por día (async, no bloquea): rellena los chips de cada cabecera.
+    const wxCoords = tripCoords(rawItems);
+    if (wxCoords) {
+      Weather.forCoords(wxCoords.lat, wxCoords.lng).then(daily => {
+        for (const k of keys) {
+          if (k === 'sin-fecha') continue;
+          const txt = Weather.chipText(daily[k]);
+          const span = document.getElementById(`wx-${k}`);
+          if (span && txt) span.textContent = txt;
+        }
+      }).catch(() => {});
+    }
   },
 
   _planningItem(it, t) {
@@ -5554,7 +5944,40 @@ const TripDetail = {
       borderBlock.appendChild(el('div', { class:'field-hint', text:'Verde = sitio seguro; amarillo = dudoso/a mover; rojo = quitar o no visto. Solo se colorea el borde.' }));
     };
 
+    // --- Importador local: pegar el texto de una confirmación y autocompletar ---
+    const applyParsed = () => {
+      const txt = document.getElementById('paste-import-text')?.value || '';
+      const parsed = ReservationParser.parse(txt);
+      if (!parsed || !parsed.type) { UI.toast('No reconocí los datos. Rellena a mano.'); return; }
+      const fType = document.getElementById('f-type');
+      if (fType) fType.value = parsed.type;
+      it.type = parsed.type;
+      it.metadata = Object.assign({}, it.metadata, parsed.metadata || {});
+      if (parsed.day_date) it.day_date = parsed.day_date;
+      if (parsed.checkin)  { it.consultation_planned_d1 = parsed.checkin;  if (parsed.checkinTime)  it.consultation_planned_t1 = parsed.checkinTime; }
+      if (parsed.checkout) { it.consultation_planned_d2 = parsed.checkout; if (parsed.checkoutTime) it.consultation_planned_t2 = parsed.checkoutTime; }
+      if (parsed.type === 'vuelo' || parsed.type === 'transporte') { if (parsed.day_date) it.consultation_planned_d1 = it.consultation_planned_d1 || parsed.day_date; if (parsed.time) it.consultation_planned_t1 = it.consultation_planned_t1 || parsed.time; }
+      // Re-render de todo lo dependiente del tipo (recrea inputs leyendo de `it`).
+      renderConsultationDates(); renderStatusPicker(); refreshTimeVisibility();
+      refreshHotelDatesVisibility(); refreshTzVisibility(); renderMetadata();
+      refreshPlaceVisibility(); refreshStandaloneTime(); renderBorderPicker();
+      const setV = (id, v) => { const e = document.getElementById(id); if (e && v != null && v !== '') e.value = v; };
+      if (parsed.title)      setV('f-title', parsed.title);
+      if (parsed.day_date)   setV('f-day', parsed.day_date);
+      if (parsed.time)       { setV('f-time', parsed.time); setV('f-time-alt', parsed.time); }
+      if (parsed.place_name) setV('f-place', parsed.place_name);
+      UI.toast(`Detectado: ${parsed.label || typeDef(parsed.type).label}`);
+    };
+
     const body = el('div', {}, [
+      el('details', { class:'paste-import' }, [
+        el('summary', {}, [ el('span', { html: svg('download') }), ' Pegar una reserva y autocompletar' ]),
+        el('p', { class:'field-hint', style:{margin:'8px 0'}, text:'Pega el texto de un email/confirmación de vuelo, hotel o tren. Detecto tipo, ruta, nº, fechas, hora, asientos y localizador (lo que encuentre). Revisa siempre antes de guardar.' }),
+        el('textarea', { id:'paste-import-text', rows:'4', placeholder:'Ej: Vuelo AV9899 BOG-MAD 11/06/2026 20:35h · Localizador ABC123 · Asientos 25J, 25K' }),
+        el('div', { style:{marginTop:'8px'} }, [
+          el('button', { type:'button', class:'btn btn-sm btn-primary', onclick: applyParsed }, [ el('span', { html: svg('check') }), 'Analizar y autocompletar' ]),
+        ]),
+      ]),
       el('div', { class:'form-grid-2' }, [
         el('div', { class:'form-row' }, [
           el('label', { text:'Tipo' }),
@@ -5759,6 +6182,7 @@ const TripDetail = {
           }
         }
         UI.toast('Guardado');
+        try { Notifications.scheduleAll(); } catch (_) {}   // reprogramar avisos del planning
       } catch (err) { console.error(err); UI.toast('Error al guardar'); }
       finally { UI.closeSheet(); Router.render(); }
     }}, 'Guardar');
@@ -7158,7 +7582,7 @@ const PerfilView = {
       root.appendChild(el('h2', { class:'section-title', text:'Notificaciones' }));
       const perm = Notification.permission;
       root.appendChild(el('p', { class:'muted', style:{marginBottom:'8px'},
-        text: perm === 'granted' ? 'Activadas. Te avisaré 30/7/1 días antes de cada viaje y de la caducidad de tus documentos.'
+        text: perm === 'granted' ? 'Activadas. Te avisaré antes de cada viaje (30/7/1 días), de tus eventos del planning (vuelos, hoteles, comidas…) y de la caducidad de tus documentos. Nota: los avisos solo saltan con la app abierta o recién minimizada (ver más abajo).'
             : perm === 'denied' ? 'Bloqueadas en el navegador. Cámbialo en los permisos del sitio.'
             : 'No activadas. Pulsa el botón para concederlas.' }));
       if (perm !== 'granted') {
@@ -7924,6 +8348,34 @@ const Notifications = {
           this._timers.push(setTimeout(() => {
             try { new Notification('Viajes — caducidad', { body:`Tu ${doc.type} caduca en ${d} día${d>1?'s':''}.`, icon:'icons/icon-192.png', tag:`doc-${doc.id}-${d}` }); } catch (_) {}
           }, delay));
+        }
+      }
+    }
+
+    // Eventos del planning (vuelos, hoteles, comidas, actividades…) próximos.
+    // Minutos de antelación por tipo. Solo se programan si la app sigue abierta.
+    const REMIND_MIN = {
+      vuelo:[1440,180,60], transporte:[1440,180,60], coche:[180,60],
+      hotel:[180,60], actividad:[120,30], comida:[60,15], compras:[60],
+    };
+    for (const t of trips) {
+      let items = [];
+      try { items = await DB.listByTrip('planning_items', t.id); } catch (_) {}
+      for (const it of items) {
+        if (itemStatus(it) === 'cancelado') continue;     // no avisar de algo cancelado
+        const dt = itemDateTime(it); if (!dt) continue;
+        const mins = REMIND_MIN[it.type]; if (!mins) continue;
+        const ts = dt.getTime();
+        const s = TripDetail._reservationSummary(it);
+        const emoji = (s && s.emoji) || typeDef(it.type).emoji || '📌';
+        const label = s ? `${s.label}${s.value ? ' · ' + s.value : ''}` : (it.title || typeDef(it.type).label);
+        for (const m of mins) {
+          const delay = (ts - m * 60000) - now;
+          if (delay > 0 && delay < MAX_MS) {
+            this._timers.push(setTimeout(() => {
+              try { new Notification('Viajes', { body:`${emoji} ${label} · ${fmtCountdown(m * 60000)}`, icon:'icons/icon-192.png', tag:`pi-${it.id}-${m}` }); } catch (_) {}
+            }, delay));
+          }
         }
       }
     }
