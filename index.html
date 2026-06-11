@@ -374,6 +374,22 @@ h2.section-title {
 }
 .segmented button.active { background:var(--bg-elev); color:var(--text); box-shadow:var(--sh-1); }
 
+/* Resumen — toggle Hoy/Mañana del planning del día */
+.resumen-day-head {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; flex-wrap:wrap; margin:26px 0 4px;
+}
+.resumen-day-date {
+  color:var(--text-muted); font-size:13px; font-weight:500;
+  text-transform:capitalize; margin-bottom:10px;
+}
+.resumen-day-empty {
+  color:var(--text-muted); font-size:14px;
+  padding:18px; text-align:center;
+  background:var(--bg-soft); border:1px dashed var(--line);
+  border-radius:var(--r-md);
+}
+
 .dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 .dot-curso { background:var(--status-curso); }
 .dot-prep  { background:var(--status-prep); }
@@ -485,6 +501,64 @@ h2.section-title {
   color:var(--text-muted); font-size:13px;
   min-width:0; word-break:break-word; overflow-wrap:break-word;
 }
+
+/* Confirmación del viaje — tiñe la franja inferior (foot) de la tarjeta.
+   null → blanco/elev (sin clase). confirmado → verde, dudoso → naranja,
+   cancelado → rojo. Mismo lenguaje de color que los estados de planning. */
+.trip-card.conf-confirmado .trip-card-foot {
+  background:color-mix(in srgb, #34d399 16%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #10b981 45%, var(--line-soft));
+}
+.trip-card.conf-dudoso .trip-card-foot {
+  background:color-mix(in srgb, #fbbf24 18%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #f59e0b 50%, var(--line-soft));
+}
+.trip-card.conf-aplazado .trip-card-foot {
+  background:color-mix(in srgb, #c084fc 16%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #a855f7 48%, var(--line-soft));
+}
+.trip-card.conf-cancelado .trip-card-foot {
+  background:color-mix(in srgb, #f87171 16%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #ef4444 50%, var(--line-soft));
+}
+.trip-card.conf-cancelado .trip-card-name { text-decoration:line-through; }
+.trip-card.conf-sin_fecha .trip-card-foot {
+  background:color-mix(in srgb, #e879f9 16%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #e879f9 48%, var(--line-soft));
+}
+
+/* Motivo (solo cancelado/aplazado) — franja de texto bajo el foot, mismo tinte. */
+.trip-card-reason {
+  padding:11px 18px 13px;
+  font-family:var(--font-ui);
+  font-size:12.5px; line-height:1.4;
+  display:flex; gap:6px; flex-wrap:wrap;
+  border-top:1px solid var(--line-soft);
+}
+.trip-card-reason-label { font-weight:700; flex-shrink:0; }
+.trip-card-reason-text { color:var(--text); opacity:.85; word-break:break-word; overflow-wrap:break-word; min-width:0; }
+.trip-card.conf-aplazado .trip-card-reason {
+  background:color-mix(in srgb, #c084fc 16%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #a855f7 28%, var(--line-soft));
+}
+.trip-card.conf-aplazado .trip-card-reason-label { color:#7e22ce; }
+.trip-card.conf-cancelado .trip-card-reason {
+  background:color-mix(in srgb, #f87171 16%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #ef4444 28%, var(--line-soft));
+}
+.trip-card.conf-cancelado .trip-card-reason-label { color:#b91c1c; }
+.trip-card.conf-sin_fecha .trip-card-reason {
+  background:color-mix(in srgb, #e879f9 16%, var(--bg-elev));
+  border-top-color:color-mix(in srgb, #e879f9 28%, var(--line-soft));
+}
+.trip-card.conf-sin_fecha .trip-card-reason-label { color:#a21caf; }
+:root[data-tema="oscuro"] .trip-card.conf-aplazado .trip-card-reason-label { color:#d8b4fe; }
+:root[data-tema="oscuro"] .trip-card.conf-cancelado .trip-card-reason-label { color:#fca5a5; }
+:root[data-tema="oscuro"] .trip-card.conf-sin_fecha .trip-card-reason-label { color:#f5b8fb; }
+
+/* Dots de los chips de filtro Aplazados / Cancelados */
+.dot-aplazado { background:#a855f7; }
+.dot-cancelado { background:#ef4444; }
 
 /* Toggle "en preparación" */
 .switch {
@@ -854,6 +928,14 @@ h2.section-title {
 .status-picker .opt.s-en_consulta.active { border-color:#3b82f6; background:color-mix(in srgb, #60a5fa 12%, var(--bg-elev)); }
 .status-picker .opt.s-confirmado.active  { border-color:#10b981; background:color-mix(in srgb, #34d399 12%, var(--bg-elev)); }
 .status-picker .opt.s-cancelado.active   { border-color:#ef4444; background:color-mix(in srgb, #f87171 12%, var(--bg-elev)); }
+.status-picker .opt.s-dudoso   .dot { background:#f59e0b; }
+.status-picker .opt.s-aplazado .dot { background:#a855f7; }
+.status-picker .opt.s-sin_fecha .dot { background:#e879f9; }
+.status-picker .opt.s-sin      .dot { background:var(--text-muted); }
+.status-picker .opt.s-dudoso.active   { border-color:#f59e0b; background:color-mix(in srgb, #fbbf24 14%, var(--bg-elev)); }
+.status-picker .opt.s-aplazado.active { border-color:#a855f7; background:color-mix(in srgb, #c084fc 14%, var(--bg-elev)); }
+.status-picker .opt.s-sin_fecha.active { border-color:#e879f9; background:color-mix(in srgb, #e879f9 14%, var(--bg-elev)); }
+.status-picker .opt.s-sin.active      { border-color:var(--text-muted); background:var(--bg-soft); }
 
 /* Inquiry confirmada — resaltada en verde */
 .list-item.confirmed {
@@ -943,6 +1025,46 @@ h2.section-title {
 .metric .label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
 .metric .value { font-feature-settings:"tnum","ss01"; font-weight:700; font-size:22px; margin-top:4px; letter-spacing:-.02em; }
 .metric .sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+
+/* Pills de reservas de hoy (vuelo/hotel/transporte) en el resumen.
+   Fondo coloreado según el estado del planning, igual que en el timeline. */
+.resv-grid {
+  display:grid; gap:12px;
+  grid-template-columns:repeat(1, 1fr);
+  margin-bottom:24px;
+}
+@media (min-width:560px) { .resv-grid { grid-template-columns:repeat(2, 1fr); } }
+@media (min-width:900px) { .resv-grid { grid-template-columns:repeat(3, 1fr); } }
+.resv-pill {
+  display:block; width:100%; text-align:left; cursor:pointer;
+  background:var(--bg-elev); border:1.5px solid var(--line);
+  border-radius:var(--r-md); padding:13px 15px;
+  transition:transform .15s var(--ease), box-shadow .15s var(--ease);
+  font-family:inherit; color:var(--text);
+}
+.resv-pill:hover { transform:translateY(-1px); box-shadow:var(--sh-1); }
+.resv-pill .resv-label {
+  font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:700;
+  color:var(--text-muted); display:flex; align-items:center; gap:6px;
+}
+.resv-pill .resv-emoji { font-size:14px; }
+.resv-pill .resv-main {
+  margin-top:5px; font-size:14.5px; font-weight:600; line-height:1.3;
+  letter-spacing:-.01em; word-break:break-word; overflow-wrap:break-word;
+}
+.resv-pill.status-confirmado  { border-color:color-mix(in srgb, #10b981 50%, var(--line)); background:color-mix(in srgb, #34d399 12%, var(--bg-elev)); }
+.resv-pill.status-en_consulta { border-color:color-mix(in srgb, #3b82f6 55%, var(--line)); background:color-mix(in srgb, #60a5fa 15%, var(--bg-elev)); }
+.resv-pill.status-por_iniciar { border-color:color-mix(in srgb, #f59e0b 55%, var(--line)); background:color-mix(in srgb, #fbbf24 18%, var(--bg-elev)); }
+.resv-pill.status-cancelado   { border-color:color-mix(in srgb, #ef4444 55%, var(--line)); background:color-mix(in srgb, #f87171 12%, var(--bg-elev)); }
+.resv-pill.status-confirmado  .resv-label { color:#047857; }
+.resv-pill.status-en_consulta .resv-label { color:#1e40af; }
+.resv-pill.status-por_iniciar .resv-label { color:#b45309; }
+.resv-pill.status-cancelado   .resv-label { color:#b91c1c; }
+.resv-pill.status-cancelado   .resv-main  { text-decoration:line-through; opacity:.75; }
+:root[data-tema="oscuro"] .resv-pill.status-confirmado  .resv-label { color:#6ee7b7; }
+:root[data-tema="oscuro"] .resv-pill.status-en_consulta .resv-label { color:#93c5fd; }
+:root[data-tema="oscuro"] .resv-pill.status-por_iniciar .resv-label { color:#fbbf24; }
+:root[data-tema="oscuro"] .resv-pill.status-cancelado   .resv-label { color:#fca5a5; }
 
 /* ========================================================================
    Day-group (planning)
@@ -1959,6 +2081,18 @@ const fmtDate = (iso, opts={}) => {
   return d.toLocaleDateString('es-ES', opts);
 };
 const fmtDayLong = (iso) => fmtDate(iso, {weekday:'long', day:'numeric', month:'long'});
+// Etiqueta de comida según la hora (HH:MM): desayuno / comida / merienda / cena.
+// Fuera de rango o sin hora → "Restaurante".
+const mealLabel = (time) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(time || '');
+  if (!m) return 'Restaurante';
+  const mins = (+m[1]) * 60 + (+m[2]);
+  if (mins >= 420  && mins < 720)  return 'Desayuno';  // 07:00–11:59
+  if (mins >= 720  && mins < 960)  return 'Comida';    // 12:00–15:59
+  if (mins >= 960  && mins < 1110) return 'Merienda';  // 16:00–18:29
+  if (mins >= 1110 && mins <= 1380) return 'Cena';     // 18:30–23:00
+  return 'Restaurante';
+};
 // Formato medio inequívoco: "vie 2 ago" (con día de la semana corto delante).
 // Antes era solo "2 ago", que se confundía con "hace 2".
 const fmtDateShort = (iso) => fmtDate(iso, {weekday:'short', day:'numeric', month:'short'});
@@ -2005,6 +2139,18 @@ const tripStatus = (t) => {
   return 'prep';
 };
 const statusLabel = (s) => ({curso:'En curso', prep:'En preparación', prox:'Próximo', pas:'Pasado'}[s] || s);
+// Confirmación del viaje — independiente del estado temporal. Tiñe la franja
+// inferior de la tarjeta. null (Sin definir) = blanco.
+const TRIP_CONFIRMATIONS = [
+  { id:'',           label:'Sin definir', hint:'Tarjeta en blanco',          hex:null },
+  { id:'confirmado', label:'Confirmado',  hint:'El viaje va seguro',          hex:'#10b981' },
+  { id:'dudoso',     label:'Dudoso',      hint:'Tal vez · pendiente de decidir', hex:'#f59e0b' },
+  { id:'aplazado',   label:'Aplazado',    hint:'Pospuesto para más adelante', hex:'#a855f7' },
+  { id:'cancelado',  label:'Cancelado',   hint:'Descartado o anulado',        hex:'#ef4444' },
+  { id:'sin_fecha',  label:'Sin fecha',   hint:'Plan sin fecha concreta',     hex:'#e879f9' },
+];
+// Confirmaciones que requieren un motivo (se pide y se muestra en la tarjeta).
+const CONF_NEEDS_REASON = ['cancelado', 'aplazado'];
 const statusDays = (t) => {
   const s = tripStatus(t);
   if (s === 'curso') {
@@ -3240,12 +3386,15 @@ const Trips = {
     const all = await DB.listByProfile('trips', dataProfile());
 
     // contadores por filtro
-    const groups = { todos:[], curso:[], prep:[], prox:[], pas:[] };
+    const groups = { todos:[], curso:[], prep:[], prox:[], pas:[], aplazado:[], cancelado:[] };
     const today = todayIso();
     for (const t of all) {
+      groups.todos.push(t);
+      // Cancelados y aplazados viven en su propia pestaña y se sacan de las temporales.
+      if (t.confirmation === 'cancelado') { groups.cancelado.push(t); continue; }
+      if (t.confirmation === 'aplazado')  { groups.aplazado.push(t); continue; }
       const s = tripStatus(t);
       groups[s].push(t);
-      groups.todos.push(t);
       // Si está "En preparación" pero la fecha es futura, también aparece en "Próximos"
       if (s === 'prep' && t.start_date && t.start_date > today) {
         groups.prox.push(t);
@@ -3267,6 +3416,8 @@ const Trips = {
     chips.push({id:'prep', label:'En preparación', n:groups.prep.length});
     chips.push({id:'prox', label:'Próximos', n:groups.prox.length});
     chips.push({id:'pas',  label:'Pasados', n:groups.pas.length});
+    if (groups.aplazado.length)  chips.push({id:'aplazado',  label:'Aplazados',  n:groups.aplazado.length});
+    if (groups.cancelado.length) chips.push({id:'cancelado', label:'Cancelados', n:groups.cancelado.length});
     chips.push({id:'todos',label:'Todos', n:groups.todos.length});
 
     let filtered = groups[STATE.filter] || [];
@@ -3429,11 +3580,11 @@ const Trips = {
     }
     cover.appendChild(el('div', { class:'trip-card-status' }, [ el('span', { class:`dot dot-${status}` }), statusLabel(status) ]));
     cover.appendChild(el('div', { class:'trip-card-name', text: t.name }));
-    cover.appendChild(el('div', { class:'trip-card-meta' }, [
-      fmtTripDateRange(t.start_date, t.end_date),
-      el('span', { class:'sep', text:'•' }),
-      statusDays(t),
-    ]));
+    // Sin fecha concreta: la portada no muestra un rango definitivo, solo la etiqueta.
+    const metaChildren = (t.confirmation === 'sin_fecha')
+      ? [ el('span', { text:'Fechas probables' }) ]
+      : [ fmtTripDateRange(t.start_date, t.end_date), el('span', { class:'sep', text:'•' }), statusDays(t) ];
+    cover.appendChild(el('div', { class:'trip-card-meta' }, metaChildren));
 
     const foot = el('div', { class:'trip-card-foot' });
     foot.appendChild(el('div', { class:'destino', text: dest || '—' }));
@@ -3460,10 +3611,26 @@ const Trips = {
       ]));
     }
 
+    // Franja inferior extra: fechas probables (sin_fecha) o motivo (cancelado/aplazado).
+    let reasonEl = null;
+    if (t.confirmation === 'sin_fecha') {
+      const range = (t.start_date || t.end_date) ? fmtTripDateRange(t.start_date, t.end_date) : 'por definir';
+      reasonEl = el('div', { class:'trip-card-reason' }, [
+        el('span', { class:'trip-card-reason-label', text:'Fechas probables:' }),
+        el('span', { class:'trip-card-reason-text', text: range }),
+      ]);
+    } else if (CONF_NEEDS_REASON.includes(t.confirmation) && (t.confirmation_reason || '').trim()) {
+      const cLabel = TRIP_CONFIRMATIONS.find(c => c.id === t.confirmation)?.label || '';
+      reasonEl = el('div', { class:'trip-card-reason' }, [
+        el('span', { class:'trip-card-reason-label', text: cLabel + ':' }),
+        el('span', { class:'trip-card-reason-text', text: t.confirmation_reason.trim() }),
+      ]);
+    }
+    const confClass = t.confirmation ? ` conf-${t.confirmation}` : '';
     return el('div', {
-      class:'card trip-card interactive',
+      class:`card trip-card interactive${confClass}`,
       onclick: () => Router.go('trip', { tripId: t.id, tab:'resumen' })
-    }, [ cover, foot ]);
+    }, [ cover, foot, reasonEl ].filter(Boolean));
   },
 
   // Dropdown inline con todos los controles de orden + agrupación + estado.
@@ -3555,7 +3722,7 @@ const Trips = {
       id: uuid(), profile: STATE.profile, name:'', country:'', city:'',
       cover_photo_url:'', start_date:'', end_date:'',
       in_preparation: !existing, default_currency:'EUR',
-      is_shared:false, is_multi_destino:false, notes:'',
+      is_shared:false, is_multi_destino:false, notes:'', confirmation:null,
     };
     const body = el('div', {}, [
       el('div', { class:'form-row' }, [
@@ -3575,12 +3742,69 @@ const Trips = {
       ]),
       el('div', { class:'form-grid-2' }, [
         el('div', { class:'form-row' }, [
-          el('label', { text:'Inicio' }),
+          el('label', { id:'f-start-label', text: t.confirmation === 'sin_fecha' ? 'Inicio probable' : 'Inicio' }),
           el('input', { id:'f-start', type:'date', value: t.start_date || '' }),
         ]),
         el('div', { class:'form-row' }, [
-          el('label', { text:'Fin' }),
+          el('label', { id:'f-end-label', text: t.confirmation === 'sin_fecha' ? 'Fin probable' : 'Fin' }),
           el('input', { id:'f-end', type:'date', value: t.end_date || '' }),
+        ]),
+      ]),
+      el('div', {
+        id:'f-dates-hint', class:'field-hint',
+        style:{ display: t.confirmation === 'sin_fecha' ? 'block' : 'none', marginTop:'-8px', marginBottom:'4px' },
+        text:'Viaje sin fecha concreta: estas fechas son orientativas y se mostrarán como "Fechas probables" en la tarjeta.',
+      }),
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Confirmación' }),
+        el('input', { id:'f-confirmation', type:'hidden', value: t.confirmation || '' }),
+        el('div', { class:'status-picker' }, TRIP_CONFIRMATIONS.map(c => {
+          const cls = `opt s-${c.id || 'sin'}` + ((t.confirmation || '') === c.id ? ' active' : '');
+          return el('button', {
+            type:'button', class:cls, 'data-conf':c.id,
+            onclick: (e) => {
+              const picker = e.currentTarget.parentElement;
+              picker.querySelectorAll('.opt').forEach(o => o.classList.remove('active'));
+              e.currentTarget.classList.add('active');
+              const hidden = document.getElementById('f-confirmation');
+              if (hidden) hidden.value = c.id;
+              // Mostrar/ocultar el motivo según requiera o no.
+              const wrap = document.getElementById('f-conf-reason-wrap');
+              if (wrap) {
+                const needs = CONF_NEEDS_REASON.includes(c.id);
+                wrap.style.display = needs ? 'block' : 'none';
+                const lab = document.getElementById('f-conf-reason-label');
+                if (lab && needs) lab.textContent = c.id === 'cancelado' ? 'Motivo de la cancelación' : 'Motivo del aplazamiento';
+              }
+              // Sin fecha: las fechas pasan a ser "probables".
+              const sinFecha = (c.id === 'sin_fecha');
+              const sl = document.getElementById('f-start-label');
+              const fl = document.getElementById('f-end-label');
+              const dh = document.getElementById('f-dates-hint');
+              if (sl) sl.textContent = sinFecha ? 'Inicio probable' : 'Inicio';
+              if (fl) fl.textContent = sinFecha ? 'Fin probable' : 'Fin';
+              if (dh) dh.style.display = sinFecha ? 'block' : 'none';
+            },
+          }, [
+            el('span', { class:'dot' }),
+            el('div', {}, [
+              el('div', { class:'lbl', text:c.label }),
+              el('div', { class:'h', text:c.hint }),
+            ]),
+          ]);
+        })),
+        el('div', { class:'field-hint', text:'Tiñe la franja inferior de la tarjeta: verde (confirmado), naranja (dudoso), morado (aplazado), rojo (cancelado) o magenta (sin fecha).' }),
+        // Motivo — solo visible para cancelado/aplazado. Se muestra también en la tarjeta.
+        el('div', {
+          id:'f-conf-reason-wrap',
+          style:{ display: CONF_NEEDS_REASON.includes(t.confirmation) ? 'block' : 'none', marginTop:'12px' },
+        }, [
+          el('label', {
+            id:'f-conf-reason-label',
+            style:{ display:'block', marginBottom:'6px', fontSize:'13px', fontWeight:'600' },
+            text: t.confirmation === 'aplazado' ? 'Motivo del aplazamiento' : 'Motivo de la cancelación',
+          }),
+          el('textarea', { id:'f-conf-reason', placeholder:'Ej: vuelos demasiado caros, lo movemos a primavera…' }, t.confirmation_reason || ''),
         ]),
       ]),
       el('div', { class:'form-row' }, [
@@ -3702,6 +3926,11 @@ const Trips = {
         t.is_shared = !!$('#f-shared')?.checked;
         t.is_multi_destino = !!$('#f-multi')?.checked;
         t.in_preparation = !!$('#f-prep')?.checked;
+        t.confirmation = ($('#f-confirmation')?.value || '') || null;
+        // Motivo solo para cancelado/aplazado; en el resto se limpia.
+        t.confirmation_reason = CONF_NEEDS_REASON.includes(t.confirmation)
+          ? (($('#f-conf-reason')?.value || '').trim() || null)
+          : null;
         t.notes = $('#f-notes')?.value || '';
         await DB.put('trips', t);
         UI.toast('Viaje guardado');
@@ -4066,6 +4295,72 @@ const TripDetail = {
     ].filter(Boolean);
     root.appendChild(el('div', { class:'metric-grid' }, metricCells));
 
+    const today = todayIso();
+
+    // Reservas de HOY (vuelo/hotel/transporte) como pills coloreadas por estado.
+    // Solo aparecen si las hay. Clicables → abren los detalles de la parada.
+    const todayResv = TripDetail._expandHotels(planning)
+      .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad','comida'].includes(i.type))
+      .sort(planningCompare);
+    if (todayResv.length) {
+      root.appendChild(el('h2', { class:'section-title', text:'Reservas de hoy' }));
+      const grid = el('div', { class:'resv-grid' });
+      todayResv.forEach(it => {
+        const s = TripDetail._reservationSummary(it);
+        if (!s) return;
+        const status = itemStatus(it);
+        grid.appendChild(el('button', {
+          type:'button',
+          class:'resv-pill' + (status ? ` status-${status}` : ''),
+          onclick: () => TripDetail.openPlanningEditor(t, it),
+        }, [
+          el('div', { class:'resv-label' }, [ el('span', { class:'resv-emoji', text: s.emoji }), s.label ]),
+          el('div', { class:'resv-main', text: s.text }),
+        ]));
+      });
+      root.appendChild(grid);
+    }
+
+    // Planning de Hoy / Mañana — solo si el viaje está EN CURSO (hoy dentro del rango).
+    if (t.start_date && t.end_date && t.start_date <= today && t.end_date >= today) {
+      const tomorrow = (() => { const d = parseDate(today); d.setDate(d.getDate() + 1); return d.toISOString().slice(0,10); })();
+      const view = TripDetail._resumenDayView === 'manana' ? 'manana' : 'hoy';
+      const targetDate = view === 'manana' ? tomorrow : today;
+
+      const dayItems = TripDetail._expandHotels(planning)
+        .filter(i => (i.day_date || '') === targetDate)
+        .sort(planningCompare);
+
+      // Mapa planning_item_id → budget, para mostrar importes en las paradas.
+      this._budgetByPlanningId = {};
+      for (const b of budget) { if (b.planning_item_id) this._budgetByPlanningId[b.planning_item_id] = b; }
+
+      root.appendChild(el('div', { class:'resumen-day-head' }, [
+        el('h2', { class:'section-title', style:{margin:'0'}, text:'Planning del día' }),
+        el('div', { class:'segmented resumen-day-seg' }, [
+          el('button', {
+            class: view === 'hoy' ? 'active' : '',
+            onclick: () => { TripDetail._resumenDayView = 'hoy'; Router.render(); },
+          }, 'Hoy'),
+          el('button', {
+            class: view === 'manana' ? 'active' : '',
+            onclick: () => { TripDetail._resumenDayView = 'manana'; Router.render(); },
+          }, 'Mañana'),
+        ]),
+      ]));
+      root.appendChild(el('div', { class:'resumen-day-date', text: fmtDayLong(targetDate) }));
+
+      if (dayItems.length) {
+        const list = el('div', { class:'list timeline-list' });
+        dayItems.forEach(it => list.appendChild(TripDetail._planningItem(it, t)));
+        root.appendChild(list);
+      } else {
+        root.appendChild(el('div', { class:'resumen-day-empty', text: view === 'manana'
+          ? 'No hay nada planificado para mañana.'
+          : 'No hay nada planificado para hoy.' }));
+      }
+    }
+
     // Notas
     if (t.notes) {
       root.appendChild(el('h2', { class:'section-title', text:'Notas' }));
@@ -4090,6 +4385,73 @@ const TripDetail = {
     }
   },
 
+  // Expande hoteles con rango (check-in ≠ check-out) en noches + check-out virtuales.
+  // Devuelve la lista de items lista para agrupar por day_date (sin ordenar).
+  _expandHotels(rawItems) {
+    const items = [];
+    for (const it of rawItems) {
+      const d1 = it.consultation_planned_d1;
+      const d2 = it.consultation_planned_d2;
+      if (it.type === 'hotel' && d1 && d2 && d1 < d2) {
+        let d = parseDate(d1);
+        const end = parseDate(d2);
+        while (d < end) {
+          const k = d.toISOString().slice(0,10);
+          items.push({ ...it, _virtual:'night', _isFirstNight:(k === d1), day_date:k, time:null });
+          d.setDate(d.getDate() + 1);
+        }
+        items.push({ ...it, _virtual:'checkout', day_date:d2, time: it.consultation_planned_t2 || null });
+      } else {
+        items.push(it);
+      }
+    }
+    return items;
+  },
+
+  // Resumen compacto de una reserva (vuelo/hotel/transporte) para las pills del resumen.
+  // Devuelve { label, emoji, text } o null si el tipo no aplica.
+  _reservationSummary(it) {
+    const md = it.metadata || {};
+    const code = s => (s || '').split('·')[0].trim();      // "MAD · Madrid" → "MAD"
+    const seats = Array.isArray(md.asientos)
+      ? md.asientos.map(s => s.asiento || s.nombre).filter(Boolean).join(' - ')
+      : (md.asiento || '');
+    if (it.type === 'hotel') {
+      return { label:'Alojamiento', emoji:'🏨', text: it.title || 'Hotel' };
+    }
+    if (it.type === 'vuelo') {
+      const route = (md.origen && md.destino) ? `${code(md.origen)}-${code(md.destino)}`
+                  : (md.destino ? `→ ${code(md.destino)}` : '');
+      const parts = [
+        route,
+        it.time ? it.time + 'h' : '',
+        md.numero || '',
+        seats ? 'Asientos ' + seats : '',
+      ].filter(Boolean);
+      return { label:'Vuelo', emoji:'✈️', text: parts.join(' ') || it.title || 'Vuelo' };
+    }
+    if (it.type === 'transporte') {
+      const route = (md.origen && md.destino) ? `${md.origen} - ${md.destino}` : '';
+      const parts = [
+        route,
+        it.time ? it.time + 'h' : '',
+        md.numero || '',
+        md.vagon ? 'Coche ' + md.vagon : '',
+        seats ? 'Asientos ' + seats : '',
+      ].filter(Boolean);
+      return { label:'Transporte', emoji:'🚆', text: parts.join(' ') || it.title || 'Transporte' };
+    }
+    if (it.type === 'actividad') {
+      const parts = [ it.time ? it.time + 'h' : '', it.title || 'Actividad', md.organizador || '' ].filter(Boolean);
+      return { label:'Actividad', emoji:'🎫', text: parts.join(' ') };
+    }
+    if (it.type === 'comida') {
+      const parts = [ it.time ? it.time + 'h' : '', it.title || 'Restaurante' ].filter(Boolean);
+      return { label: mealLabel(it.time), emoji:'🍽️', text: parts.join(' ') };
+    }
+    return null;
+  },
+
   _bookingSub(b) {
     const d = b.structured_data || {};
     if (b.type==='vuelo') return [d.aerolinea, d.numero, d.hora_salida].filter(Boolean).join(' · ');
@@ -4101,6 +4463,7 @@ const TripDetail = {
 
   /* ----- Planning (con timeline vertical, notas por día y D&D) ----- */
   _planningFilter: 'todo', // 'todo' | 'consulta' | 'direcciones'
+  _resumenDayView: 'hoy',  // 'hoy' | 'manana' — toggle del planning del día en el resumen
 
   async tabPlanning(root, t, fab) {
     const rawItems = await DB.listByTrip('planning_items', t.id);
@@ -4122,29 +4485,7 @@ const TripDetail = {
     //   - un "check-out" al inicio del día de check-out con la hora
     // El item original se sustituye por estos virtuales. Si solo hay una de las
     // dos fechas, o son el mismo día, el item se muestra normal.
-    const items = [];
-    for (const it of rawItems) {
-      const d1 = it.consultation_planned_d1;
-      const d2 = it.consultation_planned_d2;
-      if (it.type === 'hotel' && d1 && d2 && d1 < d2) {
-        let d = parseDate(d1);
-        const end = parseDate(d2);
-        while (d < end) {
-          const k = d.toISOString().slice(0,10);
-          items.push({
-            ...it, _virtual: 'night', _isFirstNight: (k === d1),
-            day_date: k, time: null,
-          });
-          d.setDate(d.getDate() + 1);
-        }
-        items.push({
-          ...it, _virtual: 'checkout',
-          day_date: d2, time: it.consultation_planned_t2 || null,
-        });
-      } else {
-        items.push(it);
-      }
-    }
+    const items = this._expandHotels(rawItems);
 
     // Orden global: por día asc, luego virtuales/hoteles según planningCompare.
     items.sort((a,b) => (a.day_date || '').localeCompare(b.day_date || '') || planningCompare(a, b));
