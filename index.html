@@ -924,6 +924,13 @@ h2.section-title {
 .paste-import > summary svg { width:16px; height:16px; }
 .paste-import textarea { width:100%; min-height:90px; resize:vertical; margin-top:4px; }
 
+/* Sub-etiquetas pequeñas (celdas internas de fecha/hora del editor) */
+.sub-lbl { font-size:12px; color:var(--text-muted); font-weight:500; }
+#dates-block > label { display:block; margin-bottom:6px; }
+#dates-block .form-grid-2 + .form-grid-2,
+#dates-block .form-grid-2 + .form-row,
+#dates-block .form-row + .form-row { margin-top:8px; }
+
 /* Selector de estado en el editor — pill segmentado vertical con color por opción */
 .status-picker {
   display:grid; gap:8px;
@@ -1897,9 +1904,9 @@ const PLANNING_METADATA = {
     ],
   },
   hotel: {
-    label:'Datos del hotel',
+    label:'Datos del alojamiento',
     fields: [
-      { id:'nombre',     label:'Nombre del hotel', placeholder:'Hotel Sakura', full:true },
+      { id:'nombre',     label:'Nombre del alojamiento', placeholder:'Hotel Sakura', full:true },
       { id:'habitacion', label:'Habitación',       placeholder:'Doble con vistas' },
       { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
       { id:'url',        label:'Enlace de la reserva', placeholder:'https://… (web del hotel, Drive…)', type:'url', full:true },
@@ -1976,7 +1983,7 @@ const COMMON_TIMEZONES = [
 const TYPES_PLANNING = [
   { id:'lugar',      label:'Lugar',                       requiresBooking:false, icon:'walk',   emoji:'🚶🏽‍♂️' },
   { id:'playa',      label:'Playa',                       requiresBooking:false, icon:'palm',   emoji:'🌴' },
-  { id:'hotel',      label:'Hotel',                       requiresBooking:true,  hideTime:true, endOfDay:true, icon:'hotel', emoji:'🏨' },
+  { id:'hotel',      label:'Alojamiento',                 requiresBooking:true,  hideTime:true, endOfDay:true, icon:'hotel', emoji:'🏨' },
   { id:'vuelo',      label:'Vuelo',                       requiresBooking:true,  icon:'plane',  emoji:'✈️' },
   { id:'transporte', label:'Transporte (tren, ferry…)',   requiresBooking:true,  icon:'train',  emoji:'🚆' },
   { id:'coche',      label:'Coche',                       requiresBooking:true,  icon:'car',    emoji:'🚗' },
@@ -2971,6 +2978,7 @@ const ICONS = {
   grip:    '<circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
   clock:   '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   bell:    '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+  copy:    '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   note:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
   eye:     '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   lock:    '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
@@ -4795,6 +4803,11 @@ const TripDetail = {
           d.setDate(d.getDate() + 1);
         }
         items.push({ ...it, _virtual:'checkout', day_date:d2, time: it.consultation_planned_t2 || null });
+      } else if ((it.type === 'vuelo' || it.type === 'transporte') && d1 && d2 && d2 > d1) {
+        // Vuelo/transporte que llega otro día: la salida queda en su día y añadimos
+        // una "llegada" virtual el día de llegada con su hora.
+        items.push(it);
+        items.push({ ...it, _virtual:'arrival', day_date:d2, time: it.consultation_planned_t2 || null });
       } else {
         items.push(it);
       }
@@ -5077,11 +5090,16 @@ const TripDetail = {
     const isVirtual = !!it._virtual;
     const isCheckout = it._virtual === 'checkout';
     const isNight = it._virtual === 'night';
+    const isArrival = it._virtual === 'arrival';
 
     // Título según virtual
     let displayTitle = it.title;
     if (isCheckout) displayTitle = `${it.title} — Check-out`;
     else if (isNight) displayTitle = it.title; // simple, sin sufijo
+    else if (isArrival) {
+      const dest = (it.metadata?.destino) || (it.dest_tz ? it.dest_tz.split('/').pop().replace(/_/g,' ') : '');
+      displayTitle = `Llegada${dest ? ' · ' + dest : ''}`;
+    }
 
     // Subtítulo
     const subParts = [];
@@ -5535,6 +5553,14 @@ const TripDetail = {
 
   async openPlanningEditor(t, existing=null) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    // Si llega un item VIRTUAL (noche/check-out/llegada), editamos el item BASE:
+    // quitamos las marcas y restauramos día/hora de salida/entrada.
+    if (existing && existing._virtual) {
+      existing = { ...existing };
+      delete existing._virtual; delete existing._isFirstNight;
+      existing.day_date = existing.consultation_planned_d1 || existing.day_date;
+      existing.time = typeDef(existing.type).hideTime ? null : (existing.consultation_planned_t1 || existing.time || '');
+    }
     // Busca un budget_item vinculado a este planning_item (lo hubo o no).
     // Sirve para precargar el importe en el editor y para no duplicar al guardar.
     let linkedBudget = null;
@@ -5595,72 +5621,67 @@ const TripDetail = {
       } catch (e) { console.warn(e); }
     };
 
-    // Bloque dinámico de fechas para transporte/vuelo/coche — visible SIEMPRE
-    // que aplica (no solo en modo consulta). El usuario rellena UNA vez los datos
-    // y se reutilizan al confirmar la reserva.
-    const transportDatesBlock = el('div', { id:'transport-dates', class:'form-row' });
-    const renderTransportDates = () => {
+    // === Bloque UNIFICADO de fechas/horas, arriba del editor ===
+    // - Tipos rango (alojamiento/vuelo/transporte/coche): "Desde/Hasta" (o Salida/Llegada,
+    //   Recogida/Devolución) con fecha + hora. Se guardan en consultation_planned_d1/t1/d2/t2.
+    // - Tipos puntuales (lugar/playa/comida/compras/actividad/otro): "Día" + "Hora"
+    //   (+ "Hora fin" para lugar/playa).
+    const RANGE_LABELS = {
+      hotel:      { d1:'Desde',    d2:'Hasta',      withTime:true,  hint:'El alojamiento aparece como noche al final de cada día del rango; la salida (check-out), al inicio del último día.' },
+      vuelo:      { d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
+      transporte: { d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
+      coche:      { d1:'Recogida', d2:'Devolución', withTime:false, hint:'' },
+    };
+    const datesBlock = el('div', { id:'dates-block', class:'form-row' });
+    const renderDatesBlock = () => {
       const type = $('#f-type')?.value || it.type;
-      transportDatesBlock.innerHTML = '';
-      const labels = {
-        coche:      { d1:'Recogida',     d2:'Devolución', withTime:false, header:'Fechas del alquiler' },
-        vuelo:      { d1:'Fecha salida', d2:'Fecha llegada', withTime:true, header:'Fechas del vuelo' },
-        transporte: { d1:'Salida',       d2:'Llegada', withTime:true, header:'Fechas del transporte' },
-      }[type];
-      if (!labels) { transportDatesBlock.style.display = 'none'; return; }
-      transportDatesBlock.style.display = '';
-      const d1 = it.consultation_planned_d1 || it.day_date || '';
-      const d2 = it.consultation_planned_d2 || '';
-      transportDatesBlock.appendChild(el('label', { text: labels.header }));
-      if (labels.withTime) {
-        transportDatesBlock.appendChild(el('div', { class:'form-grid-2' }, [
-          el('div', { class:'form-row' }, [ el('label',{class:'muted', style:{fontSize:'12px'}, text: labels.d1}), el('input',{id:'tr-d1', type:'date', value:d1}) ]),
-          el('div', { class:'form-row' }, [ el('label',{class:'muted', style:{fontSize:'12px'}, text:'Hora'}), el('input',{id:'tr-t1', type:'time', value: it.consultation_planned_t1 || ''}) ]),
-        ]));
-        transportDatesBlock.appendChild(el('div', { class:'form-grid-2' }, [
-          el('div', { class:'form-row' }, [ el('label',{class:'muted', style:{fontSize:'12px'}, text: labels.d2}), el('input',{id:'tr-d2', type:'date', value:d2}) ]),
-          el('div', { class:'form-row' }, [ el('label',{class:'muted', style:{fontSize:'12px'}, text:'Hora'}), el('input',{id:'tr-t2', type:'time', value: it.consultation_planned_t2 || ''}) ]),
-        ]));
+      datesBlock.innerHTML = '';
+      const R = RANGE_LABELS[type];
+      // Botón "vuelo de vuelta" solo para vuelos
+      const rf = document.getElementById('return-flight-wrap'); if (rf) rf.style.display = (type === 'vuelo') ? '' : 'none';
+      if (R) {
+        const d1 = it.consultation_planned_d1 || it.day_date || '';
+        const t1 = it.consultation_planned_t1 || '';
+        const d2 = it.consultation_planned_d2 || '';
+        const t2 = it.consultation_planned_t2 || '';
+        const inD1 = el('input', { id:'tr-d1', type:'date', value:d1 });
+        const inD2 = el('input', { id:'tr-d2', type:'date', value:d2 });
+        if (d1) inD2.min = d1;
+        const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
+        const row1 = R.withTime
+          ? el('div', { class:'form-grid-2' }, [ cell(R.d1, inD1), cell('Hora', el('input',{id:'tr-t1',type:'time',value:t1})) ])
+          : cell(R.d1, inD1);
+        const row2 = R.withTime
+          ? el('div', { class:'form-grid-2' }, [ cell(R.d2, inD2), cell('Hora', el('input',{id:'tr-t2',type:'time',value:t2})) ])
+          : cell(R.d2, inD2);
+        datesBlock.appendChild(el('label', { text:'Fechas' }));
+        datesBlock.appendChild(row1);
+        datesBlock.appendChild(row2);
+        // "Hasta" no puede ser anterior a "Desde", y al fijar "Desde" arranca ahí.
+        inD1.addEventListener('change', () => {
+          inD2.min = inD1.value || '';
+          if (inD1.value && (!inD2.value || inD2.value < inD1.value)) inD2.value = inD1.value;
+        });
+        if (R.hint) datesBlock.appendChild(el('div', { class:'field-hint', text:R.hint }));
       } else {
-        transportDatesBlock.appendChild(el('div', { class:'form-grid-2' }, [
-          el('div', { class:'form-row' }, [ el('label',{class:'muted', style:{fontSize:'12px'}, text: labels.d1}), el('input',{id:'tr-d1', type:'date', value:d1}) ]),
-          el('div', { class:'form-row' }, [ el('label',{class:'muted', style:{fontSize:'12px'}, text: labels.d2}), el('input',{id:'tr-d2', type:'date', value:d2}) ]),
-        ]));
+        const showEnd = (type === 'lugar' || type === 'playa');
+        const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
+        const cells = [
+          cell('Día', el('input', { id:'f-day', type:'date', value: it.day_date || '' })),
+          cell(showEnd ? 'Hora inicio' : 'Hora', el('input', { id:'f-time', type:'time', value: it.time || '' })),
+        ];
+        if (showEnd) cells.push(cell('Hora fin', el('input', { id:'f-end-time', type:'time', value: it.end_time || '' })));
+        datesBlock.appendChild(el('label', { text:'Fecha y hora' }));
+        datesBlock.appendChild(el('div', { class:`form-grid-${showEnd ? 3 : 2}` }, cells));
       }
     };
-    // Alias para retrocompat — la API antigua del editor (openConfirmPlanning) llama renderConsultationDates
-    const renderConsultationDates = renderTransportDates;
-
-    // Bloque "Fechas del hotel" — siempre visible cuando type=hotel, fuera del bloque de consulta.
-    // No son obligatorios; si se rellenan, el hotel aparece automáticamente en todas las noches
-    // del rango (último item del día), y el check-out aparece al inicio del último día.
-    const hotelDatesBlock = el('div', { id:'hotel-dates', class:'form-row' }, [
-      el('label', { text:'Check-in / Check-out (opcional)' }),
-      el('div', { class:'form-grid-2' }, [
-        el('div', { class:'form-row' }, [
-          el('label', { text:'Check-in' }),
-          el('input', { id:'h-d1', type:'date', value: it.consultation_planned_d1 || '' }),
-        ]),
-        el('div', { class:'form-row' }, [
-          el('label', { text:'Hora' }),
-          el('input', { id:'h-t1', type:'time', value: it.consultation_planned_t1 || '' }),
-        ]),
-      ]),
-      el('div', { class:'form-grid-2' }, [
-        el('div', { class:'form-row' }, [
-          el('label', { text:'Check-out' }),
-          el('input', { id:'h-d2', type:'date', value: it.consultation_planned_d2 || '' }),
-        ]),
-        el('div', { class:'form-row' }, [
-          el('label', { text:'Hora' }),
-          el('input', { id:'h-t2', type:'time', value: it.consultation_planned_t2 || '' }),
-        ]),
-      ]),
-      el('div', { class:'field-hint', text:'Si rellenas las fechas, el hotel aparecerá automáticamente como noche al final de cada día del rango. El check-out se mostrará al inicio del último día con su hora.' }),
-    ]);
-    const refreshHotelDatesVisibility = () => {
-      hotelDatesBlock.style.display = (($('#f-type')?.value || it.type) === 'hotel') ? '' : 'none';
-    };
+    // Alias: el resto del editor (onchange, applyParsed, init, openConfirmPlanning) llama a
+    // estos nombres antiguos. Todo lo absorbe el bloque unificado.
+    const renderTransportDates = renderDatesBlock;
+    const renderConsultationDates = renderDatesBlock;
+    const refreshHotelDatesVisibility = () => {};
+    const refreshTimeVisibility = () => {};
+    const refreshStandaloneTime = () => {};
 
     const consultaBlock = el('div', { class:'consulta-fields', id:'consulta-block' }, [
       el('h4', { text:'Datos de la consulta (opcional)' }),
@@ -5730,39 +5751,7 @@ const TripDetail = {
     // Si abre por primera vez y el tipo requiere reserva pero no tiene status, asigna por_iniciar
     if (!currentStatus && typeDef(it.type).requiresBooking) currentStatus = 'por_iniciar';
 
-    // Campo Hora: dinámico según tipo.
-    //  - Hotel → oculto entero (las horas son check-in/check-out).
-    //  - Lugar/playa → grid 2 columnas: "Hora inicio" + "Hora fin" (ambas opcionales).
-    //  - Resto → solo "Hora".
-    const fTimeInput     = el('input', { id:'f-time',     type:'time', value: it.time || '' });
-    const fEndTimeInput  = el('input', { id:'f-end-time', type:'time', value: it.end_time || '' });
-    const startCell = el('div', { class:'form-row', style:{margin:0} }, [
-      el('label', { id:'f-start-time-label', class:'muted', style:{fontSize:'12px'}, text:'Hora inicio' }),
-      fTimeInput,
-    ]);
-    const endCell = el('div', { class:'form-row', id:'f-end-time-cell', style:{margin:0} }, [
-      el('label', { class:'muted', style:{fontSize:'12px'}, text:'Hora fin (opcional)' }),
-      fEndTimeInput,
-    ]);
-    const timeGrid = el('div', { class:'form-grid-2', id:'f-time-grid' }, [startCell, endCell]);
-    const timeFieldWrap = el('div', { class:'form-row', id:'f-time-wrap' }, [
-      el('label', { id:'f-time-label', text:'Hora' }),
-      timeGrid,
-    ]);
-    const refreshTimeVisibility = () => {
-      const type = $('#f-type')?.value || it.type;
-      const td = typeDef(type);
-      timeFieldWrap.style.display = td.hideTime ? 'none' : '';
-      // Mostrar "Hora fin" sólo en lugar/playa; en el resto, ocultar la celda
-      // y dejar la "Hora" suelta ocupando todo el ancho.
-      const showEnd = (type === 'lugar' || type === 'playa');
-      endCell.style.display = showEnd ? '' : 'none';
-      timeGrid.style.gridTemplateColumns = showEnd ? '' : '1fr';
-      const lbl = $('#f-time-label'); if (lbl) lbl.textContent = showEnd ? 'Horario (opcional)' : 'Hora';
-      // Con una sola hora, la etiqueta interna "Hora inicio" sobra (ya está "Hora" arriba)
-      // y descuadra verticalmente la celda respecto a "Lugar". La ocultamos.
-      const startLbl = $('#f-start-time-label'); if (startLbl) startLbl.style.display = showEnd ? '' : 'none';
-    };
+    // (La hora puntual y "hora fin" ahora viven en el bloque unificado de fechas, arriba.)
 
     // Bloque de zonas horarias — solo para vuelo / transporte intercontinental
     const tzBlock = el('div', { id:'tz-block', class:'form-row' }, [
@@ -5869,12 +5858,9 @@ const TripDetail = {
         selectedPlaceBlock,
         el('div', { class:'field-hint', text:'Si no encuentras, escribe los campos manualmente abajo.' }),
       ]),
-      el('div', { class:'form-grid-2' }, [
-        el('div', { class:'form-row' }, [
-          el('label', { text:'Lugar' }),
-          el('input', { id:'f-place', type:'text', value: it.place_name || '' }),
-        ]),
-        timeFieldWrap,
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Lugar' }),
+        el('input', { id:'f-place', type:'text', value: it.place_name || '' }),
       ]),
       el('div', { class:'form-row' }, [
         el('label', { text:'Dirección' }),
@@ -5884,24 +5870,6 @@ const TripDetail = {
     const refreshPlaceVisibility = () => {
       const type = $('#f-type')?.value || it.type;
       placeBlock.style.display = TYPES_WITH_PLACE.includes(type) ? '' : 'none';
-    };
-
-    // timeFieldWrap independiente para tipos sin "lugar": para vuelo/coche/transporte
-    // la hora va aparte (porque tienen sus propias horas de salida/llegada).
-    const standaloneTimeWrap = el('div', { class:'form-row', id:'f-time-standalone' });
-    const refreshStandaloneTime = () => {
-      const type = $('#f-type')?.value || it.type;
-      // Para tipos sin place_block y sin hideTime, mostrar la hora suelta
-      const td = typeDef(type);
-      if (!TYPES_WITH_PLACE.includes(type) && !td.hideTime && type !== 'vuelo' && type !== 'transporte') {
-        standaloneTimeWrap.style.display = '';
-        standaloneTimeWrap.innerHTML = '';
-        standaloneTimeWrap.appendChild(el('label', { text:'Hora' }));
-        const inp = el('input', { id:'f-time-alt', type:'time', value: it.time || '' });
-        standaloneTimeWrap.appendChild(inp);
-      } else {
-        standaloneTimeWrap.style.display = 'none';
-      }
     };
 
     // Selector de color del borde (solo lugar/playa) — verde/amarillo/rojo o sin color.
@@ -5969,6 +5937,50 @@ const TripDetail = {
       UI.toast(`Detectado: ${parsed.label || typeDef(parsed.type).label}`);
     };
 
+    // --- Vuelo de vuelta: clona invirtiendo origen/destino, conserva pasajeros, compañía
+    //     y localizador, y abre un cuadro nuevo para el resto. ---
+    const buildReturnFlight = () => {
+      collect();
+      const md = it.metadata || {};
+      const ret = {
+        id: uuid(), trip_id: t.id, type:'vuelo',
+        day_date:null, time:'', title:'',
+        place_name:'', lat:null, lng:null, gmaps_url:'', address:'', notes:'', order_index:0,
+        status:'por_iniciar', in_consultation:false,
+        consultation_url:'', consultation_price:null, consultation_currency: it.consultation_currency || t.default_currency || 'EUR',
+        consultation_query_date: todayIso(),
+        consultation_planned_d1:null, consultation_planned_t1:null, consultation_planned_d2:null, consultation_planned_t2:null,
+        origin_tz: it.dest_tz || null, dest_tz: it.origin_tz || null,
+        metadata: {
+          aerolinea: md.aerolinea || '',
+          localizador: md.localizador || '',
+          url: md.url || '',
+          origen: md.destino || '',
+          destino: md.origen || '',
+          asientos: Array.isArray(md.asientos) ? md.asientos.map(s => ({ nombre: s.nombre || '', asiento:'' })).filter(s => s.nombre) : undefined,
+        },
+      };
+      UI.closeSheet();
+      setTimeout(() => TripDetail.openPlanningEditor(t, ret), 280);
+    };
+
+    // --- Duplicar: copia exacta (nuevo id) y abre un cuadro nuevo para modificar
+    //     lo que se quiera (p. ej. cambiar el día). ---
+    const duplicatePlan = () => {
+      collect();
+      const copy = JSON.parse(JSON.stringify(it));
+      copy.id = uuid();
+      copy.visited = false; copy.visited_at = null;
+      delete copy.created_at; delete copy.updated_at;
+      UI.closeSheet();
+      setTimeout(() => TripDetail.openPlanningEditor(t, copy), 280);
+    };
+
+    const returnFlightWrap = el('div', { class:'form-row', id:'return-flight-wrap', style:{display:'none'} }, [
+      el('button', { type:'button', class:'btn btn-sm', onclick: buildReturnFlight }, [ el('span', { html: svg('plane') }), 'Añadir vuelo de vuelta' ]),
+      el('div', { class:'field-hint', text:'Crea un vuelo nuevo con origen/destino invertidos y los mismos pasajeros, compañía y localizador. Rellenas fechas, nº y asientos en el cuadro nuevo.' }),
+    ]);
+
     const body = el('div', {}, [
       el('details', { class:'paste-import' }, [
         el('summary', {}, [ el('span', { html: svg('download') }), ' Pegar una reserva y autocompletar' ]),
@@ -5978,51 +5990,43 @@ const TripDetail = {
           el('button', { type:'button', class:'btn btn-sm btn-primary', onclick: applyParsed }, [ el('span', { html: svg('check') }), 'Analizar y autocompletar' ]),
         ]),
       ]),
-      el('div', { class:'form-grid-2' }, [
-        el('div', { class:'form-row' }, [
-          el('label', { text:'Tipo' }),
-          el('select', { id:'f-type', onchange: () => {
-            // Si cambia a tipo con reserva y no había status, asume por_iniciar
-            const td = typeDef($('#f-type').value);
-            if (td.requiresBooking && !currentStatus) currentStatus = 'por_iniciar';
-            if (!td.requiresBooking) currentStatus = null;
-            renderConsultationDates();
-            renderStatusPicker();
-            refreshTimeVisibility();
-            refreshHotelDatesVisibility();
-            refreshTzVisibility();
-            renderMetadata();
-            refreshPlaceVisibility();
-            refreshStandaloneTime();
-            renderBorderPicker();
-          }},
-            TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
-          ),
-        ]),
-        el('div', { class:'form-row' }, [
-          el('label', { text:'Día' }),
-          el('input', { id:'f-day', type:'date', value: it.day_date || '' }),
-        ]),
+      // Tipo (a todo el ancho) — al cambiar, se reconstruye todo lo dependiente.
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Tipo' }),
+        el('select', { id:'f-type', onchange: () => {
+          const td = typeDef($('#f-type').value);
+          if (td.requiresBooking && !currentStatus) currentStatus = 'por_iniciar';
+          if (!td.requiresBooking) currentStatus = null;
+          renderDatesBlock();
+          renderStatusPicker();
+          refreshTzVisibility();
+          renderMetadata();
+          refreshPlaceVisibility();
+          renderBorderPicker();
+        }},
+          TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
+        ),
       ]),
+      // Fechas/horas unificadas (Desde/Hasta o Día/Hora según el tipo) — arriba.
+      datesBlock,
+      // Estado
       statusRow,
+      // Título
       el('div', { class:'form-row' }, [
         el('label', { text:'Título (auto si lo dejas vacío)' }),
         el('input', { id:'f-title', type:'text', value: it.title || '' }),
       ]),
-      // Bloque metadata específica según tipo (campos dinámicos)
+      // Datos específicos del tipo (aerolínea, asientos, habitación…)
       metadataBlock,
-      // Bloque lugar + búsqueda + dirección (solo tipos con localización física)
-      placeBlock,
-      // Hora suelta para tipos sin place_block (actividad sin lugar, etc.) — raro
-      standaloneTimeWrap,
-      // Selector de color del borde (solo lugar/playa)
-      borderBlock,
-      // Fechas dinámicas del hotel (check-in/check-out + horas)
-      hotelDatesBlock,
-      // Fechas de salida/llegada/recogida/devolución para vuelo/transporte/coche
-      transportDatesBlock,
-      // Zonas horarias
+      // Acción "vuelo de vuelta" (solo vuelos)
+      returnFlightWrap,
+      // Zonas horarias (vuelo/transporte)
       tzBlock,
+      // Lugar + búsqueda + dirección (tipos con localización física)
+      placeBlock,
+      // Color del borde (solo lugar/playa)
+      borderBlock,
+      // Notas
       el('div', { class:'form-row' }, [
         el('label', { text:'Notas' }),
         el('textarea', { id:'f-notes' }, it.notes || ''),
@@ -6060,17 +6064,25 @@ const TripDetail = {
       it.title = title;
       it.type = type;
       const td = typeDef(it.type);
-      it.day_date = $('#f-day').value || null;
-      // Hora: si el tipo la oculta (hotel), no la guardamos. Si hay placeBlock usa f-time;
-      // si no, busca f-time-alt (tipos sin lugar como otro).
-      const hourSource = $('#f-time')?.value || $('#f-time-alt')?.value || '';
-      it.time = td.hideTime ? null : (hourSource || null);
-      // Hora fin: solo aplica a lugar/playa (campo opcional). Si el tipo cambia
-      // a otro y antes había end_time guardada, la limpiamos para no contaminar.
-      if (it.type === 'lugar' || it.type === 'playa') {
-        it.end_time = ($('#f-end-time')?.value || '').trim() || null;
-      } else {
+      const isRange = ['hotel','vuelo','transporte','coche'].includes(it.type);
+      if (isRange) {
+        // Bloque unificado Desde/Hasta (tr-*). El día base = salida/entrada; la hora del
+        // item = hora de salida (para vuelo/transporte). Hotel oculta la hora del item.
+        const d1 = $('#tr-d1')?.value || null;
+        const t1 = $('#tr-t1')?.value || null;
+        const d2 = $('#tr-d2')?.value || null;
+        const t2 = $('#tr-t2')?.value || null;
+        it.consultation_planned_d1 = d1;
+        it.consultation_planned_t1 = t1;
+        it.consultation_planned_d2 = d2;
+        it.consultation_planned_t2 = t2;
+        it.day_date = d1 || it.day_date || null;
+        it.time = td.hideTime ? null : (t1 || null);
         it.end_time = null;
+      } else {
+        it.day_date = $('#f-day')?.value || null;
+        it.time = td.hideTime ? null : ($('#f-time')?.value || null);
+        it.end_time = (it.type === 'lugar' || it.type === 'playa') ? (($('#f-end-time')?.value || '').trim() || null) : null;
       }
       // place_name / address: solo si el tipo los expone
       const TYPES_WITH_PLACE_LOCAL = ['lugar', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
@@ -6119,26 +6131,14 @@ const TripDetail = {
       it.in_consultation = (it.status === 'en_consulta'); // legacy compat
       // Color del borde (solo para lugar/playa)
       it.border_color = (it.type === 'lugar' || it.type === 'playa') ? (currentBorder || null) : null;
-      // Datos de consulta/reserva — siempre persistir si el tipo requiere reserva
+      // Datos de consulta/reserva (precio/enlace) — solo precio/url aquí; las fechas
+      // (consultation_planned_*) ya se han recogido arriba desde el bloque unificado.
       if (td.requiresBooking) {
         it.consultation_url = ($('#cq-url')?.value || '').trim() || null;
         it.consultation_query_date = $('#cq-date')?.value || null;
         const priceRaw = $('#cq-price')?.value;
         it.consultation_price = (priceRaw === '' || priceRaw == null) ? null : (parseFloat(priceRaw) || 0);
         it.consultation_currency = ($('#cq-cur')?.value || 'EUR').toUpperCase();
-        // Hotel: check-in/out vienen de h-d1/h-d2 (fuera del bloque consulta).
-        // Vuelo/coche/transporte: vienen de tr-d1/tr-d2 (bloque transport-dates).
-        if (it.type === 'hotel') {
-          it.consultation_planned_d1 = $('#h-d1')?.value || null;
-          it.consultation_planned_t1 = $('#h-t1')?.value || null;
-          it.consultation_planned_d2 = $('#h-d2')?.value || null;
-          it.consultation_planned_t2 = $('#h-t2')?.value || null;
-        } else if (['vuelo', 'coche', 'transporte'].includes(it.type)) {
-          it.consultation_planned_d1 = $('#tr-d1')?.value || null;
-          it.consultation_planned_t1 = $('#tr-t1')?.value || null;
-          it.consultation_planned_d2 = $('#tr-d2')?.value || null;
-          it.consultation_planned_t2 = $('#tr-t2')?.value || null;
-        }
         if (!it.day_date && it.consultation_planned_d1) it.day_date = it.consultation_planned_d1;
       }
       return true;
@@ -6205,10 +6205,14 @@ const TripDetail = {
       UI.closeSheet(); UI.toast('A papelera'); Router.render();
     }}, 'Borrar') : null;
 
+    // Duplicar — disponible al editar un evento existente.
+    const dupBtn = existing ? el('button', { class:'btn btn-ghost', onclick: duplicatePlan },
+      [ el('span', { html: svg('copy') }), 'Duplicar' ]) : null;
+
     UI.openSheet({
       title: existing ? 'Editar parada' : 'Nueva parada',
       body,
-      footer:[delBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save].filter(Boolean),
+      footer:[delBtn, dupBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save].filter(Boolean),
     });
   },
 
