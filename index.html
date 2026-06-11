@@ -1031,13 +1031,18 @@ h2.section-title {
 .resv-grid {
   display:grid; gap:14px;
   grid-template-columns:repeat(1, 1fr);
+  grid-auto-rows:1fr;          /* todas las filas igualan a la más alta */
   margin-bottom:24px;
 }
 @media (min-width:560px) { .resv-grid { grid-template-columns:repeat(2, 1fr); } }
 .resv-metric {
   cursor:pointer; text-align:left; font-family:inherit; color:var(--text);
   transition:transform .15s var(--ease), box-shadow .15s var(--ease);
+  display:flex; flex-direction:column; min-height:92px;
 }
+/* El value ocupa el espacio sobrante para que sub/acciones queden abajo y
+   todas las pills se vean del mismo alto. */
+.resv-metric .value { flex:1 0 auto; }
 .resv-metric:hover { transform:translateY(-1px); box-shadow:var(--sh-1); }
 .resv-metric .label { display:flex; align-items:center; gap:6px; font-weight:700; }
 .resv-metric .resv-emoji { font-size:13px; }
@@ -1045,6 +1050,17 @@ h2.section-title {
   font-size:18px; line-height:1.2; word-break:break-word; overflow-wrap:break-word;
 }
 .resv-metric .sub { font-feature-settings:"tnum","ss01"; }
+.resv-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:11px; }
+.resv-btn {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:6px 11px; border-radius:var(--r-pill);
+  background:var(--bg-elev); border:1px solid var(--line);
+  color:var(--text); font-size:12px; font-weight:600;
+  text-decoration:none; cursor:pointer; line-height:1;
+  transition:background .15s var(--ease), border-color .15s var(--ease);
+}
+.resv-btn:hover { background:var(--bg-soft); border-color:var(--text-muted); }
+.resv-btn svg { width:14px; height:14px; }
 .resv-metric.status-confirmado  { border-color:color-mix(in srgb, #10b981 50%, var(--line)); background:color-mix(in srgb, #34d399 12%, var(--bg-elev)); }
 .resv-metric.status-en_consulta { border-color:color-mix(in srgb, #3b82f6 55%, var(--line)); background:color-mix(in srgb, #60a5fa 15%, var(--bg-elev)); }
 .resv-metric.status-por_iniciar { border-color:color-mix(in srgb, #f59e0b 55%, var(--line)); background:color-mix(in srgb, #fbbf24 18%, var(--bg-elev)); }
@@ -1093,6 +1109,7 @@ h2.section-title {
 .dot-type.coche       { background:#ec4899; }
 .dot-type.actividad   { background:#10b981; }
 .dot-type.comida      { background:#f97316; }
+.dot-type.compras     { background:#14b8a6; }
 .dot-type.otro        { background:#64748b; }
 
 /* El círculo exterior con SVG queda oculto — ahora el icono va DENTRO de la card como emoji. */
@@ -1127,6 +1144,7 @@ h2.section-title {
 .timeline-item.type-coche      .item-emoji { background:#fce7f3; border-color:#f9a8d4; }
 .timeline-item.type-actividad  .item-emoji { background:#d1fae5; border-color:#6ee7b7; }
 .timeline-item.type-comida     .item-emoji { background:#ffedd5; border-color:#fdba74; }
+.timeline-item.type-compras    .item-emoji { background:#ccfbf1; border-color:#5eead4; }
 .timeline-item.type-otro       .item-emoji { background:#e2e8f0; border-color:#cbd5e1; }
 :root[data-tema="oscuro"] .timeline-item .item-emoji {
   background:color-mix(in srgb, var(--bg-elev) 70%, transparent);
@@ -1158,6 +1176,7 @@ h2.section-title {
 .timeline-item.type-coche      .timeline-icon { border-color:#ec4899; color:#9d174d; }
 .timeline-item.type-actividad  .timeline-icon { border-color:#10b981; color:#047857; }
 .timeline-item.type-comida     .timeline-icon { border-color:#f97316; color:#9a3412; }
+.timeline-item.type-compras    .timeline-icon { border-color:#14b8a6; color:#0f766e; }
 .timeline-item.type-otro       .timeline-icon { border-color:#64748b; color:#334155; }
 :root[data-tema="oscuro"] .timeline-item .timeline-icon { color:#e2e8f0; }
 /* Si está en estado por_iniciar/en_consulta/etc, el color del borde lo gana el estado */
@@ -1794,6 +1813,7 @@ const PLANNING_METADATA = {
       { id:'puerta',     label:'Puerta',          placeholder:'M27' },
       { id:'localizador',label:'Localizador',     placeholder:'ABC123' },
       { id:'asientos',   label:'Asientos',        type:'seats', full:true },
+      { id:'url',        label:'Enlace de la reserva', placeholder:'https://… (web aerolínea, pasabordos, Drive…)', type:'url', full:true },
     ],
   },
   hotel: {
@@ -1802,6 +1822,7 @@ const PLANNING_METADATA = {
       { id:'nombre',     label:'Nombre del hotel', placeholder:'Hotel Sakura', full:true },
       { id:'habitacion', label:'Habitación',       placeholder:'Doble con vistas' },
       { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
+      { id:'url',        label:'Enlace de la reserva', placeholder:'https://… (web del hotel, Drive…)', type:'url', full:true },
     ],
   },
   coche: {
@@ -1825,6 +1846,7 @@ const PLANNING_METADATA = {
       { id:'vagon',      label:'Coche / Vagón',    placeholder:'7' },
       { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
       { id:'asientos',   label:'Asientos',         type:'seats', full:true },
+      { id:'url',        label:'Enlace de la reserva', placeholder:'https://… (web compañía, billetes, Drive…)', type:'url', full:true },
     ],
   },
   actividad: {
@@ -1879,7 +1901,8 @@ const TYPES_PLANNING = [
   { id:'transporte', label:'Transporte (tren, ferry…)',   requiresBooking:true,  icon:'train',  emoji:'🚆' },
   { id:'coche',      label:'Coche',                       requiresBooking:true,  icon:'car',    emoji:'🚗' },
   { id:'actividad',  label:'Actividad',                   requiresBooking:true,  icon:'ticket', emoji:'🎫' },
-  { id:'comida',     label:'Comida',                      requiresBooking:false, icon:'food',   emoji:'🍽️' },
+  { id:'comida',     label:'Comida',                      requiresBooking:false, supportsStatus:true, icon:'food', emoji:'🍽️' },
+  { id:'compras',    label:'Compras',                     requiresBooking:false, supportsStatus:true, icon:'pin',  emoji:'🛍️' },
   { id:'otro',       label:'Otro',                        requiresBooking:false, icon:'pin',    emoji:'📌' },
 ];
 const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[0];
@@ -1888,9 +1911,11 @@ const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[
 // Devuelve null si el tipo no requiere reserva (lugar/comida/otro) → fondo blanco.
 const itemStatus = (it) => {
   const td = typeDef(it.type);
-  if (!td.requiresBooking) return null;
+  // Estado explícito siempre manda (vale para reservas y para comida/compras).
   if (it.status) return it.status;
-  // Migración inline: bool antiguo → status
+  // Tipos que sólo "soportan" estado (comida/compras) sin estado fijado → null (blanco).
+  if (!td.requiresBooking) return null;
+  // Reservas sin status: migración inline desde el modelo antiguo.
   if (it.in_consultation) return 'en_consulta';
   // Si tiene datos de consulta o booking implícito, asumimos confirmado
   if (it.consultation_planned_d1 || it.consultation_price != null) return 'confirmado';
@@ -2175,6 +2200,14 @@ const gmapsUrl = (lat, lng, q) => {
   }
   if (q) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
   return null;
+};
+// Indicaciones a PIE hasta un destino (coords o dirección). null si no hay ubicación.
+const gmapsWalkUrl = (lat, lng, address) => {
+  let dest = null;
+  if (lat != null && lng != null) dest = `${lat},${lng}`;
+  else if (address && address.trim()) dest = encodeURIComponent(address.trim());
+  if (!dest) return null;
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=walking`;
 };
 
 /* ============================================================
@@ -4270,7 +4303,6 @@ const TripDetail = {
     const planning = await DB.listByTrip('planning_items', t.id);
     const budget   = await DB.listByTrip('budget_items', t.id);
     const packing  = await DB.listByTrip('packing_items', t.id);
-    const bookings = await DB.listByTrip('bookings', t.id);
 
     const totalEur  = budget.reduce((a,b) => a + (Number(b.amount_eur) || (Number(b.amount)||0) * (Number(b.rate_to_eur)||1)), 0);
     const paidEur   = budget.filter(b => b.status === 'pagado').reduce((a,b) => a + (Number(b.amount_eur) || 0), 0);
@@ -4311,7 +4343,7 @@ const TripDetail = {
     // Reservas de HOY como pills (mismo aspecto que las métricas, con color por estado).
     // Solo aparecen si las hay. Clicables → abren los detalles de la parada.
     const todayResv = TripDetail._expandHotels(planning)
-      .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad','comida'].includes(i.type))
+      .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad','comida','compras'].includes(i.type))
       .sort(planningCompare);
     if (todayResv.length) {
       root.appendChild(el('h2', { class:'section-title', text:'Reservas de hoy' }));
@@ -4320,14 +4352,28 @@ const TripDetail = {
         const s = TripDetail._reservationSummary(it);
         if (!s) return;
         const status = itemStatus(it);
-        grid.appendChild(el('button', {
-          type:'button',
+        // Botones de acción: enlace de reserva (si hay url y el perfil ve enlaces) y/o
+        // Google Maps a pie (si hay dirección/coords). Cada uno solo si existe el dato.
+        const actions = [];
+        if (s.resvUrl && canSeeLinks()) {
+          actions.push(el('a', { class:'resv-btn', href: s.resvUrl, target:'_blank', rel:'noopener',
+            title:'Abrir la reserva', onclick: (e) => e.stopPropagation() },
+            [ el('span', { html: svg('link') }), 'Reserva' ]));
+        }
+        if (s.mapsUrl) {
+          actions.push(el('a', { class:'resv-btn', href: s.mapsUrl, target:'_blank', rel:'noopener',
+            title:'Cómo llegar a pie', onclick: (e) => e.stopPropagation() },
+            [ el('span', { html: svg('map') }), 'Cómo llegar' ]));
+        }
+        grid.appendChild(el('div', {
           class:'metric resv-metric' + (status ? ` status-${status}` : ''),
+          role:'button', tabindex:'0',
           onclick: () => TripDetail.openPlanningEditor(t, it),
         }, [
           el('div', { class:'label' }, [ el('span', { class:'resv-emoji', text: s.emoji }), s.label ]),
           el('div', { class:'value', text: s.value }),
           s.sub ? el('div', { class:'sub', text: s.sub }) : null,
+          actions.length ? el('div', { class:'resv-actions' }, actions) : null,
         ].filter(Boolean)));
       });
       root.appendChild(grid);
@@ -4373,8 +4419,12 @@ const TripDetail = {
       }
     }
 
-    // Viaje en curso: el resumen de métricas es menos necesario → va al final.
-    if (inProgress) root.appendChild(metricGridEl);
+    // Viaje en curso: el resumen de métricas es menos necesario → va al final,
+    // precedido de su propio título para separarlo de las reservas/planning del día.
+    if (inProgress) {
+      root.appendChild(el('h2', { class:'section-title', text:'Resumen del viaje' }));
+      root.appendChild(metricGridEl);
+    }
 
     // Notas
     if (t.notes) {
@@ -4382,22 +4432,6 @@ const TripDetail = {
       root.appendChild(el('div', { class:'card' }, el('div', { class:'card-body', text: t.notes, style:{whiteSpace:'pre-wrap'} })));
     }
 
-    // Resumen reservas
-    if (bookings.length) {
-      root.appendChild(el('h2', { class:'section-title', text:'Reservas clave' }));
-      const list = el('div', { class:'list' });
-      for (const b of bookings.slice(0, 4)) {
-        const sub = TripDetail._bookingSub(b);
-        list.appendChild(el('div', { class:'list-item' }, [
-          el('div', { html: svg(bookingIcon(b.type)) }),
-          el('div', { class:'li-main' }, [
-            el('div', { class:'li-title', text: b.type[0].toUpperCase()+b.type.slice(1) + (b.structured_data?.nombre? ' · '+b.structured_data.nombre : '') }),
-            el('div', { class:'li-sub', text: sub }),
-          ]),
-        ]));
-      }
-      root.appendChild(list);
-    }
   },
 
   // Expande hoteles con rango (check-in ≠ check-out) en noches + check-out virtuales.
@@ -4436,6 +4470,8 @@ const TripDetail = {
       ? md.asientos.map(s => s.asiento || s.nombre).filter(Boolean).join(' - ')
       : (md.asiento || '');
     const time = it.time ? it.time + 'h' : '';
+    const resvUrl = (md.url || '').trim() || null;       // enlace de la reserva (si existe)
+    const walkUrl = gmapsWalkUrl(it.lat, it.lng, it.address);  // null si no hay dirección/coords
 
     if (it.type === 'hotel') {
       const sub = [
@@ -4443,7 +4479,7 @@ const TripDetail = {
         md.habitacion || '',
         md.localizador ? 'Loc. ' + md.localizador : '',
       ].filter(Boolean).join(' · ');
-      return { label:'Alojamiento', emoji:'🏨', value: it.place_name || it.title || 'Hotel', sub };
+      return { label:'Alojamiento', emoji:'🏨', value: it.place_name || it.title || 'Hotel', sub, resvUrl, mapsUrl: walkUrl };
     }
     if (it.type === 'vuelo') {
       const ori  = code(md.origen)  || tzCity(it.origin_tz);
@@ -4451,18 +4487,18 @@ const TripDetail = {
       const route = (ori && dest) ? `${ori} - ${dest}` : (dest || ori || it.title || 'Vuelo');
       const sub = [ time, md.numero || '', md.aerolinea || '', seats ? 'Asientos ' + seats : '' ]
         .filter(Boolean).join(' · ');
-      return { label:'Vuelo', emoji:'✈️', value: route, sub };
+      return { label:'Vuelo', emoji:'✈️', value: route, sub, resvUrl, mapsUrl: null };
     }
     if (it.type === 'transporte') {
       const ori = code(md.origen), dest = code(md.destino);
       const route = (ori && dest) ? `${ori} - ${dest}` : (it.title || 'Transporte');
       const sub = [ time, md.numero || '', md.vagon ? 'Coche ' + md.vagon : '', seats ? 'Asientos ' + seats : '' ]
         .filter(Boolean).join(' · ');
-      return { label:'Transporte', emoji:'🚆', value: route, sub };
+      return { label:'Transporte', emoji:'🚆', value: route, sub, resvUrl, mapsUrl: null };
     }
     if (it.type === 'actividad') {
       const sub = [ time, md.organizador || '', md.duracion || '' ].filter(Boolean).join(' · ');
-      return { label:'Actividad', emoji:'🎫', value: it.place_name || it.title || 'Actividad', sub };
+      return { label:'Actividad', emoji:'🎫', value: it.place_name || it.title || 'Actividad', sub, resvUrl: null, mapsUrl: null };
     }
     if (it.type === 'comida') {
       let meal = mealLabel(it.time);
@@ -4470,7 +4506,10 @@ const TripDetail = {
       const name = it.place_name
         || (it.title && it.title.toLowerCase() !== 'comida' ? it.title : '')
         || 'Restaurante';
-      return { label: meal, emoji:'🍽️', value: name, sub: time };
+      return { label: meal, emoji:'🍽️', value: name, sub: time, resvUrl: null, mapsUrl: walkUrl };
+    }
+    if (it.type === 'compras') {
+      return { label:'Compras', emoji:'🛍️', value: it.place_name || it.title || 'Compras', sub: time, resvUrl: null, mapsUrl: walkUrl };
     }
     return null;
   },
@@ -5150,7 +5189,9 @@ const TripDetail = {
             it.address = p.display_name;
             it.lat = parseFloat(p.lat); it.lng = parseFloat(p.lon);
             it.gmaps_url = gmapsUrl(it.lat, it.lng);
-            const fTitle = $('#f-title'); if (fTitle) fTitle.value = it.title || it.place_name;
+            // Solo autocompletar el título desde el lugar si el campo está vacío;
+            // si el usuario ya escribió algo, respetarlo (no pisarlo con el valor previo).
+            const fTitle = $('#f-title'); if (fTitle && !fTitle.value.trim()) fTitle.value = it.place_name;
             const fPlace = $('#f-place'); if (fPlace) fPlace.value = it.place_name;
             const fAddr  = $('#f-address'); if (fAddr) fAddr.value = it.address;
             // Limpiamos el input de búsqueda para que se vea que "ha registrado" la selección
@@ -5265,18 +5306,24 @@ const TripDetail = {
     ]);
     const renderStatusPicker = () => {
       const td = typeDef($('#f-type')?.value || it.type);
-      const visible = td.requiresBooking;
-      statusRow.style.display = visible ? '' : 'none';
-      consultaBlock.style.display = visible ? '' : 'none';
-      if (!visible) return;
+      const hasStatus = td.requiresBooking || td.supportsStatus;
+      statusRow.style.display = hasStatus ? '' : 'none';
+      // El bloque de consulta/reserva (URL, precio, fechas) solo para reservas reales.
+      consultaBlock.style.display = td.requiresBooking ? '' : 'none';
+      if (!hasStatus) return;
       statusPicker.innerHTML = '';
-      STATUS_PLANNING.forEach(s => {
-        const isActive = currentStatus === s.id || (!currentStatus && s.id === 'por_iniciar');
+      // Comida/compras pueden quedar "Sin estado" (blanco). Las reservas, no.
+      const opts = (td.supportsStatus && !td.requiresBooking)
+        ? [{ id:'', label:'Sin estado', hint:'Sin color, neutro' }, ...STATUS_PLANNING]
+        : STATUS_PLANNING;
+      const defaultId = td.requiresBooking ? 'por_iniciar' : '';
+      opts.forEach(s => {
+        const isActive = (currentStatus || '') === s.id || (!currentStatus && s.id === defaultId);
         const opt = el('button', {
           type:'button',
-          class: `opt s-${s.id}` + (isActive ? ' active' : ''),
+          class: `opt s-${s.id || 'sin'}` + (isActive ? ' active' : ''),
           onclick: () => {
-            currentStatus = s.id;
+            currentStatus = s.id || null;
             renderStatusPicker();
           }
         }, [
@@ -5300,7 +5347,7 @@ const TripDetail = {
     const fTimeInput     = el('input', { id:'f-time',     type:'time', value: it.time || '' });
     const fEndTimeInput  = el('input', { id:'f-end-time', type:'time', value: it.end_time || '' });
     const startCell = el('div', { class:'form-row', style:{margin:0} }, [
-      el('label', { class:'muted', style:{fontSize:'12px'}, text:'Hora inicio' }),
+      el('label', { id:'f-start-time-label', class:'muted', style:{fontSize:'12px'}, text:'Hora inicio' }),
       fTimeInput,
     ]);
     const endCell = el('div', { class:'form-row', id:'f-end-time-cell', style:{margin:0} }, [
@@ -5322,6 +5369,9 @@ const TripDetail = {
       endCell.style.display = showEnd ? '' : 'none';
       timeGrid.style.gridTemplateColumns = showEnd ? '' : '1fr';
       const lbl = $('#f-time-label'); if (lbl) lbl.textContent = showEnd ? 'Horario (opcional)' : 'Hora';
+      // Con una sola hora, la etiqueta interna "Hora inicio" sobra (ya está "Hora" arriba)
+      // y descuadra verticalmente la celda respecto a "Lugar". La ocultamos.
+      const startLbl = $('#f-start-time-label'); if (startLbl) startLbl.style.display = showEnd ? '' : 'none';
     };
 
     // Bloque de zonas horarias — solo para vuelo / transporte intercontinental
@@ -5400,7 +5450,7 @@ const TripDetail = {
 
     // Bloque "Lugar + dirección + buscador" — útil solo para tipos con localización física
     // (lugar, comida, hotel, actividad). Vuelo/coche/transporte usan sus propios campos.
-    const TYPES_WITH_PLACE = ['lugar', 'playa', 'comida', 'hotel', 'actividad', 'otro'];
+    const TYPES_WITH_PLACE = ['lugar', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
 
     // Confirmación visual del lugar seleccionado — se refresca cuando el usuario
     // pulsa un resultado de Nominatim o cuando reabre un item con coords.
@@ -5600,7 +5650,7 @@ const TripDetail = {
         it.end_time = null;
       }
       // place_name / address: solo si el tipo los expone
-      const TYPES_WITH_PLACE_LOCAL = ['lugar', 'playa', 'comida', 'hotel', 'actividad', 'otro'];
+      const TYPES_WITH_PLACE_LOCAL = ['lugar', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
       if (TYPES_WITH_PLACE_LOCAL.includes(it.type)) {
         it.place_name = $('#f-place')?.value.trim() || null;
         it.address = $('#f-address')?.value.trim() || null;
@@ -5641,7 +5691,8 @@ const TripDetail = {
         it.origin_tz = null; it.dest_tz = null;
       }
       // Status
-      it.status = td.requiresBooking ? (currentStatus || 'por_iniciar') : null;
+      it.status = td.requiresBooking ? (currentStatus || 'por_iniciar')
+                : (td.supportsStatus ? (currentStatus || null) : null);
       it.in_consultation = (it.status === 'en_consulta'); // legacy compat
       // Color del borde (solo para lugar/playa)
       it.border_color = (it.type === 'lugar' || it.type === 'playa') ? (currentBorder || null) : null;
@@ -5700,7 +5751,7 @@ const TripDetail = {
             const rate = FX.rateToEur(cur) ?? 1;
             await DB.put('budget_items', {
               id: uuid(), trip_id: t.id, planning_item_id: it.id,
-              category: it.type === 'comida' ? 'comida' : (it.type === 'transporte' ? 'transporte' : 'actividades'),
+              category: ({comida:'comida', compras:'compras', transporte:'transporte'})[it.type] || 'actividades',
               concept, amount: amt, currency: cur,
               rate_to_eur: rate, amount_eur: +(amt * rate).toFixed(2),
               status: 'planeado', date: it.day_date,
@@ -5713,7 +5764,7 @@ const TripDetail = {
     }}, 'Guardar');
 
     // El botón Confirmar aparece si existe y su estado es por_iniciar o en_consulta
-    const confirmBtn = (existing && (currentStatus === 'en_consulta' || currentStatus === 'por_iniciar')) ? el('button', {
+    const confirmBtn = (existing && typeDef(it.type).requiresBooking && (currentStatus === 'en_consulta' || currentStatus === 'por_iniciar')) ? el('button', {
       class:'btn', style:{background:'var(--status-curso)', color:'#fff', borderColor:'transparent'},
       onclick: async () => {
         try { if (!collect()) return; await DB.put('planning_items', it); }
@@ -5845,7 +5896,7 @@ const TripDetail = {
           const rate = FX.rateToEur(currency) ?? 1;
           const budgetItem = {
             id: uuid(), trip_id: t.id, planning_item_id: it.id,
-            category: ({hotel:'alojamiento', vuelo:'transporte', coche:'transporte', transporte:'transporte', comida:'comida'})[it.type] || 'actividades',
+            category: ({hotel:'alojamiento', vuelo:'transporte', coche:'transporte', transporte:'transporte', comida:'comida', compras:'compras'})[it.type] || 'actividades',
             concept: it.title, amount, currency,
             rate_to_eur: rate, amount_eur: +(amount * rate).toFixed(2),
             status: 'reservado', date: newD1,
