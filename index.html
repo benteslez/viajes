@@ -1026,45 +1026,38 @@ h2.section-title {
 .metric .value { font-feature-settings:"tnum","ss01"; font-weight:700; font-size:22px; margin-top:4px; letter-spacing:-.02em; }
 .metric .sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
 
-/* Pills de reservas de hoy (vuelo/hotel/transporte) en el resumen.
-   Fondo coloreado según el estado del planning, igual que en el timeline. */
+/* Pills de reservas de hoy — mismo aspecto que las métricas (.metric) pero con
+   fondo coloreado según el estado del planning. Clicables. */
 .resv-grid {
-  display:grid; gap:12px;
+  display:grid; gap:14px;
   grid-template-columns:repeat(1, 1fr);
   margin-bottom:24px;
 }
 @media (min-width:560px) { .resv-grid { grid-template-columns:repeat(2, 1fr); } }
-@media (min-width:900px) { .resv-grid { grid-template-columns:repeat(3, 1fr); } }
-.resv-pill {
-  display:block; width:100%; text-align:left; cursor:pointer;
-  background:var(--bg-elev); border:1.5px solid var(--line);
-  border-radius:var(--r-md); padding:13px 15px;
+.resv-metric {
+  cursor:pointer; text-align:left; font-family:inherit; color:var(--text);
   transition:transform .15s var(--ease), box-shadow .15s var(--ease);
-  font-family:inherit; color:var(--text);
 }
-.resv-pill:hover { transform:translateY(-1px); box-shadow:var(--sh-1); }
-.resv-pill .resv-label {
-  font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:700;
-  color:var(--text-muted); display:flex; align-items:center; gap:6px;
+.resv-metric:hover { transform:translateY(-1px); box-shadow:var(--sh-1); }
+.resv-metric .label { display:flex; align-items:center; gap:6px; font-weight:700; }
+.resv-metric .resv-emoji { font-size:13px; }
+.resv-metric .value {
+  font-size:18px; line-height:1.2; word-break:break-word; overflow-wrap:break-word;
 }
-.resv-pill .resv-emoji { font-size:14px; }
-.resv-pill .resv-main {
-  margin-top:5px; font-size:14.5px; font-weight:600; line-height:1.3;
-  letter-spacing:-.01em; word-break:break-word; overflow-wrap:break-word;
-}
-.resv-pill.status-confirmado  { border-color:color-mix(in srgb, #10b981 50%, var(--line)); background:color-mix(in srgb, #34d399 12%, var(--bg-elev)); }
-.resv-pill.status-en_consulta { border-color:color-mix(in srgb, #3b82f6 55%, var(--line)); background:color-mix(in srgb, #60a5fa 15%, var(--bg-elev)); }
-.resv-pill.status-por_iniciar { border-color:color-mix(in srgb, #f59e0b 55%, var(--line)); background:color-mix(in srgb, #fbbf24 18%, var(--bg-elev)); }
-.resv-pill.status-cancelado   { border-color:color-mix(in srgb, #ef4444 55%, var(--line)); background:color-mix(in srgb, #f87171 12%, var(--bg-elev)); }
-.resv-pill.status-confirmado  .resv-label { color:#047857; }
-.resv-pill.status-en_consulta .resv-label { color:#1e40af; }
-.resv-pill.status-por_iniciar .resv-label { color:#b45309; }
-.resv-pill.status-cancelado   .resv-label { color:#b91c1c; }
-.resv-pill.status-cancelado   .resv-main  { text-decoration:line-through; opacity:.75; }
-:root[data-tema="oscuro"] .resv-pill.status-confirmado  .resv-label { color:#6ee7b7; }
-:root[data-tema="oscuro"] .resv-pill.status-en_consulta .resv-label { color:#93c5fd; }
-:root[data-tema="oscuro"] .resv-pill.status-por_iniciar .resv-label { color:#fbbf24; }
-:root[data-tema="oscuro"] .resv-pill.status-cancelado   .resv-label { color:#fca5a5; }
+.resv-metric .sub { font-feature-settings:"tnum","ss01"; }
+.resv-metric.status-confirmado  { border-color:color-mix(in srgb, #10b981 50%, var(--line)); background:color-mix(in srgb, #34d399 12%, var(--bg-elev)); }
+.resv-metric.status-en_consulta { border-color:color-mix(in srgb, #3b82f6 55%, var(--line)); background:color-mix(in srgb, #60a5fa 15%, var(--bg-elev)); }
+.resv-metric.status-por_iniciar { border-color:color-mix(in srgb, #f59e0b 55%, var(--line)); background:color-mix(in srgb, #fbbf24 18%, var(--bg-elev)); }
+.resv-metric.status-cancelado   { border-color:color-mix(in srgb, #ef4444 55%, var(--line)); background:color-mix(in srgb, #f87171 12%, var(--bg-elev)); }
+.resv-metric.status-confirmado  .label { color:#047857; }
+.resv-metric.status-en_consulta .label { color:#1e40af; }
+.resv-metric.status-por_iniciar .label { color:#b45309; }
+.resv-metric.status-cancelado   .label { color:#b91c1c; }
+.resv-metric.status-cancelado   .value { text-decoration:line-through; opacity:.75; }
+:root[data-tema="oscuro"] .resv-metric.status-confirmado  .label { color:#6ee7b7; }
+:root[data-tema="oscuro"] .resv-metric.status-en_consulta .label { color:#93c5fd; }
+:root[data-tema="oscuro"] .resv-metric.status-por_iniciar .label { color:#fbbf24; }
+:root[data-tema="oscuro"] .resv-metric.status-cancelado   .label { color:#fca5a5; }
 
 /* ========================================================================
    Day-group (planning)
@@ -2520,13 +2513,25 @@ const SYNC = {
       budget_items: ['amount_eur'],
     };
     const drop = GENERATED_BY_TABLE[table];
-    let payload = record;
-    if (drop && drop.length) {
-      payload = { ...record };
-      drop.forEach(k => { delete payload[k]; });
+    let payload = { ...record };
+    if (drop && drop.length) drop.forEach(k => { delete payload[k]; });
+
+    // Resiliencia: si Supabase rechaza por una columna que no existe en su esquema
+    // (p. ej. un campo nuevo de la app que aún no se ha migrado en la DB), la quitamos
+    // del payload y reintentamos, en lugar de atascar la cola indefinidamente. El dato
+    // queda local-only hasta que se cree la columna remota.
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const { error } = await this.client.from(table).upsert(payload, { onConflict: 'id' });
+      if (!error) return;
+      const m = /Could not find the '([^']+)' column/i.exec(error.message || '');
+      if (m && m[1] && Object.prototype.hasOwnProperty.call(payload, m[1])) {
+        delete payload[m[1]];
+        console.warn(`[sync] columna '${m[1]}' no existe en '${table}'; se omite del push (queda local-only).`);
+        continue;
+      }
+      throw error;
     }
-    const { error } = await this.client.from(table).upsert(payload, { onConflict: 'id' });
-    if (error) throw error;
+    throw new Error(`[sync] '${table}': demasiadas columnas desconocidas, abortado`);
   },
 
   async pullAll() {
@@ -4271,6 +4276,8 @@ const TripDetail = {
     const paidEur   = budget.filter(b => b.status === 'pagado').reduce((a,b) => a + (Number(b.amount_eur) || 0), 0);
     const packDone  = packing.filter(p => p.checked).length;
 
+    // Rejilla de métricas (Días / Planning / Presupuesto / Maleta). Se construye ya,
+    // pero su posición depende de si el viaje está en curso (ver más abajo).
     const metricCells = [
       el('div', { class:'metric' }, [
         el('div', { class:'label', text:'Días' }),
@@ -4293,11 +4300,15 @@ const TripDetail = {
         el('div', { class:'sub', text: packing.length ? 'preparados' : 'sin lista' }),
       ]),
     ].filter(Boolean);
-    root.appendChild(el('div', { class:'metric-grid' }, metricCells));
+    const metricGridEl = el('div', { class:'metric-grid' }, metricCells);
 
     const today = todayIso();
+    const inProgress = !!(t.start_date && t.end_date && t.start_date <= today && t.end_date >= today);
 
-    // Reservas de HOY (vuelo/hotel/transporte) como pills coloreadas por estado.
+    // Cuando el viaje NO está en curso, las métricas van arriba (comportamiento normal).
+    if (!inProgress) root.appendChild(metricGridEl);
+
+    // Reservas de HOY como pills (mismo aspecto que las métricas, con color por estado).
     // Solo aparecen si las hay. Clicables → abren los detalles de la parada.
     const todayResv = TripDetail._expandHotels(planning)
       .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad','comida'].includes(i.type))
@@ -4311,18 +4322,19 @@ const TripDetail = {
         const status = itemStatus(it);
         grid.appendChild(el('button', {
           type:'button',
-          class:'resv-pill' + (status ? ` status-${status}` : ''),
+          class:'metric resv-metric' + (status ? ` status-${status}` : ''),
           onclick: () => TripDetail.openPlanningEditor(t, it),
         }, [
-          el('div', { class:'resv-label' }, [ el('span', { class:'resv-emoji', text: s.emoji }), s.label ]),
-          el('div', { class:'resv-main', text: s.text }),
-        ]));
+          el('div', { class:'label' }, [ el('span', { class:'resv-emoji', text: s.emoji }), s.label ]),
+          el('div', { class:'value', text: s.value }),
+          s.sub ? el('div', { class:'sub', text: s.sub }) : null,
+        ].filter(Boolean)));
       });
       root.appendChild(grid);
     }
 
     // Planning de Hoy / Mañana — solo si el viaje está EN CURSO (hoy dentro del rango).
-    if (t.start_date && t.end_date && t.start_date <= today && t.end_date >= today) {
+    if (inProgress) {
       const tomorrow = (() => { const d = parseDate(today); d.setDate(d.getDate() + 1); return d.toISOString().slice(0,10); })();
       const view = TripDetail._resumenDayView === 'manana' ? 'manana' : 'hoy';
       const targetDate = view === 'manana' ? tomorrow : today;
@@ -4360,6 +4372,9 @@ const TripDetail = {
           : 'No hay nada planificado para hoy.' }));
       }
     }
+
+    // Viaje en curso: el resumen de métricas es menos necesario → va al final.
+    if (inProgress) root.appendChild(metricGridEl);
 
     // Notas
     if (t.notes) {
@@ -4410,44 +4425,52 @@ const TripDetail = {
 
   // Resumen compacto de una reserva (vuelo/hotel/transporte) para las pills del resumen.
   // Devuelve { label, emoji, text } o null si el tipo no aplica.
+  // Devuelve { label, emoji, value, sub } para la pill del resumen.
+  //   label = tipo / franja de comida   ·   value = dato principal (ruta o nombre)
+  //   sub   = detalles (hora · nº · asientos…)
   _reservationSummary(it) {
     const md = it.metadata || {};
-    const code = s => (s || '').split('·')[0].trim();      // "MAD · Madrid" → "MAD"
-    const seats = Array.isArray(md.asientos)
+    const code   = s => (s || '').split('·')[0].trim();              // "MAD · Madrid" → "MAD"
+    const tzCity = tz => tz ? tz.split('/').pop().replace(/_/g, ' ') : '';
+    const seats  = Array.isArray(md.asientos)
       ? md.asientos.map(s => s.asiento || s.nombre).filter(Boolean).join(' - ')
       : (md.asiento || '');
+    const time = it.time ? it.time + 'h' : '';
+
     if (it.type === 'hotel') {
-      return { label:'Alojamiento', emoji:'🏨', text: it.title || 'Hotel' };
+      const sub = [
+        it.consultation_planned_t1 ? 'Check-in ' + it.consultation_planned_t1 : '',
+        md.habitacion || '',
+        md.localizador ? 'Loc. ' + md.localizador : '',
+      ].filter(Boolean).join(' · ');
+      return { label:'Alojamiento', emoji:'🏨', value: it.place_name || it.title || 'Hotel', sub };
     }
     if (it.type === 'vuelo') {
-      const route = (md.origen && md.destino) ? `${code(md.origen)}-${code(md.destino)}`
-                  : (md.destino ? `→ ${code(md.destino)}` : '');
-      const parts = [
-        route,
-        it.time ? it.time + 'h' : '',
-        md.numero || '',
-        seats ? 'Asientos ' + seats : '',
-      ].filter(Boolean);
-      return { label:'Vuelo', emoji:'✈️', text: parts.join(' ') || it.title || 'Vuelo' };
+      const ori  = code(md.origen)  || tzCity(it.origin_tz);
+      const dest = code(md.destino) || tzCity(it.dest_tz);
+      const route = (ori && dest) ? `${ori} - ${dest}` : (dest || ori || it.title || 'Vuelo');
+      const sub = [ time, md.numero || '', md.aerolinea || '', seats ? 'Asientos ' + seats : '' ]
+        .filter(Boolean).join(' · ');
+      return { label:'Vuelo', emoji:'✈️', value: route, sub };
     }
     if (it.type === 'transporte') {
-      const route = (md.origen && md.destino) ? `${md.origen} - ${md.destino}` : '';
-      const parts = [
-        route,
-        it.time ? it.time + 'h' : '',
-        md.numero || '',
-        md.vagon ? 'Coche ' + md.vagon : '',
-        seats ? 'Asientos ' + seats : '',
-      ].filter(Boolean);
-      return { label:'Transporte', emoji:'🚆', text: parts.join(' ') || it.title || 'Transporte' };
+      const ori = code(md.origen), dest = code(md.destino);
+      const route = (ori && dest) ? `${ori} - ${dest}` : (it.title || 'Transporte');
+      const sub = [ time, md.numero || '', md.vagon ? 'Coche ' + md.vagon : '', seats ? 'Asientos ' + seats : '' ]
+        .filter(Boolean).join(' · ');
+      return { label:'Transporte', emoji:'🚆', value: route, sub };
     }
     if (it.type === 'actividad') {
-      const parts = [ it.time ? it.time + 'h' : '', it.title || 'Actividad', md.organizador || '' ].filter(Boolean);
-      return { label:'Actividad', emoji:'🎫', text: parts.join(' ') };
+      const sub = [ time, md.organizador || '', md.duracion || '' ].filter(Boolean).join(' · ');
+      return { label:'Actividad', emoji:'🎫', value: it.place_name || it.title || 'Actividad', sub };
     }
     if (it.type === 'comida') {
-      const parts = [ it.time ? it.time + 'h' : '', it.title || 'Restaurante' ].filter(Boolean);
-      return { label: mealLabel(it.time), emoji:'🍽️', text: parts.join(' ') };
+      let meal = mealLabel(it.time);
+      if (meal === 'Restaurante') meal = 'Comida';   // sin hora → comida genérica, nunca "Restaurante"
+      const name = it.place_name
+        || (it.title && it.title.toLowerCase() !== 'comida' ? it.title : '')
+        || 'Restaurante';
+      return { label: meal, emoji:'🍽️', value: name, sub: time };
     }
     return null;
   },
