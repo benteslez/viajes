@@ -986,6 +986,9 @@ h2.section-title {
 .pending-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
 .pending-divider { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin:18px 0 8px; }
 
+/* Estadísticas — valor a la derecha de cada fila */
+.stat-val { flex-shrink:0; font-weight:700; font-size:14px; color:var(--accent); font-feature-settings:"tnum"; white-space:nowrap; }
+
 /* Selector de estado en el editor — pill segmentado vertical con color por opción */
 .status-picker {
   display:grid; gap:8px;
@@ -1985,8 +1988,17 @@ const PLANNING_METADATA = {
     ],
   },
   transporte: {
-    label:'Datos del transporte (tren, ferry, bus…)',
+    label:'Datos del transporte',
     fields: [
+      { id:'modo',       label:'Tipo de transporte', type:'select', options:[
+        { value:'', label:'Tren / general' },
+        { value:'tren',  label:'Tren' },
+        { value:'bus',   label:'Autobús' },
+        { value:'ferry', label:'Ferry' },
+        { value:'metro', label:'Metro' },
+        { value:'taxi',  label:'Taxi' },
+        { value:'barco', label:'Barco' },
+      ] },
       { id:'compania',   label:'Compañía',         placeholder:'Renfe, JR, Eurostar…' },
       { id:'numero',     label:'Línea o número',   placeholder:'AVE 02701 · Línea 5' },
       { id:'origen',     label:'Origen',           placeholder:'Madrid Atocha' },
@@ -2046,7 +2058,7 @@ const TYPES_PLANNING = [
   { id:'playa',      label:'Playa',                       requiresBooking:false, icon:'palm',   emoji:'🌴' },
   { id:'hotel',      label:'Alojamiento',                 requiresBooking:true,  hideTime:true, endOfDay:true, icon:'hotel', emoji:'🏨' },
   { id:'vuelo',      label:'Vuelo',                       requiresBooking:true,  icon:'plane',  emoji:'✈️' },
-  { id:'transporte', label:'Transporte (tren, ferry…)',   requiresBooking:true,  icon:'train',  emoji:'🚆' },
+  { id:'transporte', label:'Transporte',                   requiresBooking:true,  icon:'train',  emoji:'🚆' },
   { id:'coche',      label:'Coche',                       requiresBooking:true,  icon:'car',    emoji:'🚗' },
   { id:'actividad',  label:'Actividad',                   requiresBooking:true,  icon:'ticket', emoji:'🎫' },
   { id:'comida',     label:'Comida',                      requiresBooking:false, supportsStatus:true, icon:'food', emoji:'🍽️' },
@@ -2054,6 +2066,17 @@ const TYPES_PLANNING = [
   { id:'otro',       label:'Otro',                        requiresBooking:false, icon:'pin',    emoji:'📌' },
 ];
 const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[0];
+
+// Modos de transporte → emoji. El icono del evento cambia según metadata.modo.
+const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢' };
+// Emoji efectivo de un planning item (transporte varía con su modo).
+const planEmoji = (it) => {
+  if (it && it.type === 'transporte') {
+    const e = TRANSPORT_EMOJI[it.metadata && it.metadata.modo];
+    if (e) return e;
+  }
+  return typeDef(it ? it.type : '').emoji || '📌';
+};
 
 // Estado efectivo de un planning_item, con migración suave del antiguo `in_consultation`.
 // Devuelve null si el tipo no requiere reserva (lugar/comida/otro) → fondo blanco.
@@ -4614,6 +4637,7 @@ const TripDetail = {
     ].filter(Boolean);
     if (t.is_shared && canSeeMoney()) tabs.push({ id:'gastos', label:'Compartir gastos' });
     tabs.push({ id:'diario', label:'Diario' });
+    tabs.push({ id:'estadisticas', label:'Estadísticas' });
 
     // 'pendientes' es enrutable (se abre desde la pill del resumen) aunque no esté en la barra.
     // Si Invitado intenta entrar a una pestaña no permitida, redirige a resumen.
@@ -4661,6 +4685,7 @@ const TripDetail = {
     else if (tab === 'mapa')    await TripDetail.tabMapa(panel, t);
     else if (tab === 'personas')await TripDetail.tabPersonas(panel, t);
     else if (tab === 'pendientes') await TripDetail.tabPendientes(panel, t);
+    else if (tab === 'estadisticas') await TripDetail.tabEstadisticas(panel, t);
     else if (tab === 'destino') await TripDetail.tabDestino(panel, t);
     else if (tab === 'gastos')  await TripDetail.tabGastos(panel, t, fab);
     else if (tab === 'diario')  await TripDetail.tabDiario(panel, t, fab);
@@ -4936,7 +4961,7 @@ const TripDetail = {
       const route = (ori && dest) ? `${ori} - ${dest}` : (it.title || 'Transporte');
       const sub = [ time, md.numero || '', md.vagon ? 'Coche ' + md.vagon : '', seats ? 'Asientos ' + seats : '', ppl ]
         .filter(Boolean).join(' · ');
-      return { label:'Transporte', emoji:'🚆', value: route, sub, resvUrl, mapsUrl: null };
+      return { label:'Transporte', emoji: planEmoji(it), value: route, sub, resvUrl, mapsUrl: null };
     }
     if (it.type === 'actividad') {
       const sub = [ time, md.organizador || '', md.duracion || '', ppl ].filter(Boolean).join(' · ');
@@ -5190,7 +5215,15 @@ const TripDetail = {
     if (it.place_name && it.place_name !== it.title) subParts.push(it.place_name);
     if (it.address) subParts.push(it.address);
     if (isNight) {
-      subParts.push(it._isFirstNight ? `Check-in${it.consultation_planned_t1 ? ' ' + it.consultation_planned_t1 : ''}` : 'Noche en el hotel');
+      // Noches: empezamos limpio y solo añadimos algo si hay datos del alojamiento.
+      subParts.length = 0;
+      const hotelName = it.place_name || (it.metadata && it.metadata.nombre) || '';
+      if (it._isFirstNight && it.consultation_planned_t1) {
+        subParts.push(`Check-in ${it.consultation_planned_t1}`);
+      } else if (hotelName) {
+        subParts.push(`Noche en ${hotelName}`);
+      }
+      // Sin nombre ni hora → sin subtítulo (solo el título, p. ej. "Madrid").
     } else if (isCheckout) {
       // sub claro y corto
     } else if (it.type === 'hotel' && (it.consultation_planned_d1 || it.consultation_planned_d2)) {
@@ -5284,15 +5317,16 @@ const TripDetail = {
     }, [
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
-      // Emoji del tipo, centrado en alto y ancho dentro de la card
-      el('div', { class:'item-emoji', 'aria-hidden':'true', text: td.emoji || '📌' }),
+      // Emoji del tipo (varía con el modo en transporte), centrado en la card
+      el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
         el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'wrap', gap:'4px'} }, [
           timeRangeText ? el('span', { class:'time-pill', text: timeRangeText }) : null,
           el('span', { text: displayTitle }),
           (statusDef && !isVirtual) ? el('span', { class:`status-badge s-${status}`, text: statusDef.label }) : null,
         ].filter(Boolean)),
-        el('div', { class:'li-sub', text: subParts.join(' · ') || td.label }),
+        // Los virtuales (noche/check-out/llegada) no caen al fallback td.label si no hay sub.
+        el('div', { class:'li-sub', text: subParts.join(' · ') || (isVirtual ? '' : td.label) }),
         (status === 'en_consulta' && it.consultation_url && canSeeLinks() && !isVirtual) ? el('div', { style:{marginTop:'4px', fontSize:'13px'} },
           el('a', { href: it.consultation_url, target:'_blank', rel:'noopener',
             onclick: (e) => e.stopPropagation(), text: TripDetail._shortUrl(it.consultation_url) })
@@ -5879,6 +5913,12 @@ const TripDetail = {
         let node;
         if (f.type === 'seats') {
           node = renderSeatsField(f, Array.isArray(meta.asientos) ? meta.asientos : []);
+        } else if (f.type === 'select') {
+          node = el('div', { class:'form-row' }, [
+            el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label }),
+            el('select', { id:`meta-${f.id}` }, (f.options || []).map(o =>
+              el('option', { value:o.value, selected: (meta[f.id] || '') === o.value ? true : null }, o.label))),
+          ]);
         } else {
           node = el('div', { class:'form-row' }, [
             el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label }),
@@ -7271,7 +7311,7 @@ const TripDetail = {
         const place = it.place_name || it.title || td.label;
         const when = [ it.day_date ? fmtDateShort(it.day_date) : 'Sin fecha', it.time || '' ].filter(Boolean).join(' · ');
         list.appendChild(el('div', { class:'list-item interactive', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-          el('div', { class:'item-emoji', text: td.emoji || '📌' }),
+          el('div', { class:'item-emoji', text: planEmoji(it) }),
           el('div', { class:'li-main' }, [
             el('div', { class:'li-title', text: place }),
             el('div', { class:'li-sub', text: when }),
@@ -7323,7 +7363,7 @@ const TripDetail = {
       const it = a.item; const td = typeDef(it.type);
       const st = itemStatus(it); const stDef = STATUS_PLANNING.find(s => s.id === st);
       return el('div', { class:'pending-item auto interactive', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-        el('div', { class:'item-emoji', text: td.emoji || '📌' }),
+        el('div', { class:'item-emoji', text: planEmoji(it) }),
         el('div', { class:'pending-main' }, [
           el('div', { class:'pending-text', text: it.place_name || it.title || td.label }),
           el('div', { class:'pending-sub', text: [ a.date ? fmtDateShort(a.date) : 'Sin fecha', a.time || '' ].filter(Boolean).join(' · ') }),
@@ -7393,6 +7433,73 @@ const TripDetail = {
     }}, 'Borrar') : null;
     UI.openSheet({ title: existing ? 'Editar pendiente' : 'Nuevo pendiente', body,
       footer:[delBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean) });
+  },
+
+  /* ----- Estadísticas — resumen del viaje ----- */
+  async tabEstadisticas(root, t) {
+    const planning = await DB.listByTrip('planning_items', t.id);
+    const budget   = await DB.listByTrip('budget_items', t.id).catch(() => []);
+
+    // Noches por alojamiento (nombre = place_name o título; p. ej. "Madrid").
+    const nightsByPlace = new Map();
+    let totalNights = 0;
+    for (const p of planning) {
+      if (p.type === 'hotel' && p.consultation_planned_d1 && p.consultation_planned_d2 && p.consultation_planned_d1 < p.consultation_planned_d2) {
+        const n = daysBetween(p.consultation_planned_d1, p.consultation_planned_d2);
+        if (n > 0) {
+          const name = p.place_name || p.title || 'Alojamiento';
+          nightsByPlace.set(name, (nightsByPlace.get(name) || 0) + n);
+          totalNights += n;
+        }
+      }
+    }
+    const totalDays = (t.start_date && t.end_date) ? (daysBetween(t.start_date, t.end_date) + 1) : 0;
+    const people = new Set(planning.flatMap(p => Array.isArray(p.people) ? p.people : []));
+    const totalEur = budget.reduce((a, b) => a + (Number(b.amount_eur) || 0), 0);
+    const byType = {};
+    planning.forEach(p => { byType[p.type] = (byType[p.type] || 0) + 1; });
+
+    // Métricas generales
+    const cells = [
+      el('div', { class:'metric' }, [ el('div',{class:'label',text:'Días'}), el('div',{class:'value',text:String(totalDays || '—')}) ]),
+      el('div', { class:'metric' }, [ el('div',{class:'label',text:'Noches'}), el('div',{class:'value',text:String(totalNights)}) ]),
+      el('div', { class:'metric' }, [ el('div',{class:'label',text:'Paradas'}), el('div',{class:'value',text:String(planning.length)}) ]),
+      people.size ? el('div', { class:'metric' }, [ el('div',{class:'label',text:'Personas'}), el('div',{class:'value',text:String(people.size)}) ]) : null,
+      canSeeMoney() ? el('div', { class:'metric' }, [ el('div',{class:'label',text:'Gasto'}), el('div',{class:'value',text:fmtMoney(totalEur,'EUR')}) ]) : null,
+    ].filter(Boolean);
+    root.appendChild(el('div', { class:'metric-grid' }, cells));
+
+    // Noches por alojamiento — lo que pidió el usuario ("Noches en Madrid: 10…")
+    root.appendChild(el('h2', { class:'section-title', text:'Noches por alojamiento' }));
+    if (nightsByPlace.size) {
+      const list = el('div', { class:'list' });
+      [...nightsByPlace.entries()].sort((a,b) => b[1] - a[1]).forEach(([name, n]) => {
+        list.appendChild(el('div', { class:'list-item' }, [
+          el('div', { class:'item-emoji', text:'🏨' }),
+          el('div', { class:'li-main' }, [ el('div', { class:'li-title', text: name }) ]),
+          el('div', { class:'stat-val', text: `${n} ${n === 1 ? 'noche' : 'noches'}` }),
+        ]));
+      });
+      root.appendChild(list);
+    } else {
+      root.appendChild(el('p', { class:'muted', text:'Aún no hay alojamientos con fechas (Desde/Hasta) para contar noches.' }));
+    }
+
+    // Paradas por tipo
+    const typeEntries = Object.entries(byType).sort((a,b) => b[1] - a[1]);
+    if (typeEntries.length) {
+      root.appendChild(el('h2', { class:'section-title', text:'Paradas por tipo' }));
+      const list = el('div', { class:'list' });
+      typeEntries.forEach(([type, n]) => {
+        const td = typeDef(type);
+        list.appendChild(el('div', { class:'list-item' }, [
+          el('div', { class:'item-emoji', text: td.emoji || '📌' }),
+          el('div', { class:'li-main' }, [ el('div', { class:'li-title', text: td.label }) ]),
+          el('div', { class:'stat-val', text: String(n) }),
+        ]));
+      });
+      root.appendChild(list);
+    }
   },
 
   /* ----- Ficha destino ----- */
