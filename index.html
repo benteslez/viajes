@@ -851,33 +851,82 @@ h2.section-title {
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
 }
 
-/* Estados de los planning items con reserva (hotel, vuelo, transporte, coche, actividad).
-   El fondo de color comunica el estado de un vistazo. Las visitas a lugares y comidas
-   no usan estado y quedan con fondo blanco/elev. */
+/* ===========================================================================
+   COLOR DE TARJETA POR TIPO (no por estado)
+   ----------------------------------------------------------------------------
+   Cada `planning_item` tiene un `type` y opcionalmente un `custom_color` HEX.
+   El fondo de la tarjeta SIEMPRE refleja el tipo (o el override del usuario):
+   el estado solo afecta al BORDE y la PILL.
+
+   - Variables `--tipo-*` definen el HEX base por tipo.
+   - El fondo de la card se calcula al ~12 % sobre `--bg-elev` (contraste WCAG).
+   - Override manual: `it.custom_color` → `style.--card-color="#hex"` +
+     clase `.has-custom-color`. Persistido en planning_items.custom_color.
+   =========================================================================== */
+:root {
+  --tipo-vuelo:      #3b82f6;
+  --tipo-transporte: #3b82f6;
+  --tipo-coche:      #3b82f6;
+  --tipo-comida:     #f97316;
+  --tipo-actividad:  #a855f7;
+  --tipo-hotel:      #15803d;
+  --tipo-lugar:      #0ea5e9;
+  --tipo-playa:      #14b8a6;
+  --tipo-compras:    #ec4899;
+  --tipo-otro:       #64748b;
+}
+
+/* Fondo por tipo (se aplica a list-item / timeline-item). El ~12 % mezclado con
+   bg-elev produce un tinte muy suave que mantiene contraste de texto. */
+.list-item.type-vuelo,
+.timeline-item.type-vuelo      { background: color-mix(in srgb, var(--tipo-vuelo)      12%, var(--bg-elev)); }
+.list-item.type-transporte,
+.timeline-item.type-transporte { background: color-mix(in srgb, var(--tipo-transporte) 12%, var(--bg-elev)); }
+.list-item.type-coche,
+.timeline-item.type-coche      { background: color-mix(in srgb, var(--tipo-coche)      12%, var(--bg-elev)); }
+.list-item.type-comida,
+.timeline-item.type-comida     { background: color-mix(in srgb, var(--tipo-comida)     10%, var(--bg-elev)); } /* un pelín menos para no acercarse al naranja del borde por_iniciar */
+.list-item.type-actividad,
+.timeline-item.type-actividad  { background: color-mix(in srgb, var(--tipo-actividad)  12%, var(--bg-elev)); }
+.list-item.type-hotel,
+.timeline-item.type-hotel      { background: color-mix(in srgb, var(--tipo-hotel)      12%, var(--bg-elev)); }
+.list-item.type-lugar,
+.timeline-item.type-lugar      { background: color-mix(in srgb, var(--tipo-lugar)      12%, var(--bg-elev)); }
+.list-item.type-playa,
+.timeline-item.type-playa      { background: color-mix(in srgb, var(--tipo-playa)      12%, var(--bg-elev)); }
+.list-item.type-compras,
+.timeline-item.type-compras    { background: color-mix(in srgb, var(--tipo-compras)    12%, var(--bg-elev)); }
+.list-item.type-otro,
+.timeline-item.type-otro       { background: color-mix(in srgb, var(--tipo-otro)       12%, var(--bg-elev)); }
+
+/* Override manual: HEX libre del usuario. Inline style fija `--card-color`. */
+.list-item.has-custom-color,
+.timeline-item.has-custom-color {
+  background: color-mix(in srgb, var(--card-color) 14%, var(--bg-elev)) !important;
+}
+
+/* Estado en el BORDE — solo `por_iniciar`, `en_consulta` y `cancelado` tiñen
+   borde. `confirmado` no toca el borde (la tarjeta conserva el color de tipo). */
 .list-item.status-por_iniciar,
 .timeline-item.status-por_iniciar {
-  border-color: var(--line-soft);
-  background: color-mix(in srgb, #f59e0b 8%, var(--bg-elev));
-  box-shadow: inset 3px 0 0 #f59e0b, var(--sh-1);
+  border-color: #f59e0b;
+  border-width: 2px;
+  box-shadow: var(--sh-1);
 }
 .list-item.status-en_consulta,
 .timeline-item.status-en_consulta {
-  border-color: var(--line-soft);
-  background: color-mix(in srgb, #3b82f6 8%, var(--bg-elev));
-  box-shadow: inset 3px 0 0 #3b82f6, var(--sh-1);
-}
-.list-item.status-confirmado,
-.timeline-item.status-confirmado {
-  border-color: var(--line-soft);
-  background: color-mix(in srgb, #10b981 8%, var(--bg-elev));
-  box-shadow: inset 3px 0 0 #10b981, var(--sh-1);
+  border-color: #3b82f6;
+  border-width: 2px;
+  box-shadow: var(--sh-1);
 }
 .list-item.status-cancelado,
 .timeline-item.status-cancelado {
-  border-color: var(--line-soft);
-  background: color-mix(in srgb, #ef4444 8%, var(--bg-elev));
-  box-shadow: inset 3px 0 0 #ef4444, var(--sh-1);
+  border-color: #ef4444;
+  border-width: 2px;
+  box-shadow: var(--sh-1);
 }
+/* Confirmado: nada de borde de estado. La pill verde basta. */
+
 .list-item.status-cancelado .li-title,
 .timeline-item.status-cancelado .li-title { text-decoration:line-through; opacity:.75; }
 
@@ -904,7 +953,7 @@ h2.section-title {
 }
 .status-badge.s-por_iniciar { background:color-mix(in srgb, #f59e0b 22%, var(--bg-elev)); color:#b45309; border:1px solid color-mix(in srgb, #f59e0b 50%, transparent); }
 .status-badge.s-en_consulta { background:color-mix(in srgb, #3b82f6 22%, var(--bg-elev)); color:#1e40af; border:1px solid color-mix(in srgb, #3b82f6 50%, transparent); }
-.status-badge.s-confirmado  { background:color-mix(in srgb, #10b981 22%, var(--bg-elev)); color:#047857; border:1px solid color-mix(in srgb, #10b981 50%, transparent); }
+.status-badge.s-confirmado  { background:color-mix(in srgb, #10b981 28%, var(--bg-elev)); color:#065f46; border:1px solid #059669; font-weight:700; }
 .status-badge.s-cancelado   { background:color-mix(in srgb, #ef4444 22%, var(--bg-elev)); color:#b91c1c; border:1px solid color-mix(in srgb, #ef4444 50%, transparent); }
 :root[data-tema="oscuro"] .status-badge.s-por_iniciar { color:#fbbf24; }
 :root[data-tema="oscuro"] .status-badge.s-en_consulta { color:#93c5fd; }
@@ -1439,24 +1488,21 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
   /* Anular cualquier indentación heredada y forzar centrado horizontal real */
   padding:0; margin:0;
 }
-/* Color del círculo por tipo — fallback cuando el item no tiene estado
-   ni color de borde personalizado. */
-.timeline-item.type-lugar      .item-emoji { background:#e0f2fe; border-color:#7dd3fc; }
-.timeline-item.type-playa      .item-emoji { background:#fef3c7; border-color:#fcd34d; }
-.timeline-item.type-hotel      .item-emoji { background:#f3e8ff; border-color:#d8b4fe; }
-.timeline-item.type-vuelo      .item-emoji { background:#dbeafe; border-color:#93c5fd; }
-.timeline-item.type-transporte .item-emoji { background:#f3e8ff; border-color:#d8b4fe; }
-.timeline-item.type-coche      .item-emoji { background:#fce7f3; border-color:#f9a8d4; }
-.timeline-item.type-actividad  .item-emoji { background:#d1fae5; border-color:#6ee7b7; }
-.timeline-item.type-comida     .item-emoji { background:#ffedd5; border-color:#fdba74; }
-.timeline-item.type-compras    .item-emoji { background:#ccfbf1; border-color:#5eead4; }
-.timeline-item.type-otro       .item-emoji { background:#e2e8f0; border-color:#cbd5e1; }
-:root[data-tema="oscuro"] .timeline-item .item-emoji {
-  background:color-mix(in srgb, var(--bg-elev) 70%, transparent);
-  border-color:var(--line);
-}
+/* Color del círculo del emoji por tipo — coincide con la paleta `--tipo-*`. */
+.timeline-item.type-vuelo      .item-emoji,
+.timeline-item.type-transporte .item-emoji,
+.timeline-item.type-coche      .item-emoji { background: color-mix(in srgb, var(--tipo-vuelo)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-vuelo)     55%, var(--line)); }
+.timeline-item.type-comida     .item-emoji { background: color-mix(in srgb, var(--tipo-comida)    20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-comida)    55%, var(--line)); }
+.timeline-item.type-actividad  .item-emoji { background: color-mix(in srgb, var(--tipo-actividad) 20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-actividad) 55%, var(--line)); }
+.timeline-item.type-hotel      .item-emoji { background: color-mix(in srgb, var(--tipo-hotel)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-hotel)     55%, var(--line)); }
+.timeline-item.type-lugar      .item-emoji { background: color-mix(in srgb, var(--tipo-lugar)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-lugar)     55%, var(--line)); }
+.timeline-item.type-playa      .item-emoji { background: color-mix(in srgb, var(--tipo-playa)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-playa)     55%, var(--line)); }
+.timeline-item.type-compras    .item-emoji { background: color-mix(in srgb, var(--tipo-compras)   20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-compras)   55%, var(--line)); }
+.timeline-item.type-otro       .item-emoji { background: color-mix(in srgb, var(--tipo-otro)      20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-otro)      55%, var(--line)); }
 
-/* Si el item tiene estado, el círculo toma el color del estado (= color del borde de la card) */
+/* Estados con borde — el círculo del emoji refleja el ESTADO solo para
+   por_iniciar / en_consulta / cancelado. `confirmado` deja la card y el emoji
+   tal cual los marca el tipo (la pill verde basta para señalizar). */
 .timeline-item.status-por_iniciar .item-emoji {
   border-color: color-mix(in srgb, #f59e0b 55%, var(--line));
   background: color-mix(in srgb, #fbbf24 22%, var(--bg-elev));
@@ -1464,10 +1510,6 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-item.status-en_consulta .item-emoji {
   border-color: color-mix(in srgb, #3b82f6 55%, var(--line));
   background: color-mix(in srgb, #60a5fa 18%, var(--bg-elev));
-}
-.timeline-item.status-confirmado .item-emoji {
-  border-color: color-mix(in srgb, #10b981 50%, var(--line));
-  background: color-mix(in srgb, #34d399 16%, var(--bg-elev));
 }
 .timeline-item.status-cancelado .item-emoji {
   border-color: color-mix(in srgb, #ef4444 55%, var(--line));
@@ -1493,28 +1535,15 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 /* Quitar el círculo CSS antiguo (lo sustituye el icono) */
 .timeline-item::before { display:none !important; }
 
-/* Borde de color para items tipo lugar/playa.
-   El fondo se mantiene (blanco/elev): solo cambia el borde y el icono del timeline. */
-.timeline-item.border-verde,
-.timeline-item.border-amarillo,
-.timeline-item.border-rojo {
-  border-width:2px;
-  background:var(--bg-elev) !important;
-}
-.timeline-item.border-verde    { border-color:#10b981 !important; }
-.timeline-item.border-amarillo { border-color:#f59e0b !important; }
-.timeline-item.border-rojo     { border-color:#ef4444 !important; }
-.timeline-item.border-verde    .timeline-icon { border-color:#10b981 !important; color:#047857; }
-.timeline-item.border-amarillo .timeline-icon { border-color:#f59e0b !important; color:#92400e; }
-.timeline-item.border-rojo     .timeline-icon { border-color:#ef4444 !important; color:#991b1b; }
-:root[data-tema="oscuro"] .timeline-item.border-verde    .timeline-icon { color:#6ee7b7; }
-:root[data-tema="oscuro"] .timeline-item.border-amarillo .timeline-icon { color:#fbbf24; }
-:root[data-tema="oscuro"] .timeline-item.border-rojo     .timeline-icon { color:#fca5a5; }
+/* [DEPRECATED] El antiguo `border_color` (verde/amarillo/rojo) de lugar/playa se
+   migra silenciosamente a `custom_color` (HEX libre) al cargar el planning.
+   Se mantienen estas reglas vacías como nota: la lógica ya no las usa. */
 
-/* El círculo del emoji también hereda el color de borde personalizado de lugar/playa */
-.timeline-item.border-verde    .item-emoji { border-color:#10b981 !important; background: color-mix(in srgb, #10b981 15%, var(--bg-elev)) !important; }
-.timeline-item.border-amarillo .item-emoji { border-color:#f59e0b !important; background: color-mix(in srgb, #f59e0b 16%, var(--bg-elev)) !important; }
-.timeline-item.border-rojo     .item-emoji { border-color:#ef4444 !important; background: color-mix(in srgb, #ef4444 14%, var(--bg-elev)) !important; }
+/* El círculo del emoji hereda el override de color libre del usuario. */
+.timeline-item.has-custom-color .item-emoji {
+  border-color: var(--card-color) !important;
+  background: color-mix(in srgb, var(--card-color) 18%, var(--bg-elev)) !important;
+}
 
 /* Estado "Visto" — la tarjeta entera queda en gris apagada.
    Gana en especificidad a status-* y border-* gracias a !important. */
@@ -1540,6 +1569,97 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
   border-color: transparent !important;
 }
 .btn-visited-on svg { stroke:#fff; }
+
+/* ===========================================================================
+   Tarjeta de NOCHE-CONTINUACIÓN del mismo hotel
+   ----------------------------------------------------------------------------
+   Cuando una tarjeta `_virtual:'night'` NO es la primera noche del hotel,
+   se renderiza en variante compacta: solo nombre del hotel + botón "Cómo llegar".
+   La detección viene de la bandera `_isFirstNight` puesta por `_expandHotels`.
+   =========================================================================== */
+.timeline-item.night-cont {
+  padding: 6px 12px;
+  min-height: 36px;
+  gap: 10px;
+}
+.timeline-item.night-cont .item-emoji {
+  width: 26px; height: 26px;
+  font-size: 14px;
+  border-width: 1px;
+}
+.timeline-item.night-cont .li-main {
+  display:flex; align-items:center; gap:8px;
+  flex:1; min-width:0;
+}
+.timeline-item.night-cont .li-title {
+  font-size: 13.5px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.timeline-item.night-cont .li-sub { display:none; }
+.timeline-item.night-cont .night-cont-meta {
+  font-size: 11.5px; color: var(--text-muted); font-weight:500;
+}
+.timeline-item.night-cont .night-cont-go {
+  display:inline-flex; align-items:center; gap:5px;
+  flex-shrink:0;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 600;
+  background: var(--bg-elev); border: 1px solid var(--line);
+  color: var(--text); text-decoration: none;
+}
+.timeline-item.night-cont .night-cont-go svg { width:13px; height:13px; }
+.timeline-item.night-cont .night-cont-go:hover {
+  background: color-mix(in srgb, var(--tipo-hotel) 14%, var(--bg-elev));
+  border-color: color-mix(in srgb, var(--tipo-hotel) 50%, var(--line));
+  text-decoration: none;
+}
+
+/* ===========================================================================
+   Botón "paleta" en la card + popover para override de color manual
+   =========================================================================== */
+.icon-btn.color-btn { color: var(--text-muted); }
+.icon-btn.color-btn.has-color { color: var(--card-color, var(--accent)); }
+.icon-btn.color-btn .color-dot {
+  display:inline-block; width:10px; height:10px; border-radius:50%;
+  background: var(--card-color, transparent);
+  border: 1.5px solid currentColor;
+  margin-left:-2px;
+}
+
+.card-color-popover {
+  display:grid; gap:14px;
+}
+.card-color-popover .ccp-grid {
+  display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
+}
+.card-color-popover .ccp-swatch {
+  position:relative;
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  padding:10px 6px; border:2px solid var(--line); border-radius:var(--r-md);
+  background:var(--bg-elev); cursor:pointer;
+  font-size:11px; font-weight:600; color:var(--text);
+  font-family:var(--font-ui); letter-spacing:-.005em;
+  transition: transform .12s var(--ease), border-color .12s var(--ease);
+}
+.card-color-popover .ccp-swatch:hover { transform: translateY(-1px); }
+.card-color-popover .ccp-swatch.active { transform: scale(1.04); border-color: var(--ccp-color, var(--accent)); }
+.card-color-popover .ccp-swatch .ccp-chip {
+  width:24px; height:24px; border-radius:50%;
+  background: var(--ccp-color);
+  border:1.5px solid color-mix(in srgb, var(--ccp-color) 60%, var(--text));
+}
+.card-color-popover .ccp-row {
+  display:flex; align-items:center; gap:12px;
+  padding-top:10px; border-top:1px solid var(--line-soft);
+}
+.card-color-popover .ccp-row label {
+  font-size:13px; font-weight:600; color:var(--text);
+}
+.card-color-popover .ccp-row input[type="color"] {
+  width:48px; height:32px; padding:0;
+  border:1px solid var(--line); border-radius:var(--r-sm);
+  background:var(--bg-elev); cursor:pointer;
+}
 
 /* Picker visual en el editor */
 .border-color-grid {
@@ -3259,6 +3379,7 @@ const ICONS = {
   note:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
   eye:     '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   lock:    '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  palette: '<circle cx="13.5" cy="6.5" r="1.4"/><circle cx="17.5" cy="10.5" r="1.4"/><circle cx="8.5" cy="7.5" r="1.4"/><circle cx="6.5" cy="12.5" r="1.4"/><path d="M12 2a10 10 0 1 0 0 20c1.7 0 2.5-1 2.5-2 0-1-.7-1.2-.7-2.2 0-.9.8-1.6 1.7-1.6H17a5 5 0 0 0 5-5 9 9 0 0 0-10-9.2z"/>',
 };
 // SVG decorativo: aria-hidden + focusable=false para que no aparezca en lectores ni
 // en tab-order. Los botones e enlaces que lo contienen ya tienen aria-label/texto.
@@ -5220,6 +5341,10 @@ const TripDetail = {
 
   async tabPlanning(root, t, fab) {
     const rawItems = await DB.listByTrip('planning_items', t.id);
+    // Migración silenciosa: el antiguo `border_color` (verde/amarillo/rojo) de
+    // lugar/playa se traduce a `custom_color` (HEX libre) y se limpia. Una
+    // sola pasada por trip; los items ya migrados (sin border_color) no entran.
+    await TripDetail._migrateBorderColorToCustom(rawItems);
     const dayNotes = await DB.listByTrip('day_notes', t.id);
     const noteMap = {};
     dayNotes.forEach(n => noteMap[n.date] = n);
@@ -5546,9 +5671,44 @@ const TripDetail = {
       const end   = (it.type === 'lugar' || it.type === 'playa') ? it.end_time : null;
       return end ? `${start} – ${end}` : start;
     })();
-    const borderCls = (it.border_color && (it.type === 'lugar' || it.type === 'playa')) ? ` border-${it.border_color}` : '';
     const visitedCls = (it.visited && !isVirtual) ? ' visited' : '';
-    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + borderCls + visitedCls + (isVirtual ? ' virtual' : '');
+    // Color override del usuario (HEX libre). Si está, se aplica como variable
+    // inline `--card-color`; la regla `.has-custom-color` lo usa para fondo + emoji.
+    const customColor = (typeof it.custom_color === 'string' && /^#[0-9a-f]{6}$/i.test(it.custom_color)) ? it.custom_color : null;
+    const customCls = customColor ? ' has-custom-color' : '';
+
+    // URL "Cómo llegar" (Google Maps directions). null si no hay dato suficiente.
+    const dirUrl = (it.lat != null && it.lng != null)
+      ? `https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}`
+      : it.address
+        ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.address)}`
+        : (it.place_name ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.place_name)}` : null);
+
+    // -------- Variante COMPACTA: noche de hotel que NO es la primera --------
+    // Solo: nombre del hotel + botón "Cómo llegar". Sin pill, sin hora, sin
+    // botones de edición. El click sigue abriendo el editor del hotel original.
+    if (isNight && !it._isFirstNight) {
+      const ncCls = 'list-item timeline-item virtual night-cont type-hotel' + customCls;
+      const ncNode = el('div', {
+        class: ncCls,
+        draggable:'false',
+        data:{ id:it.id, day: it.day_date || 'sin-fecha' }
+      }, [
+        el('div', { class:'item-emoji', 'aria-hidden':'true', text: '🛏️' }),
+        el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
+          el('div', { class:'li-title', text: it.title }),
+        ]),
+        el('span', { class:'night-cont-meta', text:'Continuación' }),
+        dirUrl ? el('a', {
+          class:'night-cont-go', href: dirUrl, target:'_blank', rel:'noopener',
+          title:'Cómo llegar', onclick: (e) => e.stopPropagation()
+        }, [ el('span', { html: svg('map') }), 'Cómo llegar' ]) : null,
+      ].filter(Boolean));
+      if (customColor) ncNode.style.setProperty('--card-color', customColor);
+      return ncNode;
+    }
+
+    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '');
 
     const node = el('div', {
       class: cls,
@@ -5578,6 +5738,15 @@ const TripDetail = {
           class:'btn btn-sm', style:{background:'var(--status-curso)', color:'#fff', borderColor:'transparent'},
           onclick: (e) => { e.stopPropagation(); TripDetail.openConfirmPlanning(t, it); }
         }, [ el('span', { html: svg('check') }), 'Confirmar' ]) : null,
+        // Botón "paleta": abre un popover para fijar/limpiar un color libre (HEX)
+        // que sobreescribe el color del tipo. Persiste en planning_items.custom_color.
+        (canEdit() && !isVirtual) ? el('button', {
+          class: 'icon-btn color-btn' + (customColor ? ' has-color' : ''),
+          title: customColor ? 'Cambiar color de la tarjeta' : 'Personalizar color de la tarjeta',
+          'aria-label':'Color de la tarjeta',
+          html: svg('palette'),
+          onclick: (e) => { e.stopPropagation(); TripDetail.openCardColorPicker(t, it); }
+        }) : null,
         // Toggle "Visto": marca/desmarca el item como visitado. Pinta la card en gris.
         (canEdit() && !isVirtual) ? el('button', {
           class: 'icon-btn' + (it.visited ? ' btn-visited-on' : ''),
@@ -5592,6 +5761,7 @@ const TripDetail = {
           title: isVirtual ? 'Editar el hotel' : 'Editar' }),
       ].filter(Boolean))
     ].filter(Boolean));
+    if (customColor) node.style.setProperty('--card-color', customColor);
     return node;
   },
 
@@ -6437,8 +6607,9 @@ const TripDetail = {
       tzBlock,
       // Lugar + búsqueda + dirección (tipos con localización física)
       placeBlock,
-      // Color del borde (solo lugar/playa)
-      borderBlock,
+      // [DEPRECATED] El selector "Color del borde (lugar/playa)" ha sido
+      // sustituido por el botón paleta directo en cada tarjeta (override libre).
+      // borderBlock se mantiene como referencia muerta pero NO se añade a la UI.
       // Personas (con quién) — cualquier tipo de evento
       peopleBlock,
       // Notas
@@ -6563,8 +6734,9 @@ const TripDetail = {
       it.status = td.requiresBooking ? (currentStatus || 'por_iniciar')
                 : (td.supportsStatus ? (currentStatus || null) : null);
       it.in_consultation = (it.status === 'en_consulta'); // legacy compat
-      // Color del borde (solo para lugar/playa)
-      it.border_color = (it.type === 'lugar' || it.type === 'playa') ? (currentBorder || null) : null;
+      // [DEPRECATED] `border_color` (legacy) ya no se escribe desde el editor.
+      // El override de color se gestiona desde la card vía paleta (custom_color).
+      it.border_color = null;
       // Datos de consulta/reserva (precio/enlace) — solo precio/url aquí; las fechas
       // (consultation_planned_*) ya se han recogido arriba desde el bloque unificado.
       if (td.requiresBooking) {
@@ -6675,6 +6847,130 @@ const TripDetail = {
 
   // Marca/desmarca un item del planning como "visto". Persistencia + actualización
   // visual local sin re-render — así no se pierde la posición de scroll.
+  // === Migración silenciosa `border_color` (legacy) → `custom_color` (HEX) ===
+  // El campo antiguo `border_color` solo aceptaba 3 valores ('verde'|'amarillo'|'rojo')
+  // y solo afectaba a items de tipo lugar/playa. El nuevo `custom_color` es un
+  // HEX libre aplicable a cualquier tipo. Esta pasada copia los legacy y limpia
+  // el campo `border_color`, todo sin hacer ruido. Se ejecuta al cargar el
+  // planning del trip. Si ya hay `custom_color`, no se pisa.
+  _migrationCount: 0,
+  async _migrateBorderColorToCustom(rawItems) {
+    const map = { verde:'#10b981', amarillo:'#f59e0b', rojo:'#ef4444' };
+    let n = 0;
+    for (const r of rawItems) {
+      if (!r) continue;
+      const legacy = r.border_color;
+      if (legacy && !r.custom_color && map[legacy]) {
+        r.custom_color = map[legacy];
+        r.border_color = null;
+        try { await DB.put('planning_items', r); n++; } catch(_) {}
+      } else if (legacy && r.custom_color) {
+        // Ya tenía custom_color: solo limpiamos el legacy para no acumular ruido.
+        r.border_color = null;
+        try { await DB.put('planning_items', r); } catch(_) {}
+      }
+    }
+    TripDetail._migrationCount += n;
+    if (n > 0) console.info(`[planning] migrados ${n} border_color → custom_color`);
+  },
+
+  // === Override de color de la tarjeta (paleta) ============================
+  // Abre un sheet con swatches predefinidos (paleta `--tipo-*`) + selector de
+  // color libre + botón "Quitar override". Guarda en `planning_items.custom_color`.
+  openCardColorPicker(t, it) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    // Paleta de presets — los mismos colores base de los tipos. El usuario puede
+    // pintar cualquier tarjeta con cualquier color (no obliga a respetar el tipo).
+    const presets = [
+      { hex:'#3b82f6', label:'Azul'      },
+      { hex:'#a855f7', label:'Morado'    },
+      { hex:'#15803d', label:'Verde'     },
+      { hex:'#0ea5e9', label:'Cian'      },
+      { hex:'#14b8a6', label:'Turquesa'  },
+      { hex:'#f97316', label:'Coral'     },
+      { hex:'#eab308', label:'Amarillo'  },
+      { hex:'#ec4899', label:'Rosa'      },
+      { hex:'#ef4444', label:'Rojo'      },
+      { hex:'#64748b', label:'Gris'      },
+    ];
+    let current = (typeof it.custom_color === 'string' && /^#[0-9a-f]{6}$/i.test(it.custom_color)) ? it.custom_color.toLowerCase() : null;
+
+    const wrap = el('div', { class:'card-color-popover' });
+    const grid = el('div', { class:'ccp-grid' });
+    const renderSwatches = () => {
+      grid.innerHTML = '';
+      presets.forEach(p => {
+        const active = current && current === p.hex.toLowerCase();
+        const sw = el('button', {
+          type:'button',
+          class:'ccp-swatch' + (active ? ' active' : ''),
+          'aria-pressed': active ? 'true' : 'false',
+          title: p.label,
+          onclick: () => { current = p.hex.toLowerCase(); renderSwatches(); },
+        }, [
+          el('div', { class:'ccp-chip' }),
+          el('span', { text: p.label }),
+        ]);
+        sw.style.setProperty('--ccp-color', p.hex);
+        grid.appendChild(sw);
+      });
+    };
+    renderSwatches();
+    wrap.appendChild(grid);
+
+    // Selector libre + botón "Quitar override"
+    const colorInput = el('input', {
+      type:'color',
+      value: current || '#3b82f6',
+      onchange: (e) => { current = e.target.value.toLowerCase(); renderSwatches(); }
+    });
+    const row = el('div', { class:'ccp-row' }, [
+      el('label', { for:'ccp-free', text:'Color libre' }),
+      colorInput,
+      el('span', { style:{flex:'1'} }),
+      el('button', {
+        type:'button', class:'btn btn-ghost',
+        onclick: () => { current = null; colorInput.value = '#3b82f6'; renderSwatches(); }
+      }, 'Quitar override'),
+    ]);
+    colorInput.id = 'ccp-free';
+    wrap.appendChild(row);
+
+    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+      const next = current; // null → quita override; HEX → fija
+      it.custom_color = next;
+      try {
+        await DB.put('planning_items', it);
+        UI.toast(next ? 'Color guardado' : 'Color por defecto restaurado');
+        UI.closeSheet();
+        // Refrescar la card en sitio sin re-renderizar todo el planning.
+        const card = document.querySelector(`.timeline-item[data-id="${CSS.escape(it.id)}"]`);
+        if (card) {
+          card.classList.toggle('has-custom-color', !!next);
+          if (next) card.style.setProperty('--card-color', next);
+          else card.style.removeProperty('--card-color');
+          const btn = card.querySelector('.color-btn');
+          if (btn) {
+            btn.classList.toggle('has-color', !!next);
+            btn.title = next ? 'Cambiar color de la tarjeta' : 'Personalizar color de la tarjeta';
+            if (next) btn.style.setProperty('--card-color', next);
+            else btn.style.removeProperty('--card-color');
+          }
+        }
+      } catch (e) {
+        console.warn('openCardColorPicker save', e);
+        UI.toast('No se pudo guardar el color');
+      }
+    } }, 'Guardar');
+    const cancel = el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar');
+
+    UI.openSheet({
+      title:'Color de la tarjeta',
+      body: wrap,
+      footer:[cancel, save],
+    });
+  },
+
   async toggleVisited(it) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
     it.visited = !it.visited;
