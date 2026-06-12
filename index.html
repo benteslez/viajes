@@ -1083,6 +1083,16 @@ h2.section-title {
 .pack-group-act { width:28px; height:28px; }
 .pack-group-act svg { width:15px; height:15px; }
 .pack-group-act:disabled { opacity:.3; cursor:default; pointer-events:none; }
+/* Toggle de modo edición activo */
+.icon-btn.edit-on { background:var(--accent); border-color:var(--accent); color:#fff; }
+.icon-btn.edit-on svg { color:#fff; }
+/* Input para renombrar el grupo en modo edición */
+.pack-group-title-input {
+  flex:1; min-width:0; font-weight:700; font-size:15px; letter-spacing:-.01em;
+  color:var(--text); background:var(--bg-input); border:1px solid var(--line);
+  border-radius:var(--r-sm); padding:5px 9px; font-family:inherit;
+}
+.pack-group-title-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
 /* Personas plegables — por defecto se ve solo el ranking */
 .person-card-head { cursor:pointer; }
@@ -1354,6 +1364,9 @@ h2.section-title {
   color:var(--text);
 }
 .day-head .day-date::first-letter { text-transform:uppercase; }
+/* Cada parte (día de la semana / "26 de junio") no se parte: el salto, si hace
+   falta, ocurre entre ellas. */
+.day-head .day-wd, .day-head .day-dm { white-space:nowrap; }
 
 /* Tipo de planning_item — punto de color */
 .dot-type { width:8px; height:8px; border-radius:50%; }
@@ -5167,6 +5180,7 @@ const TripDetail = {
   _packingPerson: 'ruben',    // persona activa en la maleta (ruben | sergio | pablo)
   _packingSort: 'custom',     // 'custom' (arrastrar) | 'abc' (alfabético)
   _packingCollapsedCats: new Set(),  // grupos plegados en la maleta
+  _packingEditMode: false,    // modo edición: muestra reordenar/borrar/renombrar grupos
 
   async tabPlanning(root, t, fab) {
     const rawItems = await DB.listByTrip('planning_items', t.id);
@@ -5305,7 +5319,15 @@ const TripDetail = {
         el('div', { class:'day-head-main', onclick: () => toggleDayGroup(g, k) }, [
           el('span', { class:'day-collapse', html: svg('chevron'), 'aria-hidden':'true' }),
           dayNum ? el('span', { class:'day-num', text:`Día ${dayNum}` }) : null,
-          el('span', { class:'day-date', text: k === 'sin-fecha' ? 'Sin fecha' : fmtDayLong(k) }),
+          // Fecha: día de la semana y "26 de junio" como bloques no partibles, de modo
+          // que si no cabe en una línea, el salto sea entre ellos (no a mitad de "junio").
+          (k === 'sin-fecha')
+            ? el('span', { class:'day-date', text:'Sin fecha' })
+            : el('span', { class:'day-date' }, [
+                el('span', { class:'day-wd', text: fmtDate(k, { weekday:'long' }) + ',' }),
+                ' ',
+                el('span', { class:'day-dm', text: fmtDate(k, { day:'numeric', month:'long' }) }),
+              ]),
           k !== 'sin-fecha' ? el('span', { class:'wx-chip', id:`wx-${k}` }) : null,
           (dayMeta && dayMeta.title) ? el('span', {
             class: 'day-title-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''),
@@ -7045,6 +7067,7 @@ const TripDetail = {
   async tabMaleta(root, t) {
     const items = await DB.listByTrip('packing_items', t.id);
     const sort = TripDetail._packingSort || 'custom';
+    const editMode = TripDetail._packingEditMode;
     const customCats = Array.isArray(t.packing_categories) ? t.packing_categories : [];
 
     // Progreso en vivo (izquierda).
@@ -7074,6 +7097,10 @@ const TripDetail = {
           onclick: () => TripDetail.openPackingEditor(t), html: svg('plus') }) : null,
         canEdit() ? el('button', { class:'icon-btn', title:'Nuevo grupo', 'aria-label':'Nuevo grupo',
           onclick: () => TripDetail._openNewPackingGroup(t), html: svg('folderplus') }) : null,
+        // Toggle de modo edición: muestra reordenar/borrar/renombrar grupos.
+        canEdit() ? el('button', { class:'icon-btn' + (editMode ? ' edit-on' : ''), title: editMode ? 'Listo' : 'Editar grupos',
+          'aria-pressed': editMode ? 'true' : 'false', 'aria-label':'Editar',
+          onclick: () => { TripDetail._packingEditMode = !TripDetail._packingEditMode; Router.render(); }, html: svg(editMode ? 'check' : 'edit') }) : null,
       ].filter(Boolean)),
     ]));
     refreshProgress();
@@ -7105,32 +7132,41 @@ const TripDetail = {
       const collapsed = TripDetail._packingCollapsedCats.has(c.id);
       const grp = el('div', { class:'pack-group' + (collapsed ? ' collapsed' : ''), data:{ cat:c.id } });
       const grp_list = byCat[c.id] || [];
+      // En modo edición el título es editable (renombra el grupo).
+      const titleEl = (editMode && canEdit())
+        ? el('input', { class:'pack-group-title-input', value: c.label, 'aria-label':'Nombre del grupo',
+            onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+            onblur: (e) => TripDetail._renamePackingGroup(t, c.id, e.target.value) })
+        : el('span', { class:'pack-group-title', text: c.label });
       const head = el('div', { class:'pack-group-head', onclick: (e) => {
-        if (e.target.closest('.pack-group-act')) return;
+        if (e.target.closest('.pack-group-act') || e.target.closest('.pack-group-title-input')) return;
         const willCollapse = !grp.classList.contains('collapsed');
         grp.classList.toggle('collapsed', willCollapse);
         if (willCollapse) TripDetail._packingCollapsedCats.add(c.id); else TripDetail._packingCollapsedCats.delete(c.id);
       } }, [
         el('span', { class:'pack-group-chevron', html: svg('chevron') }),
-        el('span', { class:'pack-group-title', text: c.label }),
+        titleEl,
         el('span', { class:'pack-group-count', text: String(grp_list.length) }),
         el('div', { class:'gap' }),
-        (canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Subir grupo', html: svg('arrup'),
+        // Reordenar/borrar grupos: solo en modo edición.
+        (editMode && canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Subir grupo', html: svg('arrup'),
           disabled: cats.indexOf(c) === 0 ? true : null,
           onclick: () => TripDetail._movePackingGroup(t, c.id, -1) }) : null,
-        (canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Bajar grupo', html: svg('arrdown'),
+        (editMode && canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Bajar grupo', html: svg('arrdown'),
           disabled: cats.indexOf(c) === cats.length - 1 ? true : null,
           onclick: () => TripDetail._movePackingGroup(t, c.id, 1) }) : null,
+        // "+" para añadir a este grupo: siempre.
         canEdit() ? el('button', { class:'icon-btn pack-group-act', title:'Añadir a este grupo', html: svg('plus'),
           onclick: () => TripDetail.openPackingEditor(t, null, c.id) }) : null,
-        (canEdit() && c.custom) ? el('button', { class:'icon-btn pack-group-act', title:'Borrar grupo', html: svg('trash'),
+        (editMode && canEdit() && c.custom) ? el('button', { class:'icon-btn pack-group-act', title:'Borrar grupo', html: svg('trash'),
           onclick: () => TripDetail._deletePackingGroup(t, c.id) }) : null,
       ].filter(Boolean));
       grp.appendChild(head);
 
       const ul = el('div', { class:'pack-list', data:{ cat:c.id } });
       const makeRow = (i) => {
-        const draggable = sort === 'custom' && canEdit() && !i.checked;
+        // Reordenar (arrastrar) y editar item: solo en modo edición.
+        const draggable = editMode && sort === 'custom' && canEdit() && !i.checked;
         const row = el('div', { class:'pack-item' + (i.checked ? ' done' : ''), data:{ id:i.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
         let toggling = false;
         const toggle = async () => {
@@ -7157,7 +7193,7 @@ const TripDetail = {
         row.appendChild(el('div', { class:'pack-name', onclick: toggle }, i.name));
         // Grip de arrastre a la DERECHA (solo orden manual y sin marcar).
         if (draggable) row.appendChild(el('span', { class:'pack-drag', html: svg('grip'), title:'Arrastra para reordenar' }));
-        if (canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Editar', html: svg('edit'),
+        if (editMode && canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Editar', html: svg('edit'),
           onclick: (e) => { e.stopPropagation(); TripDetail.openPackingEditor(t, i); } }));
         // Drag & drop (solo en orden personalizado)
         if (draggable) {
@@ -7210,10 +7246,13 @@ const TripDetail = {
   _packingCats(t, items) {
     const byCat = {};
     items.forEach(i => { const k = i.category || 'otros'; (byCat[k] = byCat[k] || []).push(i); });
+    const builtinIds = new Set(CATS_PACKING.map(c => c.id));
+    // Overrides de etiqueta (para renombrar también los grupos fijos).
+    const labelOf = {}; (t.packing_categories || []).forEach(c => { labelOf[c.id] = c.label; });
     const cats = []; const seen = new Set();
-    CATS_PACKING.forEach(c => { if ((byCat[c.id] || []).length) { cats.push({ id:c.id, label:c.label, custom:false }); seen.add(c.id); } });
-    (t.packing_categories || []).forEach(c => { if (!seen.has(c.id)) { cats.push({ id:c.id, label:c.label, custom:true }); seen.add(c.id); } });
-    Object.keys(byCat).forEach(cid => { if (!seen.has(cid)) { cats.push({ id:cid, label:cid, custom:false }); seen.add(cid); } });
+    CATS_PACKING.forEach(c => { if ((byCat[c.id] || []).length || labelOf[c.id]) { cats.push({ id:c.id, label: labelOf[c.id] || c.label, custom:false }); seen.add(c.id); } });
+    (t.packing_categories || []).forEach(c => { if (!seen.has(c.id) && !builtinIds.has(c.id)) { cats.push({ id:c.id, label:c.label, custom:true }); seen.add(c.id); } });
+    Object.keys(byCat).forEach(cid => { if (!seen.has(cid)) { cats.push({ id:cid, label: labelOf[cid] || cid, custom: !builtinIds.has(cid) }); seen.add(cid); } });
     // Aplicar orden guardado (estable: los no listados quedan al final en su orden actual).
     const order = Array.isArray(t.packing_group_order) ? t.packing_group_order : [];
     if (order.length) {
@@ -7225,6 +7264,19 @@ const TripDetail = {
       });
     }
     return { cats, byCat };
+  },
+
+  // Renombra un grupo (fijo o personalizado) guardando un override de etiqueta.
+  async _renamePackingGroup(t, catId, newLabel) {
+    if (!canEdit()) return;
+    newLabel = (newLabel || '').trim();
+    if (!newLabel) return;
+    const cats = Array.isArray(t.packing_categories) ? t.packing_categories : (t.packing_categories = []);
+    const existing = cats.find(c => c.id === catId);
+    const cur = existing ? existing.label : (CATS_PACKING.find(c => c.id === catId)?.label || catId);
+    if (newLabel === cur) return;
+    if (existing) existing.label = newLabel; else cats.push({ id: catId, label: newLabel });
+    try { await DB.put('trips', t); } catch (e) { console.error(e); }
   },
 
   // Sube/baja un grupo en el orden (dir = -1 arriba, +1 abajo).
