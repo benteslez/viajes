@@ -865,7 +865,7 @@ h2.section-title {
    =========================================================================== */
 :root {
   --tipo-vuelo:      #3b82f6;
-  --tipo-transporte: #3b82f6;
+  --tipo-transporte: #1e40af; /* azul oscuro (no morado) — distinto de vuelo (azul) y lugar (cian) */
   --tipo-coche:      #3b82f6;
   --tipo-comida:     #f97316;
   --tipo-actividad:  #a855f7;
@@ -899,36 +899,71 @@ h2.section-title {
 .list-item.type-otro,
 .timeline-item.type-otro       { background: color-mix(in srgb, var(--tipo-otro)       12%, var(--bg-elev)); }
 
+/* En el día a día (timeline) el FONDO de la tarjeta lo manda el ESTADO, no el tipo:
+   sin estado → blanco; el color del tipo vive en el emoji. Anula el tinte de tipo
+   de arriba para las cards del planning. */
+.timeline-item.list-item { background: var(--bg-elev); position:relative; }
+
 /* Override manual: HEX libre del usuario. Inline style fija `--card-color`. */
 .list-item.has-custom-color,
 .timeline-item.has-custom-color {
   background: color-mix(in srgb, var(--card-color) 14%, var(--bg-elev)) !important;
 }
 
-/* Estado en el BORDE — solo `por_iniciar`, `en_consulta` y `cancelado` tiñen
-   borde. `confirmado` no toca el borde (la tarjeta conserva el color de tipo). */
+/* El ESTADO tiñe el fondo de la tarjeta:
+   - por_iniciar y cancelado → fondo de color pleno.
+   - en_consulta → tinte medio.
+   - confirmado → tinte verde muy suave (la pill verde en la esquina basta).
+   - sin estado → blanco (regla de arriba). */
 .list-item.status-por_iniciar,
 .timeline-item.status-por_iniciar {
-  border-color: #f59e0b;
-  border-width: 2px;
+  border-color: color-mix(in srgb, #f59e0b 45%, var(--line));
+  background: color-mix(in srgb, #f59e0b 22%, var(--bg-elev));
   box-shadow: var(--sh-1);
 }
 .list-item.status-en_consulta,
 .timeline-item.status-en_consulta {
-  border-color: #3b82f6;
-  border-width: 2px;
+  border-color: color-mix(in srgb, #3b82f6 45%, var(--line));
+  background: color-mix(in srgb, #3b82f6 11%, var(--bg-elev));
+  box-shadow: var(--sh-1);
+}
+.list-item.status-confirmado,
+.timeline-item.status-confirmado {
+  border-color: color-mix(in srgb, #10b981 35%, var(--line));
+  background: color-mix(in srgb, #10b981 9%, var(--bg-elev));
   box-shadow: var(--sh-1);
 }
 .list-item.status-cancelado,
 .timeline-item.status-cancelado {
-  border-color: #ef4444;
-  border-width: 2px;
+  border-color: color-mix(in srgb, #ef4444 45%, var(--line));
+  background: color-mix(in srgb, #ef4444 20%, var(--bg-elev));
   box-shadow: var(--sh-1);
 }
-/* Confirmado: nada de borde de estado. La pill verde basta. */
 
 .list-item.status-cancelado .li-title,
 .timeline-item.status-cancelado .li-title { text-decoration:line-through; opacity:.75; }
+
+/* Esquina inferior derecha: botón "Confirmar" (si aplica) + pill de estado. */
+.timeline-item.status-confirmado,
+.timeline-item.status-cancelado { padding-bottom:32px; }
+.timeline-item.status-por_iniciar,
+.timeline-item.status-en_consulta { padding-bottom:44px; }
+.timeline-item .li-corner {
+  position:absolute; right:13px; bottom:9px;
+  display:flex; align-items:center; gap:8px;
+}
+.timeline-item .li-corner .status-badge { margin:0; }
+.timeline-item .li-corner .li-confirm-btn { height:28px; padding:0 11px; font-size:12px; }
+
+/* Confirmado: emoji en verde (la pill ya es verde). */
+.timeline-item.status-confirmado .item-emoji {
+  background: color-mix(in srgb, #10b981 24%, var(--bg-elev)) !important;
+}
+/* Transporte confirmado: la TARJETA conserva su color índigo; emoji y pill verdes. */
+.timeline-item.status-confirmado.type-transporte {
+  background: color-mix(in srgb, var(--tipo-transporte) 12%, var(--bg-elev));
+  border-color: color-mix(in srgb, var(--tipo-transporte) 35%, var(--line));
+}
 
 /* Items virtuales (noches de hotel + check-out) — más sutiles para que se note
    que son derivados del item base. */
@@ -1076,6 +1111,13 @@ h2.section-title {
 .day-group.collapsed .day-collapse { transform:rotate(-90deg); }
 .day-group.collapsed .timeline-list,
 .day-group.collapsed .day-note-card { display:none; }
+
+/* Viaje en curso: días pasados ocultos hasta pulsar "Ver días anteriores". */
+.day-group.day-past { display:none; }
+.show-past .day-group.day-past { display:block; }
+.past-days-bar { display:flex; justify-content:center; margin:0 0 18px; }
+.past-days-bar .show-past-btn { color:var(--text-muted); }
+.past-days-bar .show-past-btn svg { width:15px; height:15px; }
 
 /* Maleta — sub-pestañas de persona + lista compacta */
 /* Cabecera de la maleta: progreso a la izquierda, controles a la derecha */
@@ -1459,7 +1501,7 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .dot-type.playa       { background:#fbbf24; }
 .dot-type.hotel       { background:#a855f7; }
 .dot-type.vuelo       { background:#3b82f6; }
-.dot-type.transporte  { background:#a855f7; }
+.dot-type.transporte  { background:#1e40af; }
 .dot-type.coche       { background:#ec4899; }
 .dot-type.actividad   { background:#10b981; }
 .dot-type.comida      { background:#f97316; }
@@ -1490,8 +1532,8 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 }
 /* Color del círculo del emoji por tipo — coincide con la paleta `--tipo-*`. */
 .timeline-item.type-vuelo      .item-emoji,
-.timeline-item.type-transporte .item-emoji,
 .timeline-item.type-coche      .item-emoji { background: color-mix(in srgb, var(--tipo-vuelo)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-vuelo)     55%, var(--line)); }
+.timeline-item.type-transporte .item-emoji { background: color-mix(in srgb, var(--tipo-transporte) 20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-transporte) 55%, var(--line)); }
 .timeline-item.type-comida     .item-emoji { background: color-mix(in srgb, var(--tipo-comida)    20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-comida)    55%, var(--line)); }
 .timeline-item.type-actividad  .item-emoji { background: color-mix(in srgb, var(--tipo-actividad) 20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-actividad) 55%, var(--line)); }
 .timeline-item.type-hotel      .item-emoji { background: color-mix(in srgb, var(--tipo-hotel)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-hotel)     55%, var(--line)); }
@@ -1500,26 +1542,13 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-item.type-compras    .item-emoji { background: color-mix(in srgb, var(--tipo-compras)   20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-compras)   55%, var(--line)); }
 .timeline-item.type-otro       .item-emoji { background: color-mix(in srgb, var(--tipo-otro)      20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-otro)      55%, var(--line)); }
 
-/* Estados con borde — el círculo del emoji refleja el ESTADO solo para
-   por_iniciar / en_consulta / cancelado. `confirmado` deja la card y el emoji
-   tal cual los marca el tipo (la pill verde basta para señalizar). */
-.timeline-item.status-por_iniciar .item-emoji {
-  border-color: color-mix(in srgb, #f59e0b 55%, var(--line));
-  background: color-mix(in srgb, #fbbf24 22%, var(--bg-elev));
-}
-.timeline-item.status-en_consulta .item-emoji {
-  border-color: color-mix(in srgb, #3b82f6 55%, var(--line));
-  background: color-mix(in srgb, #60a5fa 18%, var(--bg-elev));
-}
-.timeline-item.status-cancelado .item-emoji {
-  border-color: color-mix(in srgb, #ef4444 55%, var(--line));
-  background: color-mix(in srgb, #f87171 16%, var(--bg-elev));
-}
+/* El emoji conserva el color de su TIPO también en tarjetas con fondo de estado,
+   para que el icono destaque sobre el color (confirmado es la excepción: verde). */
 .timeline-item.type-lugar      .timeline-icon { border-color:#0ea5e9; color:#0369a1; }
 .timeline-item.type-playa      .timeline-icon { border-color:#fbbf24; color:#92400e; }
 .timeline-item.type-hotel      .timeline-icon { border-color:#a855f7; color:#6b21a8; }
 .timeline-item.type-vuelo      .timeline-icon { border-color:#3b82f6; color:#1e40af; }
-.timeline-item.type-transporte .timeline-icon { border-color:#a855f7; color:#6b21a8; }
+.timeline-item.type-transporte .timeline-icon { border-color:#1e40af; color:#1e3a8a; }
 .timeline-item.type-coche      .timeline-icon { border-color:#ec4899; color:#9d174d; }
 .timeline-item.type-actividad  .timeline-icon { border-color:#10b981; color:#047857; }
 .timeline-item.type-comida     .timeline-icon { border-color:#f97316; color:#9a3412; }
@@ -1660,6 +1689,17 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
   border:1px solid var(--line); border-radius:var(--r-sm);
   background:var(--bg-elev); cursor:pointer;
 }
+/* Variante embebida dentro del formulario del editor (sin recuadro propio). */
+.card-color-popover.ccp-inline { gap:10px; }
+.card-color-popover.ccp-inline .ccp-grid { grid-template-columns: repeat(4, 1fr); gap:8px; }
+.card-color-popover.ccp-inline .ccp-swatch { padding:8px 4px; font-size:10.5px; }
+.card-color-popover.ccp-inline .ccp-swatch .ccp-chip { width:20px; height:20px; }
+/* Opción "Sin color" → vuelve al color del tipo/estado. */
+.card-color-popover .ccp-none .ccp-chip {
+  background:var(--bg-soft);
+  border:1.5px dashed var(--line);
+}
+.card-color-popover .ccp-none.active { border-color:var(--text-muted); }
 
 /* Picker visual en el editor */
 .border-color-grid {
@@ -2360,6 +2400,9 @@ const planEmoji = (it) => {
 // Devuelve null si el tipo no requiere reserva (lugar/comida/otro) → fondo blanco.
 const itemStatus = (it) => {
   const td = typeDef(it.type);
+  // "ninguno" = el usuario eligió explícitamente Sin estado → tarjeta blanca,
+  // incluso en reservas (que por defecto serían "por iniciar").
+  if (it.status === 'ninguno') return null;
   // Estado explícito siempre manda (vale para reservas y para comida/compras).
   if (it.status) return it.status;
   // Tipos que sólo "soportan" estado (comida/compras) sin estado fijado → null (blanco).
@@ -5470,9 +5513,25 @@ const TripDetail = {
     } }, [ el('span', { html: svg('chevron') }), el('span', { text: allCollapsedNow ? 'Desplegar todo' : 'Plegar todo' }) ]);
     if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ collapseAllBtn ]));
 
+    // Viaje EN CURSO: ocultamos los días ya pasados y dejamos un botón para verlos.
+    const todayStr = todayIso();
+    const isEnCurso = tripStatus(t) === 'curso';
+    const pastKeys = isEnCurso ? keys.filter(k => k !== 'sin-fecha' && k < todayStr) : [];
+    if (pastKeys.length) {
+      const pastBtn = el('button', { class:'btn btn-sm btn-ghost show-past-btn', onclick: () => {
+        const showing = root.classList.toggle('show-past');
+        pastBtn.lastChild.textContent = showing
+          ? 'Ocultar días anteriores'
+          : `Ver días anteriores (${pastKeys.length})`;
+      } }, [ el('span', { html: svg('clock'), 'aria-hidden':'true' }),
+             el('span', { text:`Ver días anteriores (${pastKeys.length})` }) ]);
+      root.appendChild(el('div', { class:'past-days-bar' }, [ pastBtn ]));
+    }
+
     for (const k of keys) {
       const collapsed = TripDetail._collapsedDays.has(k);
-      const g = el('div', { class:'day-group' + (collapsed ? ' collapsed' : ''), data:{ day:k } });
+      const isPast = pastKeys.includes(k);
+      const g = el('div', { class:'day-group' + (collapsed ? ' collapsed' : '') + (isPast ? ' day-past' : ''), data:{ day:k } });
       const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
       const dayMeta = noteMap[k];
       const head = el('div', { class:'day-head' }, [
@@ -5668,7 +5727,15 @@ const TripDetail = {
     const timeRangeText = (() => {
       if (!showTime) return null;
       const start = it.time;
-      const end   = (it.type === 'lugar' || it.type === 'playa') ? it.end_time : null;
+      let end = (it.type === 'lugar' || it.type === 'playa') ? it.end_time : null;
+      // Transporte/vuelo: si hay hora de llegada el mismo día, mostramos
+      // "salida – llegada" en la misma pill (la llegada no es obligatoria).
+      if (!end && !isVirtual && (it.type === 'transporte' || it.type === 'vuelo')) {
+        const t2 = it.consultation_planned_t2;
+        const d1 = it.consultation_planned_d1 || it.day_date;
+        const sameDay = !it.consultation_planned_d2 || it.consultation_planned_d2 === d1;
+        if (t2 && t2 !== start && sameDay) end = t2;
+      }
       return end ? `${start} – ${end}` : start;
     })();
     const visitedCls = (it.visited && !isVirtual) ? ' visited' : '';
@@ -5723,7 +5790,6 @@ const TripDetail = {
         el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'wrap', gap:'4px'} }, [
           timeRangeText ? el('span', { class:'time-pill', text: timeRangeText }) : null,
           el('span', { text: displayTitle }),
-          (statusDef && !isVirtual) ? el('span', { class:`status-badge s-${status}`, text: statusDef.label }) : null,
           (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
         ].filter(Boolean)),
         // Los virtuales (noche/check-out/llegada) no caen al fallback td.label si no hay sub.
@@ -5734,19 +5800,8 @@ const TripDetail = {
         ) : null,
       ].filter(Boolean)),
       el('div', { class:'li-actions', style:{alignItems:'center'} }, [
-        ((status === 'en_consulta' || status === 'por_iniciar') && canEdit() && !isVirtual) ? el('button', {
-          class:'btn btn-sm', style:{background:'var(--status-curso)', color:'#fff', borderColor:'transparent'},
-          onclick: (e) => { e.stopPropagation(); TripDetail.openConfirmPlanning(t, it); }
-        }, [ el('span', { html: svg('check') }), 'Confirmar' ]) : null,
-        // Botón "paleta": abre un popover para fijar/limpiar un color libre (HEX)
-        // que sobreescribe el color del tipo. Persiste en planning_items.custom_color.
-        (canEdit() && !isVirtual) ? el('button', {
-          class: 'icon-btn color-btn' + (customColor ? ' has-color' : ''),
-          title: customColor ? 'Cambiar color de la tarjeta' : 'Personalizar color de la tarjeta',
-          'aria-label':'Color de la tarjeta',
-          html: svg('palette'),
-          onclick: (e) => { e.stopPropagation(); TripDetail.openCardColorPicker(t, it); }
-        }) : null,
+        // (El color personalizado de la tarjeta ahora se edita dentro del diálogo
+        //  de edición, no como botón siempre visible en la card.)
         // Toggle "Visto": marca/desmarca el item como visitado. Pinta la card en gris.
         (canEdit() && !isVirtual) ? el('button', {
           class: 'icon-btn' + (it.visited ? ' btn-visited-on' : ''),
@@ -5759,7 +5814,19 @@ const TripDetail = {
           onclick: (e) => e.stopPropagation() }) : null,
         el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
           title: isVirtual ? 'Editar el hotel' : 'Editar' }),
-      ].filter(Boolean))
+      ].filter(Boolean)),
+      // Esquina inferior derecha: botón "Confirmar" (si aplica) + pill de estado,
+      // juntos para no quedar sueltos en medio de la tarjeta.
+      (() => {
+        const cornerKids = [
+          ((status === 'en_consulta' || status === 'por_iniciar') && canEdit() && !isVirtual) ? el('button', {
+            class:'btn btn-sm li-confirm-btn', style:{background:'var(--status-curso)', color:'#fff', borderColor:'transparent'},
+            onclick: (e) => { e.stopPropagation(); TripDetail.openConfirmPlanning(t, it); }
+          }, [ el('span', { html: svg('check') }), 'Confirmar' ]) : null,
+          (statusDef && !isVirtual) ? el('span', { class:`status-badge s-${status}`, text: statusDef.label }) : null,
+        ].filter(Boolean);
+        return cornerKids.length ? el('div', { class:'li-corner' }, cornerKids) : null;
+      })(),
     ].filter(Boolean));
     if (customColor) node.style.setProperty('--card-color', customColor);
     return node;
@@ -6117,8 +6184,9 @@ const TripDetail = {
       metadata: {},
     };
     if (!it.metadata) it.metadata = {};
-    // Estado inicial: respeta lo que tenga, o default por_iniciar si el tipo requiere reserva
-    let currentStatus = itemStatus(it);
+    // Estado inicial: el valor crudo manda (incluido el centinela 'ninguno' = Sin estado);
+    // si no hay nada, derivamos el efectivo (reservas legacy → por_iniciar).
+    let currentStatus = it.status || itemStatus(it);
 
     let searchTimer = null;
     const doSearch = async (q) => {
@@ -6200,13 +6268,14 @@ const TripDetail = {
       } else {
         const showEnd = (type === 'lugar' || type === 'playa');
         const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
-        const cells = [
+        datesBlock.appendChild(el('label', { text:'Fecha y hora' }));
+        // Día y Hora siempre uno al lado del otro (2 columnas).
+        datesBlock.appendChild(el('div', { class:'form-grid-2' }, [
           cell('Día', el('input', { id:'f-day', type:'date', value: it.day_date || '' })),
           cell(showEnd ? 'Hora inicio' : 'Hora', el('input', { id:'f-time', type:'time', value: it.time || '' })),
-        ];
-        if (showEnd) cells.push(cell('Hora fin', el('input', { id:'f-end-time', type:'time', value: it.end_time || '' })));
-        datesBlock.appendChild(el('label', { text:'Fecha y hora' }));
-        datesBlock.appendChild(el('div', { class:`form-grid-${showEnd ? 3 : 2}` }, cells));
+        ]));
+        // "Hora fin" (solo lugar/playa) en su propia fila debajo.
+        if (showEnd) datesBlock.appendChild(cell('Hora fin', el('input', { id:'f-end-time', type:'time', value: it.end_time || '' })));
       }
     };
     // Alias: el resto del editor (onchange, applyParsed, init, openConfirmPlanning) llama a
@@ -6257,18 +6326,19 @@ const TripDetail = {
       consultaBlock.style.display = td.requiresBooking ? '' : 'none';
       if (!hasStatus) return;
       statusPicker.innerHTML = '';
-      // Comida/compras pueden quedar "Sin estado" (blanco). Las reservas, no.
-      const opts = (td.supportsStatus && !td.requiresBooking)
-        ? [{ id:'', label:'Sin estado', hint:'Sin color, neutro' }, ...STATUS_PLANNING]
-        : STATUS_PLANNING;
-      const defaultId = td.requiresBooking ? 'por_iniciar' : '';
+      // Cualquier tipo con estado puede quedar "Sin estado" (tarjeta blanca),
+      // incluidas las reservas (se guarda el centinela 'ninguno').
+      const opts = [{ id:'ninguno', label:'Sin estado', hint:'Tarjeta blanca' }, ...STATUS_PLANNING];
+      // Por defecto: reservas → "por iniciar"; el resto → "sin estado".
+      const defaultId = td.requiresBooking ? 'por_iniciar' : 'ninguno';
+      const activeId = currentStatus || defaultId;
       opts.forEach(s => {
-        const isActive = (currentStatus || '') === s.id || (!currentStatus && s.id === defaultId);
+        const isActive = activeId === s.id;
         const opt = el('button', {
           type:'button',
           class: `opt s-${s.id || 'sin'}` + (isActive ? ' active' : ''),
           onclick: () => {
-            currentStatus = s.id || null;
+            currentStatus = s.id;
             renderStatusPicker();
           }
         }, [
@@ -6281,6 +6351,47 @@ const TripDetail = {
         statusPicker.appendChild(opt);
       });
     };
+
+    // ---- Color de la tarjeta (override libre) — antes era un botón siempre visible
+    //      en la card; ahora se edita aquí, dentro del diálogo. ----
+    let currentCardColor = (typeof it.custom_color === 'string' && /^#[0-9a-f]{6}$/i.test(it.custom_color)) ? it.custom_color.toLowerCase() : null;
+    const colorPresets = [
+      { hex:'#3b82f6', label:'Azul' }, { hex:'#1e40af', label:'Azul noche' },
+      { hex:'#a855f7', label:'Morado' }, { hex:'#15803d', label:'Verde' },
+      { hex:'#0ea5e9', label:'Cian' }, { hex:'#14b8a6', label:'Turquesa' },
+      { hex:'#f97316', label:'Coral' }, { hex:'#eab308', label:'Amarillo' },
+      { hex:'#ec4899', label:'Rosa' }, { hex:'#ef4444', label:'Rojo' },
+      { hex:'#64748b', label:'Gris' },
+    ];
+    const colorGrid = el('div', { class:'ccp-grid' });
+    const colorFree = el('input', { type:'color', id:'f-card-color', value: currentCardColor || '#3b82f6',
+      onchange: (e) => { currentCardColor = e.target.value.toLowerCase(); renderColorSwatches(); } });
+    const renderColorSwatches = () => {
+      colorGrid.innerHTML = '';
+      const none = el('button', { type:'button', class:'ccp-swatch ccp-none' + (!currentCardColor ? ' active' : ''),
+        title:'Sin color (según tipo/estado)', onclick: () => { currentCardColor = null; renderColorSwatches(); } },
+        [ el('div', { class:'ccp-chip' }), el('span', { text:'Sin color' }) ]);
+      colorGrid.appendChild(none);
+      colorPresets.forEach(p => {
+        const active = currentCardColor === p.hex.toLowerCase();
+        const sw = el('button', { type:'button', class:'ccp-swatch' + (active ? ' active' : ''), title:p.label,
+          onclick: () => { currentCardColor = p.hex.toLowerCase(); renderColorSwatches(); } },
+          [ el('div', { class:'ccp-chip' }), el('span', { text:p.label }) ]);
+        sw.style.setProperty('--ccp-color', p.hex);
+        colorGrid.appendChild(sw);
+      });
+    };
+    renderColorSwatches();
+    const colorRow = el('div', { class:'form-row', id:'color-row' }, [
+      el('label', { text:'Color de la tarjeta' }),
+      el('div', { class:'card-color-popover ccp-inline' }, [
+        colorGrid,
+        el('div', { class:'ccp-row' }, [
+          el('label', { for:'f-card-color', text:'Color libre' }),
+          colorFree,
+        ]),
+      ]),
+    ]);
 
     // Si abre por primera vez y el tipo requiere reserva pero no tiene status, asigna por_iniciar
     if (!currentStatus && typeDef(it.type).requiresBooking) currentStatus = 'por_iniciar';
@@ -6564,54 +6675,67 @@ const TripDetail = {
       el('div', { class:'field-hint', text:'Crea un vuelo nuevo con origen/destino invertidos y los mismos pasajeros, compañía y localizador. Rellenas fechas, nº y asientos en el cuadro nuevo.' }),
     ]);
 
+    // Importador de reservas: solo tiene sentido en tipos con reserva
+    // (vuelo, alojamiento, transporte, coche, actividad). Oculto en el resto.
+    const importBlock = el('details', { class:'paste-import', id:'import-block' }, [
+      el('summary', {}, [ el('span', { html: svg('download') }), ' Pegar una reserva y autocompletar' ]),
+      el('p', { class:'field-hint', style:{margin:'8px 0'}, text:'Pega el texto de un email/confirmación de vuelo, hotel o tren. Detecto tipo, ruta, nº, fechas, hora, asientos y localizador (lo que encuentre). Revisa siempre antes de guardar.' }),
+      el('textarea', { id:'paste-import-text', rows:'4', placeholder:'Ej: Vuelo AV9899 BOG-MAD 11/06/2026 20:35h · Localizador ABC123 · Asientos 25J, 25K' }),
+      el('div', { style:{marginTop:'8px'} }, [
+        el('button', { type:'button', class:'btn btn-sm btn-primary', onclick: applyParsed }, [ el('span', { html: svg('check') }), 'Analizar y autocompletar' ]),
+      ]),
+    ]);
+    const refreshImportVisibility = () => {
+      const td = typeDef($('#f-type')?.value || it.type);
+      importBlock.style.display = td.requiresBooking ? '' : 'none';
+    };
+
+    // Selector de tipo — al cambiar, se reconstruye todo lo dependiente.
+    const typeRow = el('div', { class:'form-row' }, [
+      el('label', { text:'Tipo' }),
+      el('select', { id:'f-type', onchange: () => {
+        const td = typeDef($('#f-type').value);
+        if (td.requiresBooking && !currentStatus) currentStatus = 'por_iniciar';
+        if (!td.requiresBooking) currentStatus = null;
+        renderDatesBlock();
+        renderStatusPicker();
+        refreshTzVisibility();
+        renderMetadata();
+        refreshPlaceVisibility();
+        refreshImportVisibility();
+        renderBorderPicker();
+      }},
+        TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
+      ),
+    ]);
+
     const body = el('div', {}, [
-      el('details', { class:'paste-import' }, [
-        el('summary', {}, [ el('span', { html: svg('download') }), ' Pegar una reserva y autocompletar' ]),
-        el('p', { class:'field-hint', style:{margin:'8px 0'}, text:'Pega el texto de un email/confirmación de vuelo, hotel o tren. Detecto tipo, ruta, nº, fechas, hora, asientos y localizador (lo que encuentre). Revisa siempre antes de guardar.' }),
-        el('textarea', { id:'paste-import-text', rows:'4', placeholder:'Ej: Vuelo AV9899 BOG-MAD 11/06/2026 20:35h · Localizador ABC123 · Asientos 25J, 25K' }),
-        el('div', { style:{marginTop:'8px'} }, [
-          el('button', { type:'button', class:'btn btn-sm btn-primary', onclick: applyParsed }, [ el('span', { html: svg('check') }), 'Analizar y autocompletar' ]),
-        ]),
-      ]),
-      // Tipo (a todo el ancho) — al cambiar, se reconstruye todo lo dependiente.
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Tipo' }),
-        el('select', { id:'f-type', onchange: () => {
-          const td = typeDef($('#f-type').value);
-          if (td.requiresBooking && !currentStatus) currentStatus = 'por_iniciar';
-          if (!td.requiresBooking) currentStatus = null;
-          renderDatesBlock();
-          renderStatusPicker();
-          refreshTzVisibility();
-          renderMetadata();
-          refreshPlaceVisibility();
-          renderBorderPicker();
-        }},
-          TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
-        ),
-      ]),
-      // Fechas/horas unificadas (Desde/Hasta o Día/Hora según el tipo) — arriba.
-      datesBlock,
-      // Estado
-      statusRow,
-      // Título
+      // 1) Título — arriba del todo.
       el('div', { class:'form-row' }, [
         el('label', { text:'Título (auto si lo dejas vacío)' }),
         el('input', { id:'f-title', type:'text', value: it.title || '' }),
       ]),
+      // 2) Fecha y hora (Día + Hora uno al lado del otro).
+      datesBlock,
+      // 3) Lugar + búsqueda + dirección.
+      placeBlock,
+      // 4) Personas (con quién).
+      peopleBlock,
+      // ---- resto de campos ----
+      // Tipo (define qué campos aplican).
+      typeRow,
+      // Importador de reservas (solo tipos con reserva).
+      importBlock,
+      // Estado
+      statusRow,
       // Datos específicos del tipo (aerolínea, asientos, habitación…)
       metadataBlock,
       // Acción "vuelo de vuelta" (solo vuelos)
       returnFlightWrap,
       // Zonas horarias (vuelo/transporte)
       tzBlock,
-      // Lugar + búsqueda + dirección (tipos con localización física)
-      placeBlock,
-      // [DEPRECATED] El selector "Color del borde (lugar/playa)" ha sido
-      // sustituido por el botón paleta directo en cada tarjeta (override libre).
-      // borderBlock se mantiene como referencia muerta pero NO se añade a la UI.
-      // Personas (con quién) — cualquier tipo de evento
-      peopleBlock,
+      // Color de la tarjeta (override libre)
+      colorRow,
       // Notas
       el('div', { class:'form-row' }, [
         el('label', { text:'Notas' }),
@@ -6655,6 +6779,7 @@ const TripDetail = {
       refreshTimeVisibility(); refreshHotelDatesVisibility(); refreshTzVisibility();
       renderMetadata(); refreshPlaceVisibility(); refreshStandaloneTime();
       renderBorderPicker(); refreshSelectedPlace(); renderPeople();
+      refreshImportVisibility();
     }, 0);
 
     const collect = () => {
@@ -6730,10 +6855,11 @@ const TripDetail = {
       } else {
         it.origin_tz = null; it.dest_tz = null;
       }
-      // Status
-      it.status = td.requiresBooking ? (currentStatus || 'por_iniciar')
-                : (td.supportsStatus ? (currentStatus || null) : null);
+      // Status — guardamos el valor elegido tal cual (incluido 'ninguno' = Sin estado).
+      it.status = (td.requiresBooking || td.supportsStatus) ? (currentStatus || 'ninguno') : null;
       it.in_consultation = (it.status === 'en_consulta'); // legacy compat
+      // Color personalizado de la tarjeta (override libre; null = según tipo/estado).
+      it.custom_color = currentCardColor || null;
       // [DEPRECATED] `border_color` (legacy) ya no se escribe desde el editor.
       // El override de color se gestiona desde la card vía paleta (custom_color).
       it.border_color = null;
@@ -7057,8 +7183,9 @@ const TripDetail = {
       class:'btn btn-primary',
       onclick: async () => {
         try {
-          const amount = parseFloat($('#cf-amount').value);
-          if (isNaN(amount) || amount < 0) { UI.toast('Pon un importe válido'); return; }
+          // Importe opcional: si no se pone (o es inválido/negativo), se queda a 0.
+          let amount = parseFloat($('#cf-amount').value);
+          if (isNaN(amount) || amount < 0) amount = 0;
           const currency = ($('#cf-cur').value || 'EUR').toUpperCase();
           const newD1 = $('#cf-d1')?.value || it.day_date;
           const newD2 = $('#cf-d2')?.value || null;
