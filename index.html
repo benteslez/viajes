@@ -616,7 +616,8 @@ h2.section-title {
 .form-row input, .form-row select, .form-row textarea {
   border:1px solid var(--line); background:var(--bg-input); color:var(--text);
   border-radius:var(--r-md); padding:11px 14px;
-  font-size:15px; font-family:var(--font-ui);
+  /* 16px evita el auto-zoom de iOS al enfocar un campo. */
+  font-size:16px; font-family:var(--font-ui);
   transition:border .18s var(--ease), box-shadow .18s var(--ease);
 }
 .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
@@ -1017,8 +1018,15 @@ h2.section-title {
 .day-group.collapsed .day-note-card { display:none; }
 
 /* Maleta — sub-pestañas de persona + lista compacta */
-.packing-people { width:100%; margin-bottom:14px; }
-.packing-people button { flex:1; }
+/* Cabecera de la maleta: progreso a la izquierda, controles a la derecha */
+.pack-header {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:18px;
+}
+.pack-progress { flex:1 1 150px; min-width:140px; display:flex; flex-direction:column; gap:6px; }
+.pack-progress .budget-legend { font-size:12px; }
+.pack-controls { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
+.pack-templates { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
+
 .pack-list { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
 .pack-item {
   display:flex; align-items:center; gap:10px;
@@ -1045,9 +1053,8 @@ h2.section-title {
 .pack-item.drag-over-top { box-shadow:inset 0 2px 0 var(--accent); }
 .pack-item.drag-over-bot { box-shadow:inset 0 -2px 0 var(--accent); }
 
-/* Selector de orden (Personalizado / A-Z) en la maleta */
-.packing-sort { margin-left:auto; }
-.packing-sort button { padding:0 10px; font-size:12px; }
+/* Selector de orden (Manual / A-Z) en la maleta */
+.packing-sort button { padding:0 12px; font-size:12.5px; }
 
 /* Grupos plegables de la maleta */
 .pack-group { margin-bottom:14px; border-radius:var(--r-md); }
@@ -3192,6 +3199,7 @@ const ICONS = {
   chevron: '<polyline points="6 9 12 15 18 9"/>',
   arrup:   '<polyline points="18 15 12 9 6 15"/>',
   arrdown: '<polyline points="6 9 12 15 18 9"/>',
+  folderplus: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>',
   note:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
   eye:     '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   lock:    '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
@@ -7028,38 +7036,11 @@ const TripDetail = {
 
   /* ----- Maleta ----- */
   async tabMaleta(root, t) {
-    const allItems = await DB.listByTrip('packing_items', t.id);
-    const person = TripDetail._packingPerson || 'ruben';
-    const items = allItems.filter(i => (i.person || 'ruben') === person);
+    const items = await DB.listByTrip('packing_items', t.id);
     const sort = TripDetail._packingSort || 'custom';
     const customCats = Array.isArray(t.packing_categories) ? t.packing_categories : [];
 
-    // Sub-pestañas por persona (Rubén / Sergio / Pablo).
-    root.appendChild(el('div', { class:'segmented packing-people' }, PACKING_PEOPLE.map(p =>
-      el('button', { class: person === p.id ? 'active' : '',
-        onclick: () => { TripDetail._packingPerson = p.id; Router.render(); } }, p.label))));
-
-    const toolbar = el('div', { class:'toolbar' }, [
-      canEdit() ? el('button', { class:'btn btn-primary', onclick: () => TripDetail.openPackingEditor(t) }, [ el('span', { html: svg('plus') }), 'Añadir' ]) : null,
-      canEdit() ? el('button', { class:'btn btn-sm', onclick: () => TripDetail._openNewPackingGroup(t) }, [ el('span', { html: svg('plus') }), 'Grupo' ]) : null,
-      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) }, [ el('span', { html: svg('suit') }), 'Plantilla' ]),
-      el('div', { class:'segmented packing-sort' }, [
-        el('button', { class: sort === 'custom' ? 'active' : '', title:'Orden personalizado (arrastrar)', onclick: () => { TripDetail._packingSort = 'custom'; Router.render(); } }, 'Personalizado'),
-        el('button', { class: sort === 'abc' ? 'active' : '', title:'Orden alfabético', onclick: () => { TripDetail._packingSort = 'abc'; Router.render(); } }, 'A-Z'),
-      ]),
-    ].filter(Boolean));
-    root.appendChild(toolbar);
-
-    if (!items.length && !customCats.length) {
-      root.appendChild(el('div', { class:'empty' }, [
-        el('div', { class:'icon', html: svg('suit') }),
-        el('h3', { text:`Maleta de ${PACKING_PEOPLE.find(p => p.id === person)?.label || ''} vacía` }),
-        el('p', { text:'Añade cosas a mano, crea un grupo o aplica una plantilla.' }),
-      ]));
-      return;
-    }
-
-    // Progreso en vivo
+    // Progreso en vivo (izquierda).
     const fillEl = el('div', { class:'budget-fill' });
     const legendCount = el('span', { class:'mono' });
     const legendLabel = el('span', { class:'muted' });
@@ -7070,14 +7051,33 @@ const TripDetail = {
       legendCount.textContent = `${d} / ${items.length}`;
       legendLabel.textContent = p === 100 ? '¡Todo listo!' : 'preparados';
     };
-    if (items.length) {
-      root.appendChild(el('div', { class:'card', style:{marginBottom:'16px'} }, el('div', { class:'card-body' }, [
-        el('div', { class:'budget-progress' }, [
-          el('div', { class:'budget-bar' }, fillEl),
-          el('div', { class:'budget-legend' }, [ legendCount, legendLabel ]),
+
+    // Cabecera compacta: progreso a la izquierda, orden + añadir a la derecha.
+    root.appendChild(el('div', { class:'pack-header' }, [
+      el('div', { class:'pack-progress' }, [
+        el('div', { class:'budget-bar' }, fillEl),
+        el('div', { class:'budget-legend' }, [ legendCount, legendLabel ]),
+      ]),
+      el('div', { class:'pack-controls' }, [
+        el('div', { class:'segmented packing-sort' }, [
+          el('button', { class: sort === 'custom' ? 'active' : '', title:'Orden personalizado (arrastrar)', onclick: () => { TripDetail._packingSort = 'custom'; Router.render(); } }, 'Manual'),
+          el('button', { class: sort === 'abc' ? 'active' : '', title:'Orden alfabético', onclick: () => { TripDetail._packingSort = 'abc'; Router.render(); } }, 'A-Z'),
         ]),
-      ])));
-      refreshProgress();
+        canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir elemento', 'aria-label':'Añadir elemento',
+          onclick: () => TripDetail.openPackingEditor(t), html: svg('plus') }) : null,
+        canEdit() ? el('button', { class:'icon-btn', title:'Nuevo grupo', 'aria-label':'Nuevo grupo',
+          onclick: () => TripDetail._openNewPackingGroup(t), html: svg('folderplus') }) : null,
+      ].filter(Boolean)),
+    ]));
+    refreshProgress();
+
+    if (!items.length && !customCats.length) {
+      root.appendChild(el('div', { class:'empty' }, [
+        el('div', { class:'icon', html: svg('suit') }),
+        el('h3', { text:'Maleta vacía' }),
+        el('p', { text:'Añade cosas con el “+”, crea un grupo o aplica una plantilla.' }),
+      ]));
+      return;
     }
 
     // Agrupar por categoría y construir el orden de grupos (respetando el orden guardado).
@@ -7125,22 +7125,24 @@ const TripDetail = {
       const makeRow = (i) => {
         const draggable = sort === 'custom' && canEdit() && !i.checked;
         const row = el('div', { class:'pack-item' + (i.checked ? ' done' : ''), data:{ id:i.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
+        const toggle = async () => {
+          if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+          i.checked = !i.checked;
+          refreshProgress();
+          try { await DB.put('packing_items', i); } catch (e) { console.error(e); }
+          renderList();   // re-ordena: los marcados bajan al final
+        };
         const check = el('button', {
           class:'pack-check' + (i.checked ? ' on' : ''), 'aria-pressed': i.checked ? 'true' : 'false',
-          title:'Marcar como preparado', html: i.checked ? svg('check') : '',
-          onclick: async () => {
-            if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-            i.checked = !i.checked;
-            refreshProgress();
-            try { await DB.put('packing_items', i); } catch (e) { console.error(e); }
-            renderList();   // re-ordena: los marcados bajan al final
-          }
+          title:'Marcar como preparado', html: i.checked ? svg('check') : '', onclick: toggle,
         });
         row.appendChild(check);
+        // Tocar el texto también marca/desmarca.
+        row.appendChild(el('div', { class:'pack-name', onclick: toggle }, i.name));
+        // Grip de arrastre a la DERECHA (solo orden manual y sin marcar).
         if (draggable) row.appendChild(el('span', { class:'pack-drag', html: svg('grip'), title:'Arrastra para reordenar' }));
-        row.appendChild(el('div', { class:'pack-name', onclick: () => canEdit() && TripDetail.openPackingEditor(t, i) }, i.name));
         if (canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Quitar', html: svg('trash'),
-          onclick: async () => { const ok = await UI.confirm(`¿Quitar "${i.name}"?`); if (!ok) return; await DB.remove('packing_items', i.id); Router.render(); } }));
+          onclick: async (e) => { e.stopPropagation(); const ok = await UI.confirm(`¿Quitar "${i.name}"?`); if (!ok) return; await DB.remove('packing_items', i.id); Router.render(); } }));
         // Drag & drop (solo en orden personalizado)
         if (draggable) {
           row.addEventListener('dragstart', (e) => { draggedRow = row; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', i.id); } catch (_) {} });
@@ -7164,12 +7166,13 @@ const TripDetail = {
       root.appendChild(grp);
     }
 
-    // Al final: crear plantilla con los elementos de esta lista.
-    if (canEdit() && items.length) {
-      root.appendChild(el('div', { style:{marginTop:'22px'} },
-        el('button', { class:'btn btn-sm', onclick: () => TripDetail.openSaveTemplate(t, items) },
-          [ el('span', { html: svg('download') }), 'Crear plantilla con esta lista' ])));
-    }
+    // Al final: acciones de plantilla (aplicar una / guardar la lista como plantilla).
+    root.appendChild(el('div', { class:'pack-templates' }, [
+      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) },
+        [ el('span', { html: svg('suit') }), 'Aplicar plantilla' ]),
+      (canEdit() && items.length) ? el('button', { class:'btn btn-sm', onclick: () => TripDetail.openSaveTemplate(t, items) },
+        [ el('span', { html: svg('download') }), 'Crear plantilla con esta lista' ]) : null,
+    ].filter(Boolean)));
   },
 
   // Construye los grupos (categorías) de la maleta para una lista de items,
@@ -7197,15 +7200,13 @@ const TripDetail = {
   // Sube/baja un grupo en el orden (dir = -1 arriba, +1 abajo).
   async _movePackingGroup(t, catId, dir) {
     if (!canEdit()) return;
-    const items = (await DB.listByTrip('packing_items', t.id))
-      .filter(i => (i.person || 'ruben') === (TripDetail._packingPerson || 'ruben'));
+    const items = await DB.listByTrip('packing_items', t.id);
     const { cats } = TripDetail._packingCats(t, items);
     const ids = cats.map(c => c.id);
     const idx = ids.indexOf(catId);
     const swap = idx + dir;
     if (idx < 0 || swap < 0 || swap >= ids.length) return;
     [ids[idx], ids[swap]] = [ids[swap], ids[idx]];
-    // Conservar categorías del orden global que no se ven para esta persona.
     const prev = Array.isArray(t.packing_group_order) ? t.packing_group_order : [];
     const extra = prev.filter(id => !ids.includes(id));
     t.packing_group_order = [...ids, ...extra];
@@ -7219,9 +7220,8 @@ const TripDetail = {
     const dragged = await DB.get('packing_items', draggedId);
     if (!dragged) return;
     if (targetCat && targetCat !== dragged.category) dragged.category = targetCat;
-    const person = dragged.person || 'ruben';
     const all = (await DB.listByTrip('packing_items', t.id))
-      .filter(p => p.id !== draggedId && (p.person || 'ruben') === person && p.category === dragged.category && !p.checked);
+      .filter(p => p.id !== draggedId && p.category === dragged.category && !p.checked);
     all.sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
     let newIndex = all.length;
     if (targetId) { const idx = all.findIndex(p => p.id === targetId); if (idx >= 0) newIndex = before ? idx : idx + 1; }
