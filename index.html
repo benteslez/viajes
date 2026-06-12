@@ -1054,9 +1054,12 @@ h2.section-title {
 .pack-name { flex:1; min-width:0; font-size:15px; cursor:pointer; word-break:break-word; }
 .pack-del { width:28px; height:28px; flex-shrink:0; }
 .pack-del svg { width:15px; height:15px; }
-.pack-drag { display:inline-flex; flex-shrink:0; color:var(--text-muted); cursor:grab; }
-.pack-drag svg { width:16px; height:16px; }
-.pack-item.dragging { opacity:.4; }
+/* Arrastrar (long-press en táctil): la pill se "levanta". */
+.pack-item.dragging {
+  opacity:.95; transform:scale(1.03); position:relative; z-index:5;
+  box-shadow:0 8px 22px rgba(0,0,0,.18); border-color:var(--accent);
+}
+body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .pack-item.drag-over-top { box-shadow:inset 0 2px 0 var(--accent); }
 .pack-item.drag-over-bot { box-shadow:inset 0 -2px 0 var(--accent); }
 
@@ -1088,7 +1091,8 @@ h2.section-title {
 .icon-btn.edit-on svg { color:#fff; }
 /* Input para renombrar el grupo en modo edición */
 .pack-group-title-input {
-  flex:1; min-width:0; font-weight:700; font-size:15px; letter-spacing:-.01em;
+  /* 16px evita el auto-zoom de iOS al enfocar el campo. */
+  flex:1; min-width:0; font-weight:700; font-size:16px; letter-spacing:-.01em;
   color:var(--text); background:var(--bg-input); border:1px solid var(--line);
   border-radius:var(--r-sm); padding:5px 9px; font-family:inherit;
 }
@@ -7170,6 +7174,7 @@ const TripDetail = {
         const row = el('div', { class:'pack-item' + (i.checked ? ' done' : ''), data:{ id:i.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
         let toggling = false;
         const toggle = async () => {
+          if (row._justDragged) { row._justDragged = false; return; }  // venía de arrastrar
           if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
           if (toggling) return; toggling = true;
           i.checked = !i.checked;
@@ -7191,20 +7196,62 @@ const TripDetail = {
         row.appendChild(check);
         // Tocar el texto también marca/desmarca.
         row.appendChild(el('div', { class:'pack-name', onclick: toggle }, i.name));
-        // Grip de arrastre a la DERECHA (solo orden manual y sin marcar).
-        if (draggable) row.appendChild(el('span', { class:'pack-drag', html: svg('grip'), title:'Arrastra para reordenar' }));
         if (editMode && canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Editar', html: svg('edit'),
           onclick: (e) => { e.stopPropagation(); TripDetail.openPackingEditor(t, i); } }));
-        // Drag & drop (solo en orden personalizado)
+        // Arrastrar SIN grip: en escritorio con drag nativo; en táctil, dejando pulsada
+        // la pill (long-press) y moviéndola.
         if (draggable) {
+          // Ratón (HTML5 drag) — se puede agarrar la pill entera.
           row.addEventListener('dragstart', (e) => { draggedRow = row; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', i.id); } catch (_) {} });
           row.addEventListener('dragend', () => { row.classList.remove('dragging'); clearDnd(); draggedRow = null; });
           row.addEventListener('dragover', (e) => { if (!draggedRow || draggedRow === row) return; e.preventDefault(); const r = row.getBoundingClientRect(); const before = (e.clientY - r.top) < r.height / 2; root.querySelectorAll('.drag-over-top,.drag-over-bot').forEach(n => { if (n !== row) n.classList.remove('drag-over-top', 'drag-over-bot'); }); row.classList.toggle('drag-over-top', before); row.classList.toggle('drag-over-bot', !before); });
           row.addEventListener('drop', async (e) => { if (!draggedRow || draggedRow === row) return; e.preventDefault(); e.stopPropagation(); const before = row.classList.contains('drag-over-top'); clearDnd(); await TripDetail._reorderPacking(t, draggedRow.dataset.id, row.dataset.id, before, row.dataset.cat); });
+          // Táctil (long-press) — mantener pulsado ~320 ms y mover para reordenar.
+          let lpTimer = null, lpDrag = false, lpStartY = 0;
+          row.addEventListener('touchstart', (e) => {
+            if (e.target.closest('button')) return;
+            lpStartY = e.touches[0].clientY;
+            lpTimer = setTimeout(() => {
+              lpDrag = true; row.classList.add('dragging'); document.body.classList.add('pack-dragging');
+              if (navigator.vibrate) { try { navigator.vibrate(12); } catch (_) {} }
+            }, 320);
+          }, { passive:true });
+          row.addEventListener('touchmove', (e) => {
+            if (!lpDrag) { if (lpTimer && Math.abs(e.touches[0].clientY - lpStartY) > 8) { clearTimeout(lpTimer); lpTimer = null; } return; }
+            e.preventDefault();   // detener el scroll mientras se arrastra
+            reorderTo(e.touches[0].clientY, row);
+          }, { passive:false });
+          const endTouch = () => {
+            clearTimeout(lpTimer); lpTimer = null;
+            if (lpDrag) { lpDrag = false; row.classList.remove('dragging'); document.body.classList.remove('pack-dragging'); row._justDragged = true; persistGroupOrder(); }
+          };
+          row.addEventListener('touchend', endTouch);
+          row.addEventListener('touchcancel', endTouch);
         }
         return row;
       };
       const renderList = () => { ul.innerHTML = ''; sortItems(byCat[c.id] || []).forEach(i => ul.appendChild(makeRow(i))); };
+      // Recoloca la fila arrastrada (táctil) según la posición vertical del dedo.
+      const reorderTo = (y, dragRow) => {
+        const sibs = [...ul.querySelectorAll('.pack-item:not(.dragging)')].filter(r => !r.classList.contains('done'));
+        for (const sib of sibs) {
+          const rect = sib.getBoundingClientRect();
+          if (y < rect.top + rect.height / 2) { ul.insertBefore(dragRow, sib); return; }
+        }
+        const firstDone = ul.querySelector('.pack-item.done');
+        if (firstDone) ul.insertBefore(dragRow, firstDone); else ul.appendChild(dragRow);
+      };
+      // Persiste el orden tras arrastrar (lee el orden actual del DOM).
+      const persistGroupOrder = async () => {
+        const order = [...ul.querySelectorAll('.pack-item')].map(r => r.dataset.id);
+        let oi = 0;
+        for (const id of order) {
+          const it = (byCat[c.id] || []).find(x => x.id === id);
+          if (!it) continue;
+          if (it.order_index !== oi) { it.order_index = oi; try { await DB.put('packing_items', it); } catch (_) {} }
+          oi++;
+        }
+      };
       // Reordena con animación FLIP: cada fila se desliza de su posición vieja a la nueva.
       const reorderWithFlip = () => {
         const old = {};
