@@ -7141,8 +7141,8 @@ const TripDetail = {
         row.appendChild(el('div', { class:'pack-name', onclick: toggle }, i.name));
         // Grip de arrastre a la DERECHA (solo orden manual y sin marcar).
         if (draggable) row.appendChild(el('span', { class:'pack-drag', html: svg('grip'), title:'Arrastra para reordenar' }));
-        if (canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Quitar', html: svg('trash'),
-          onclick: async (e) => { e.stopPropagation(); const ok = await UI.confirm(`¿Quitar "${i.name}"?`); if (!ok) return; await DB.remove('packing_items', i.id); Router.render(); } }));
+        if (canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Editar', html: svg('edit'),
+          onclick: (e) => { e.stopPropagation(); TripDetail.openPackingEditor(t, i); } }));
         // Drag & drop (solo en orden personalizado)
         if (draggable) {
           row.addEventListener('dragstart', (e) => { draggedRow = row; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', i.id); } catch (_) {} });
@@ -7287,10 +7287,15 @@ const TripDetail = {
       await DB.put('packing_items', it);
       UI.closeSheet(); Router.render();
     }}, 'Guardar');
+    const delBtn = existing ? el('button', { class:'btn btn-danger', onclick: async () => {
+      const ok = await UI.confirm(`¿Quitar "${it.name}"?`); if (!ok) return;
+      await DB.remove('packing_items', it.id);
+      UI.toast('Quitado'); UI.closeSheet(); Router.render();
+    }}, 'Borrar') : null;
     UI.openSheet({
       title: existing ? 'Editar' : 'Añadir',
       body,
-      footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save],
+      footer:[delBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean),
     });
   },
 
