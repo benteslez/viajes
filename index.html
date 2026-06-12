@@ -5538,6 +5538,7 @@ const TripDetail = {
   _pendingCollapsedCats: new Set(),  // grupos plegados en pendientes
   _pendingEditMode: false,    // modo edición de pendientes (reordenar/borrar/renombrar grupos)
   _pendingShowDone: false,    // mostrar el bloque "Ver completados"
+  _pendingSort: 'custom',     // 'custom' (arrastrar) | 'abc' (alfabético)
 
   async tabPlanning(root, t, fab) {
     const rawItems = await DB.listByTrip('planning_items', t.id);
@@ -8771,6 +8772,7 @@ const TripDetail = {
     if (changed) { try { await DB.put('trips', t); } catch (_) {} }
 
     const editMode = TripDetail._pendingEditMode;
+    const sort = TripDetail._pendingSort || 'custom';
     const today = todayIso();
     const isOverdue = (m) => !m.done && m.date && m.date < today;
     const saveManual = async () => { await DB.put('trips', t); };
@@ -8806,6 +8808,10 @@ const TripDetail = {
     root.appendChild(el('div', { class:'pack-header' }, [
       el('div', { class:'pack-progress' }, [ el('div', { class:'budget-bar' }, fillEl), el('div', { class:'budget-legend' }, [ legendCount, legendLabel ]) ]),
       el('div', { class:'pack-controls' }, [
+        el('div', { class:'segmented packing-sort' }, [
+          el('button', { class: sort === 'custom' ? 'active' : '', title:'Orden personalizado (arrastrar)', onclick: () => { TripDetail._pendingSort = 'custom'; Router.render(); } }, 'Manual'),
+          el('button', { class: sort === 'abc' ? 'active' : '', title:'Orden alfabético', onclick: () => { TripDetail._pendingSort = 'abc'; Router.render(); } }, 'A-Z'),
+        ]),
         collapseAllBtn,
         canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir pendiente', 'aria-label':'Añadir pendiente',
           onclick: () => TripDetail._openPendingEditor(t, null), html: svg('plus') }) : null,
@@ -8872,7 +8878,8 @@ const TripDetail = {
     for (const c of cats) {
       const collapsed = TripDetail._pendingCollapsedCats.has(c.id);
       const grp = el('div', { class:'pack-group' + (collapsed ? ' collapsed' : ''), data:{ cat:c.id } });
-      const grp_list = (byCat[c.id] || []).slice().sort((a,b) => (a.order_index||0)-(b.order_index||0));
+      const grp_list = (byCat[c.id] || []).slice().sort((a,b) =>
+        sort === 'abc' ? (a.text || '').localeCompare(b.text || '', 'es') : (a.order_index || 0) - (b.order_index || 0));
       const titleEl = (editMode && canEdit())
         ? el('input', { class:'pack-group-title-input', value: c.label, 'aria-label':'Nombre del grupo',
             onkeydown:(e)=>{ if (e.key==='Enter') { e.preventDefault(); e.target.blur(); } }, onblur:(e)=>TripDetail._renamePendingGroup(t, c.id, e.target.value) })
@@ -8901,7 +8908,7 @@ const TripDetail = {
         await saveManual();
       };
       const makeRow = (m) => {
-        const draggable = editMode && canEdit();
+        const draggable = editMode && sort === 'custom' && canEdit();
         const row = el('div', { class:'pack-item pending-item' + (isOverdue(m) ? ' overdue' : ''), data:{ id:m.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
         const check = el('button', { class:'pack-check', 'aria-pressed':'false', title:'Marcar hecho', html:'',
           onclick:(e)=>{ e.stopPropagation(); if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; } completeWithAnim(m, row); } });
