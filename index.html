@@ -1039,6 +1039,36 @@ h2.section-title {
 .pack-name { flex:1; min-width:0; font-size:14px; cursor:pointer; word-break:break-word; }
 .pack-del { width:28px; height:28px; flex-shrink:0; }
 .pack-del svg { width:15px; height:15px; }
+.pack-drag { display:inline-flex; flex-shrink:0; color:var(--text-muted); cursor:grab; }
+.pack-drag svg { width:16px; height:16px; }
+.pack-item.dragging { opacity:.4; }
+.pack-item.drag-over-top { box-shadow:inset 0 2px 0 var(--accent); }
+.pack-item.drag-over-bot { box-shadow:inset 0 -2px 0 var(--accent); }
+
+/* Selector de orden (Personalizado / A-Z) en la maleta */
+.packing-sort { margin-left:auto; }
+.packing-sort button { padding:0 10px; font-size:12px; }
+
+/* Grupos plegables de la maleta */
+.pack-group { margin-bottom:14px; border-radius:var(--r-md); }
+.pack-group.pack-cat-target { outline:2px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset:3px; }
+.pack-group-head {
+  display:flex; align-items:center; gap:8px; cursor:pointer;
+  padding:6px 4px; margin-bottom:6px;
+}
+.pack-group-chevron { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
+.pack-group-chevron svg { width:18px; height:18px; }
+.pack-group.collapsed .pack-group-chevron { transform:rotate(-90deg); }
+.pack-group.collapsed .pack-list { display:none; }
+.pack-group-title { font-weight:700; font-size:15px; letter-spacing:-.01em; }
+.pack-group-count {
+  font-size:12px; font-weight:600; color:var(--text-muted);
+  background:var(--bg-soft); border:1px solid var(--line);
+  padding:1px 8px; border-radius:var(--r-pill);
+}
+.pack-group-act { width:28px; height:28px; }
+.pack-group-act svg { width:15px; height:15px; }
+.pack-group-act:disabled { opacity:.3; cursor:default; pointer-events:none; }
 
 /* Personas plegables — por defecto se ve solo el ranking */
 .person-card-head { cursor:pointer; }
@@ -3160,6 +3190,8 @@ const ICONS = {
   bell:    '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   copy:    '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
+  arrup:   '<polyline points="18 15 12 9 6 15"/>',
+  arrdown: '<polyline points="6 9 12 15 18 9"/>',
   note:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
   eye:     '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   lock:    '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
@@ -5118,6 +5150,8 @@ const TripDetail = {
   _resumenDayView: 'hoy',  // 'hoy' | 'manana' — toggle del planning del día en el resumen
   _collapsedDays: new Set(),  // días plegados en el planning (por clave de fecha)
   _packingPerson: 'ruben',    // persona activa en la maleta (ruben | sergio | pablo)
+  _packingSort: 'custom',     // 'custom' (arrastrar) | 'abc' (alfabético)
+  _packingCollapsedCats: new Set(),  // grupos plegados en la maleta
 
   async tabPlanning(root, t, fab) {
     const rawItems = await DB.listByTrip('planning_items', t.id);
@@ -6997,6 +7031,8 @@ const TripDetail = {
     const allItems = await DB.listByTrip('packing_items', t.id);
     const person = TripDetail._packingPerson || 'ruben';
     const items = allItems.filter(i => (i.person || 'ruben') === person);
+    const sort = TripDetail._packingSort || 'custom';
+    const customCats = Array.isArray(t.packing_categories) ? t.packing_categories : [];
 
     // Sub-pestañas por persona (Rubén / Sergio / Pablo).
     root.appendChild(el('div', { class:'segmented packing-people' }, PACKING_PEOPLE.map(p =>
@@ -7004,25 +7040,26 @@ const TripDetail = {
         onclick: () => { TripDetail._packingPerson = p.id; Router.render(); } }, p.label))));
 
     const toolbar = el('div', { class:'toolbar' }, [
-      canEdit() ? el('button', { class:'btn btn-primary', onclick: () => TripDetail.openPackingEditor(t) }, [
-        el('span', { html: svg('plus') }), 'Añadir cosa'
-      ]) : null,
-      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) }, [
-        el('span', { html: svg('suit') }), 'Aplicar plantilla'
+      canEdit() ? el('button', { class:'btn btn-primary', onclick: () => TripDetail.openPackingEditor(t) }, [ el('span', { html: svg('plus') }), 'Añadir' ]) : null,
+      canEdit() ? el('button', { class:'btn btn-sm', onclick: () => TripDetail._openNewPackingGroup(t) }, [ el('span', { html: svg('plus') }), 'Grupo' ]) : null,
+      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) }, [ el('span', { html: svg('suit') }), 'Plantilla' ]),
+      el('div', { class:'segmented packing-sort' }, [
+        el('button', { class: sort === 'custom' ? 'active' : '', title:'Orden personalizado (arrastrar)', onclick: () => { TripDetail._packingSort = 'custom'; Router.render(); } }, 'Personalizado'),
+        el('button', { class: sort === 'abc' ? 'active' : '', title:'Orden alfabético', onclick: () => { TripDetail._packingSort = 'abc'; Router.render(); } }, 'A-Z'),
       ]),
     ].filter(Boolean));
     root.appendChild(toolbar);
 
-    if (!items.length) {
+    if (!items.length && !customCats.length) {
       root.appendChild(el('div', { class:'empty' }, [
         el('div', { class:'icon', html: svg('suit') }),
         el('h3', { text:`Maleta de ${PACKING_PEOPLE.find(p => p.id === person)?.label || ''} vacía` }),
-        el('p', { text:'Añade cosas a mano o aplica una plantilla.' }),
+        el('p', { text:'Añade cosas a mano, crea un grupo o aplica una plantilla.' }),
       ]));
       return;
     }
 
-    // Progreso — se actualiza EN VIVO al marcar (sin re-render, conserva scroll).
+    // Progreso en vivo
     const fillEl = el('div', { class:'budget-fill' });
     const legendCount = el('span', { class:'mono' });
     const legendLabel = el('span', { class:'muted' });
@@ -7033,67 +7070,214 @@ const TripDetail = {
       legendCount.textContent = `${d} / ${items.length}`;
       legendLabel.textContent = p === 100 ? '¡Todo listo!' : 'preparados';
     };
-    root.appendChild(el('div', { class:'card', style:{marginBottom:'16px'} }, el('div', { class:'card-body' }, [
-      el('div', { class:'budget-progress' }, [
-        el('div', { class:'budget-bar' }, fillEl),
-        el('div', { class:'budget-legend' }, [ legendCount, legendLabel ]),
-      ]),
-    ])));
-    refreshProgress();
+    if (items.length) {
+      root.appendChild(el('div', { class:'card', style:{marginBottom:'16px'} }, el('div', { class:'card-body' }, [
+        el('div', { class:'budget-progress' }, [
+          el('div', { class:'budget-bar' }, fillEl),
+          el('div', { class:'budget-legend' }, [ legendCount, legendLabel ]),
+        ]),
+      ])));
+      refreshProgress();
+    }
 
-    // Lista por categoría — filas compactas con tic verde + apagado al marcar.
-    const byCat = {};
-    items.forEach(i => { (byCat[i.category] = byCat[i.category] || []).push(i); });
-    CATS_PACKING.forEach(c => {
-      const list = byCat[c.id]; if (!list || !list.length) return;
-      root.appendChild(el('h2', { class:'section-title', text: c.label }));
-      const ul = el('div', { class:'pack-list' });
-      list.forEach(i => {
-        const row = el('div', { class:'pack-item' + (i.checked ? ' done' : '') });
+    // Agrupar por categoría y construir el orden de grupos (respetando el orden guardado).
+    const { cats, byCat } = TripDetail._packingCats(t, items);
+
+    // Orden dentro del grupo: marcados SIEMPRE al final; el resto por A-Z o por order_index.
+    const sortItems = (arr) => arr.slice().sort((a, b) => {
+      if (!!a.checked !== !!b.checked) return a.checked ? 1 : -1;
+      if (sort === 'abc') return (a.name || '').localeCompare(b.name || '', 'es');
+      return (a.order_index || 0) - (b.order_index || 0);
+    });
+
+    let draggedRow = null;
+    const clearDnd = () => root.querySelectorAll('.drag-over-top,.drag-over-bot,.pack-cat-target')
+      .forEach(n => n.classList.remove('drag-over-top', 'drag-over-bot', 'pack-cat-target'));
+
+    for (const c of cats) {
+      const collapsed = TripDetail._packingCollapsedCats.has(c.id);
+      const grp = el('div', { class:'pack-group' + (collapsed ? ' collapsed' : ''), data:{ cat:c.id } });
+      const grp_list = byCat[c.id] || [];
+      const head = el('div', { class:'pack-group-head', onclick: (e) => {
+        if (e.target.closest('.pack-group-act')) return;
+        const willCollapse = !grp.classList.contains('collapsed');
+        grp.classList.toggle('collapsed', willCollapse);
+        if (willCollapse) TripDetail._packingCollapsedCats.add(c.id); else TripDetail._packingCollapsedCats.delete(c.id);
+      } }, [
+        el('span', { class:'pack-group-chevron', html: svg('chevron') }),
+        el('span', { class:'pack-group-title', text: c.label }),
+        el('span', { class:'pack-group-count', text: String(grp_list.length) }),
+        el('div', { class:'gap' }),
+        (canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Subir grupo', html: svg('arrup'),
+          disabled: cats.indexOf(c) === 0 ? true : null,
+          onclick: () => TripDetail._movePackingGroup(t, c.id, -1) }) : null,
+        (canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Bajar grupo', html: svg('arrdown'),
+          disabled: cats.indexOf(c) === cats.length - 1 ? true : null,
+          onclick: () => TripDetail._movePackingGroup(t, c.id, 1) }) : null,
+        canEdit() ? el('button', { class:'icon-btn pack-group-act', title:'Añadir a este grupo', html: svg('plus'),
+          onclick: () => TripDetail.openPackingEditor(t, null, c.id) }) : null,
+        (canEdit() && c.custom) ? el('button', { class:'icon-btn pack-group-act', title:'Borrar grupo', html: svg('trash'),
+          onclick: () => TripDetail._deletePackingGroup(t, c.id) }) : null,
+      ].filter(Boolean));
+      grp.appendChild(head);
+
+      const ul = el('div', { class:'pack-list', data:{ cat:c.id } });
+      const makeRow = (i) => {
+        const draggable = sort === 'custom' && canEdit() && !i.checked;
+        const row = el('div', { class:'pack-item' + (i.checked ? ' done' : ''), data:{ id:i.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
         const check = el('button', {
           class:'pack-check' + (i.checked ? ' on' : ''), 'aria-pressed': i.checked ? 'true' : 'false',
           title:'Marcar como preparado', html: i.checked ? svg('check') : '',
           onclick: async () => {
             if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
             i.checked = !i.checked;
-            row.classList.toggle('done', i.checked);
-            check.classList.toggle('on', i.checked);
-            check.innerHTML = i.checked ? svg('check') : '';
-            check.setAttribute('aria-pressed', i.checked ? 'true' : 'false');
             refreshProgress();
             try { await DB.put('packing_items', i); } catch (e) { console.error(e); }
+            renderList();   // re-ordena: los marcados bajan al final
           }
         });
         row.appendChild(check);
+        if (draggable) row.appendChild(el('span', { class:'pack-drag', html: svg('grip'), title:'Arrastra para reordenar' }));
         row.appendChild(el('div', { class:'pack-name', onclick: () => canEdit() && TripDetail.openPackingEditor(t, i) }, i.name));
         if (canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Quitar', html: svg('trash'),
           onclick: async () => { const ok = await UI.confirm(`¿Quitar "${i.name}"?`); if (!ok) return; await DB.remove('packing_items', i.id); Router.render(); } }));
-        ul.appendChild(row);
-      });
-      root.appendChild(ul);
-    });
+        // Drag & drop (solo en orden personalizado)
+        if (draggable) {
+          row.addEventListener('dragstart', (e) => { draggedRow = row; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', i.id); } catch (_) {} });
+          row.addEventListener('dragend', () => { row.classList.remove('dragging'); clearDnd(); draggedRow = null; });
+          row.addEventListener('dragover', (e) => { if (!draggedRow || draggedRow === row) return; e.preventDefault(); const r = row.getBoundingClientRect(); const before = (e.clientY - r.top) < r.height / 2; root.querySelectorAll('.drag-over-top,.drag-over-bot').forEach(n => { if (n !== row) n.classList.remove('drag-over-top', 'drag-over-bot'); }); row.classList.toggle('drag-over-top', before); row.classList.toggle('drag-over-bot', !before); });
+          row.addEventListener('drop', async (e) => { if (!draggedRow || draggedRow === row) return; e.preventDefault(); e.stopPropagation(); const before = row.classList.contains('drag-over-top'); clearDnd(); await TripDetail._reorderPacking(t, draggedRow.dataset.id, row.dataset.id, before, row.dataset.cat); });
+        }
+        return row;
+      };
+      const renderList = () => { ul.innerHTML = ''; sortItems(byCat[c.id] || []).forEach(i => ul.appendChild(makeRow(i))); };
+      renderList();
+
+      // Soltar en zona vacía del grupo → al final de ese grupo (cambia de grupo si aplica).
+      if (sort === 'custom' && canEdit()) {
+        grp.addEventListener('dragover', (e) => { if (!draggedRow) return; if (e.target.closest('.pack-item')) return; e.preventDefault(); grp.classList.add('pack-cat-target'); });
+        grp.addEventListener('dragleave', (e) => { if (!grp.contains(e.relatedTarget)) grp.classList.remove('pack-cat-target'); });
+        grp.addEventListener('drop', async (e) => { if (!draggedRow) return; if (e.target.closest('.pack-item')) return; e.preventDefault(); grp.classList.remove('pack-cat-target'); await TripDetail._reorderPacking(t, draggedRow.dataset.id, null, false, c.id); });
+      }
+
+      grp.appendChild(ul);
+      root.appendChild(grp);
+    }
 
     // Al final: crear plantilla con los elementos de esta lista.
-    if (canEdit()) {
+    if (canEdit() && items.length) {
       root.appendChild(el('div', { style:{marginTop:'22px'} },
         el('button', { class:'btn btn-sm', onclick: () => TripDetail.openSaveTemplate(t, items) },
           [ el('span', { html: svg('download') }), 'Crear plantilla con esta lista' ])));
     }
   },
 
-  openPackingEditor(t, existing=null) {
+  // Construye los grupos (categorías) de la maleta para una lista de items,
+  // aplicando el orden de grupos guardado en el viaje (t.packing_group_order).
+  _packingCats(t, items) {
+    const byCat = {};
+    items.forEach(i => { const k = i.category || 'otros'; (byCat[k] = byCat[k] || []).push(i); });
+    const cats = []; const seen = new Set();
+    CATS_PACKING.forEach(c => { if ((byCat[c.id] || []).length) { cats.push({ id:c.id, label:c.label, custom:false }); seen.add(c.id); } });
+    (t.packing_categories || []).forEach(c => { if (!seen.has(c.id)) { cats.push({ id:c.id, label:c.label, custom:true }); seen.add(c.id); } });
+    Object.keys(byCat).forEach(cid => { if (!seen.has(cid)) { cats.push({ id:cid, label:cid, custom:false }); seen.add(cid); } });
+    // Aplicar orden guardado (estable: los no listados quedan al final en su orden actual).
+    const order = Array.isArray(t.packing_group_order) ? t.packing_group_order : [];
+    if (order.length) {
+      cats.sort((a, b) => {
+        const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+        if (ia === -1 && ib === -1) return 0;
+        if (ia === -1) return 1; if (ib === -1) return -1;
+        return ia - ib;
+      });
+    }
+    return { cats, byCat };
+  },
+
+  // Sube/baja un grupo en el orden (dir = -1 arriba, +1 abajo).
+  async _movePackingGroup(t, catId, dir) {
+    if (!canEdit()) return;
+    const items = (await DB.listByTrip('packing_items', t.id))
+      .filter(i => (i.person || 'ruben') === (TripDetail._packingPerson || 'ruben'));
+    const { cats } = TripDetail._packingCats(t, items);
+    const ids = cats.map(c => c.id);
+    const idx = ids.indexOf(catId);
+    const swap = idx + dir;
+    if (idx < 0 || swap < 0 || swap >= ids.length) return;
+    [ids[idx], ids[swap]] = [ids[swap], ids[idx]];
+    // Conservar categorías del orden global que no se ven para esta persona.
+    const prev = Array.isArray(t.packing_group_order) ? t.packing_group_order : [];
+    const extra = prev.filter(id => !ids.includes(id));
+    t.packing_group_order = [...ids, ...extra];
+    await DB.put('trips', t);
+    Router.render();
+  },
+
+  // Reordena un item de maleta (cambia order_index y, si aplica, de grupo).
+  async _reorderPacking(t, draggedId, targetId, before, targetCat) {
+    if (!canEdit()) return;
+    const dragged = await DB.get('packing_items', draggedId);
+    if (!dragged) return;
+    if (targetCat && targetCat !== dragged.category) dragged.category = targetCat;
+    const person = dragged.person || 'ruben';
+    const all = (await DB.listByTrip('packing_items', t.id))
+      .filter(p => p.id !== draggedId && (p.person || 'ruben') === person && p.category === dragged.category && !p.checked);
+    all.sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+    let newIndex = all.length;
+    if (targetId) { const idx = all.findIndex(p => p.id === targetId); if (idx >= 0) newIndex = before ? idx : idx + 1; }
+    all.splice(newIndex, 0, dragged);
+    for (let i = 0; i < all.length; i++) { if (all[i].order_index !== i || all[i].id === draggedId) { all[i].order_index = i; await DB.put('packing_items', all[i]); } }
+    Router.render();
+  },
+
+  // Crear un grupo nuevo en la maleta (categoría personalizada, guardada en el viaje).
+  _openNewPackingGroup(t) {
+    if (!canEdit()) return;
+    const body = el('div', {}, [
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Nombre del grupo' }),
+        el('input', { id:'pg-name', type:'text', placeholder:'Ej. Botiquín, Playa, Niños…' }),
+      ]),
+    ]);
+    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+      const name = ($('#pg-name')?.value || '').trim();
+      if (!name) { UI.toast('Pon un nombre'); return; }
+      const id = 'cg_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '_' + uuid().slice(0, 4);
+      t.packing_categories = Array.isArray(t.packing_categories) ? t.packing_categories : [];
+      t.packing_categories.push({ id, label: name });
+      await DB.put('trips', t);
+      UI.toast('Grupo creado'); UI.closeSheet(); Router.render();
+    }}, 'Crear');
+    UI.openSheet({ title:'Nuevo grupo', body, footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save] });
+  },
+
+  // Borra un grupo personalizado; sus items pasan a "Otros".
+  async _deletePackingGroup(t, catId) {
+    if (!canEdit()) return;
+    const inCat = (await DB.listByTrip('packing_items', t.id)).filter(p => p.category === catId);
+    const ok = await UI.confirm(inCat.length ? `¿Borrar el grupo? Sus ${inCat.length} elemento(s) pasarán a "Otros".` : '¿Borrar este grupo vacío?');
+    if (!ok) return;
+    for (const p of inCat) { p.category = 'otros'; await DB.put('packing_items', p); }
+    t.packing_categories = (t.packing_categories || []).filter(c => c.id !== catId);
+    await DB.put('trips', t);
+    UI.toast('Grupo borrado'); Router.render();
+  },
+
+  openPackingEditor(t, existing=null, defaultCat=null) {
 
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-    const it = existing || { id: uuid(), trip_id: t.id, category:'ropa', name:'', checked:false, person: TripDetail._packingPerson || 'ruben' };
+    const it = existing || { id: uuid(), trip_id: t.id, category: defaultCat || 'ropa', name:'', checked:false, person: TripDetail._packingPerson || 'ruben' };
     if (!it.person) it.person = TripDetail._packingPerson || 'ruben';
+    // Categorías: las fijas + las personalizadas del viaje.
+    const cats = [...CATS_PACKING, ...((t.packing_categories || []))];
     const body = el('div', {}, [
       el('div', { class:'form-row' }, [
         el('label', { text:'Cosa' }),
         el('input', { id:'f-name', type:'text', value: it.name || '' }),
       ]),
       el('div', { class:'form-row' }, [
-        el('label', { text:'Categoría' }),
-        el('select', { id:'f-cat' }, CATS_PACKING.map(c => el('option', { value:c.id, selected: it.category===c.id?true:null }, c.label))),
+        el('label', { text:'Grupo' }),
+        el('select', { id:'f-cat' }, cats.map(c => el('option', { value:c.id, selected: it.category===c.id?true:null }, c.label))),
       ]),
     ]);
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
