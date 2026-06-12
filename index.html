@@ -872,7 +872,7 @@ h2.section-title {
   --tipo-actividad:  #a855f7;
   --tipo-hotel:      #15803d;
   --tipo-lugar:      #0ea5e9;
-  --tipo-playa:      #14b8a6;
+  --tipo-playa:      #2dd4bf; /* turquesa aqua vivo — distinto del cian de lugar */
   --tipo-compras:    #ec4899;
   --tipo-otro:       #64748b;
 }
@@ -900,10 +900,11 @@ h2.section-title {
 .list-item.type-otro,
 .timeline-item.type-otro       { background: color-mix(in srgb, var(--tipo-otro)       12%, var(--bg-elev)); }
 
-/* En el día a día (timeline) el FONDO de la tarjeta lo manda el ESTADO, no el tipo:
-   sin estado → blanco; el color del tipo vive en el emoji. Anula el tinte de tipo
-   de arriba para las cards del planning. */
-.timeline-item.list-item { background: var(--bg-elev); position:relative; }
+/* El FONDO de la tarjeta refleja el TIPO (regla de arriba: lugar cian, alojamiento
+   verde bosque, etc.). Si hay ESTADO real (por iniciar, en consulta, confirmado,
+   cancelado) el color del estado tiñe por encima. `position:relative` para la
+   esquina con la pill. */
+.timeline-item.list-item { position:relative; }
 
 /* Override manual: HEX libre del usuario. Inline style fija `--card-color`. */
 .list-item.has-custom-color,
@@ -6335,7 +6336,7 @@ const TripDetail = {
       statusPicker.innerHTML = '';
       // Cualquier tipo con estado puede quedar "Sin estado" (tarjeta blanca),
       // incluidas las reservas (se guarda el centinela 'ninguno').
-      const opts = [{ id:'ninguno', label:'Sin estado', hint:'Tarjeta blanca' }, ...STATUS_PLANNING];
+      const opts = [{ id:'ninguno', label:'Sin estado', hint:'Color del tipo, sin pill' }, ...STATUS_PLANNING];
       // Por defecto: reservas → "por iniciar"; el resto → "sin estado".
       const defaultId = td.requiresBooking ? 'por_iniciar' : 'ninguno';
       const activeId = currentStatus || defaultId;
