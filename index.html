@@ -1036,6 +1036,13 @@ h2.section-title {
 }
 .pack-item.done { opacity:.5; }
 .pack-item.done .pack-name { text-decoration:line-through; color:var(--text-muted); }
+/* Destello verde al marcar (se ve un instante antes de deslizar). */
+.pack-item.just-checked { animation: packFlash .5s var(--ease); }
+@keyframes packFlash {
+  0%   { background: color-mix(in srgb, var(--status-curso) 38%, var(--bg-elev)); opacity:1; }
+  55%  { background: color-mix(in srgb, var(--status-curso) 22%, var(--bg-elev)); opacity:1; }
+  100% { background: var(--bg-elev); opacity:.5; }
+}
 .pack-check {
   flex-shrink:0; width:22px; height:22px; border-radius:6px; cursor:pointer; padding:0;
   border:2px solid var(--line); background:var(--bg-elev); color:#fff;
@@ -1044,7 +1051,7 @@ h2.section-title {
 }
 .pack-check.on { background:var(--status-curso); border-color:var(--status-curso); }
 .pack-check svg { width:14px; height:14px; }
-.pack-name { flex:1; min-width:0; font-size:14px; cursor:pointer; word-break:break-word; }
+.pack-name { flex:1; min-width:0; font-size:15px; cursor:pointer; word-break:break-word; }
 .pack-del { width:28px; height:28px; flex-shrink:0; }
 .pack-del svg { width:15px; height:15px; }
 .pack-drag { display:inline-flex; flex-shrink:0; color:var(--text-muted); cursor:grab; }
@@ -7125,12 +7132,21 @@ const TripDetail = {
       const makeRow = (i) => {
         const draggable = sort === 'custom' && canEdit() && !i.checked;
         const row = el('div', { class:'pack-item' + (i.checked ? ' done' : ''), data:{ id:i.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
+        let toggling = false;
         const toggle = async () => {
           if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+          if (toggling) return; toggling = true;
           i.checked = !i.checked;
+          // Feedback inmediato: tic verde + apagado + breve destello verde.
+          row.classList.toggle('done', i.checked);
+          check.classList.toggle('on', i.checked);
+          check.innerHTML = i.checked ? svg('check') : '';
+          check.setAttribute('aria-pressed', i.checked ? 'true' : 'false');
+          if (i.checked) { row.classList.add('just-checked'); }
           refreshProgress();
           try { await DB.put('packing_items', i); } catch (e) { console.error(e); }
-          renderList();   // re-ordena: los marcados bajan al final
+          // Tras unos ms (se ve el verde), reordena deslizando el elemento.
+          setTimeout(() => { reorderWithFlip(); }, 300);
         };
         const check = el('button', {
           class:'pack-check' + (i.checked ? ' on' : ''), 'aria-pressed': i.checked ? 'true' : 'false',
@@ -7153,6 +7169,20 @@ const TripDetail = {
         return row;
       };
       const renderList = () => { ul.innerHTML = ''; sortItems(byCat[c.id] || []).forEach(i => ul.appendChild(makeRow(i))); };
+      // Reordena con animación FLIP: cada fila se desliza de su posición vieja a la nueva.
+      const reorderWithFlip = () => {
+        const old = {};
+        ul.querySelectorAll('.pack-item').forEach(r => { old[r.dataset.id] = r.getBoundingClientRect().top; });
+        renderList();
+        ul.querySelectorAll('.pack-item').forEach(r => {
+          const o = old[r.dataset.id]; if (o == null) return;
+          const dy = o - r.getBoundingClientRect().top;
+          if (!dy) return;
+          r.style.transition = 'none';
+          r.style.transform = `translateY(${dy}px)`;
+          requestAnimationFrame(() => { r.style.transition = 'transform .3s var(--ease)'; r.style.transform = ''; });
+        });
+      };
       renderList();
 
       // Soltar en zona vacía del grupo → al final de ese grupo (cambia de grupo si aplica).
