@@ -627,6 +627,17 @@ h2.section-title {
 .form-row textarea { min-height:80px; resize:vertical; }
 .form-row.num input { font-feature-settings:"tnum","ss01"; }
 .form-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+/* Hora con botón ✕ para vaciarla (necesario en iOS, donde el time nativo no se
+   puede dejar en blanco una vez puesto). */
+.time-with-clear { display:flex; align-items:center; gap:6px; }
+.time-with-clear input { flex:1; min-width:0; }
+.time-clear {
+  flex-shrink:0; width:34px; height:34px; border-radius:var(--r-sm);
+  border:1px solid var(--line); background:var(--bg-soft); color:var(--text-muted);
+  cursor:pointer; font-size:14px; line-height:1;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.time-clear:active { background:var(--line); color:var(--text); }
 .field-hint { font-size:12px; color:var(--text-muted); margin-top:4px; }
 
 /* ========================================================================
@@ -972,14 +983,17 @@ h2.section-title {
   background: color-mix(in srgb, var(--tipo-transporte) 12%, var(--bg-elev));
   border-color: color-mix(in srgb, var(--tipo-transporte) 35%, var(--line));
 }
-/* Alojamiento confirmado (incl. noches): conserva su verde bosque de tipo, no el
-   verde esmeralda de confirmación. El emoji también va en verde bosque; la pill basta. */
+/* Alojamiento confirmado (incl. noches): la TARJETA conserva su verde bosque de tipo;
+   el emoji y la pill van en verde de confirmación (como transportes y actividad). */
 .timeline-item.status-confirmado.type-hotel {
   background: color-mix(in srgb, var(--tipo-hotel) 12%, var(--bg-elev));
   border-color: color-mix(in srgb, var(--tipo-hotel) 35%, var(--line));
 }
-.timeline-item.status-confirmado.type-hotel .item-emoji {
-  background: color-mix(in srgb, var(--tipo-hotel) 20%, var(--bg-elev)) !important;
+/* Actividad confirmada: la TARJETA conserva su morado de tipo; el emoji y la pill
+   van en verde para marcar la confirmación (como los transportes). */
+.timeline-item.status-confirmado.type-actividad {
+  background: color-mix(in srgb, var(--tipo-actividad) 12%, var(--bg-elev));
+  border-color: color-mix(in srgb, var(--tipo-actividad) 35%, var(--line));
 }
 
 /* Items virtuales (noches de hotel + check-out) — más sutiles para que se note
@@ -1160,6 +1174,8 @@ h2.section-title {
 .pack-progress { flex:1 1 150px; min-width:140px; display:flex; flex-direction:column; gap:6px; }
 .pack-progress .budget-legend { font-size:12px; }
 .pack-controls { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
+.pack-collapse-all svg { transition:transform .2s var(--ease); }
+.pack-collapse-all.all-collapsed svg { transform:rotate(-90deg); }
 .pack-templates { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
 
 .pack-list { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
@@ -6310,6 +6326,14 @@ const TripDetail = {
       coche:      { d1:'Recogida', d2:'Devolución', withTime:false, hint:'' },
     };
     const datesBlock = el('div', { id:'dates-block', class:'form-row' });
+    // Input de hora con botón ✕ para vaciarlo (en iOS el time nativo no se puede
+    // dejar en blanco una vez tiene valor; este botón lo borra por JS).
+    const timeInput = (id, value) => {
+      const inp = el('input', { id, type:'time', value: value || '' });
+      const clr = el('button', { type:'button', class:'time-clear', title:'Quitar hora', 'aria-label':'Quitar hora',
+        onclick: () => { inp.value = ''; inp.dispatchEvent(new Event('change')); } }, '✕');
+      return el('div', { class:'time-with-clear' }, [ inp, clr ]);
+    };
     const renderDatesBlock = () => {
       const type = $('#f-type')?.value || it.type;
       datesBlock.innerHTML = '';
@@ -6326,10 +6350,10 @@ const TripDetail = {
         if (d1) inD2.min = d1;
         const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
         const row1 = R.withTime
-          ? el('div', { class:'form-grid-2' }, [ cell(R.d1, inD1), cell('Hora', el('input',{id:'tr-t1',type:'time',value:t1})) ])
+          ? el('div', { class:'form-grid-2' }, [ cell(R.d1, inD1), cell('Hora', timeInput('tr-t1', t1)) ])
           : cell(R.d1, inD1);
         const row2 = R.withTime
-          ? el('div', { class:'form-grid-2' }, [ cell(R.d2, inD2), cell('Hora', el('input',{id:'tr-t2',type:'time',value:t2})) ])
+          ? el('div', { class:'form-grid-2' }, [ cell(R.d2, inD2), cell('Hora', timeInput('tr-t2', t2)) ])
           : cell(R.d2, inD2);
         datesBlock.appendChild(el('label', { text:'Fechas' }));
         datesBlock.appendChild(row1);
@@ -6347,10 +6371,10 @@ const TripDetail = {
         // Día y Hora siempre uno al lado del otro (2 columnas).
         datesBlock.appendChild(el('div', { class:'form-grid-2' }, [
           cell('Día', el('input', { id:'f-day', type:'date', value: it.day_date || '' })),
-          cell(showEnd ? 'Hora inicio' : 'Hora', el('input', { id:'f-time', type:'time', value: it.time || '' })),
+          cell(showEnd ? 'Hora inicio' : 'Hora', timeInput('f-time', it.time)),
         ]));
         // "Hora fin" (solo lugar/playa) en su propia fila debajo.
-        if (showEnd) datesBlock.appendChild(cell('Hora fin', el('input', { id:'f-end-time', type:'time', value: it.end_time || '' })));
+        if (showEnd) datesBlock.appendChild(cell('Hora fin', timeInput('f-end-time', it.end_time)));
       }
     };
     // Alias: el resto del editor (onchange, applyParsed, init, openConfirmPlanning) llama a
@@ -7724,6 +7748,22 @@ const TripDetail = {
       legendLabel.textContent = p === 100 ? '¡Todo listo!' : 'preparados';
     };
 
+    // Botón global: plegar / desplegar todos los grupos (sin re-render, conserva scroll).
+    const collapseAllBtn = el('button', { class:'icon-btn pack-collapse-all', title:'Plegar / desplegar todo',
+      'aria-label':'Plegar o desplegar todos los grupos', html: svg('chevron'),
+      onclick: () => {
+        const groups = Array.from(root.querySelectorAll('.pack-group'));
+        if (!groups.length) return;
+        const anyOpen = groups.some(g => !g.classList.contains('collapsed'));
+        groups.forEach(g => {
+          g.classList.toggle('collapsed', anyOpen);
+          const cid = g.dataset.cat;
+          if (anyOpen) TripDetail._packingCollapsedCats.add(cid); else TripDetail._packingCollapsedCats.delete(cid);
+        });
+        collapseAllBtn.classList.toggle('all-collapsed', anyOpen);
+        collapseAllBtn.title = anyOpen ? 'Desplegar todo' : 'Plegar todo';
+      } });
+
     // Cabecera compacta: progreso a la izquierda, orden + añadir a la derecha.
     root.appendChild(el('div', { class:'pack-header' }, [
       el('div', { class:'pack-progress' }, [
@@ -7735,6 +7775,7 @@ const TripDetail = {
           el('button', { class: sort === 'custom' ? 'active' : '', title:'Orden personalizado (arrastrar)', onclick: () => { TripDetail._packingSort = 'custom'; Router.render(); } }, 'Manual'),
           el('button', { class: sort === 'abc' ? 'active' : '', title:'Orden alfabético', onclick: () => { TripDetail._packingSort = 'abc'; Router.render(); } }, 'A-Z'),
         ]),
+        collapseAllBtn,
         canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir elemento', 'aria-label':'Añadir elemento',
           onclick: () => TripDetail.openPackingEditor(t), html: svg('plus') }) : null,
         canEdit() ? el('button', { class:'icon-btn', title:'Nuevo grupo', 'aria-label':'Nuevo grupo',
@@ -7758,6 +7799,11 @@ const TripDetail = {
 
     // Agrupar por categoría y construir el orden de grupos (respetando el orden guardado).
     const { cats, byCat } = TripDetail._packingCats(t, items);
+
+    // Estado inicial del botón "plegar/desplegar todo".
+    const allCollapsedInit = cats.length > 0 && cats.every(c => TripDetail._packingCollapsedCats.has(c.id));
+    collapseAllBtn.classList.toggle('all-collapsed', allCollapsedInit);
+    collapseAllBtn.title = allCollapsedInit ? 'Desplegar todo' : 'Plegar todo';
 
     // Orden dentro del grupo: marcados SIEMPRE al final; el resto por A-Z o por order_index.
     const sortItems = (arr) => arr.slice().sort((a, b) => {
