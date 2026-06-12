@@ -1016,6 +1016,30 @@ h2.section-title {
 .day-group.collapsed .timeline-list,
 .day-group.collapsed .day-note-card { display:none; }
 
+/* Maleta — sub-pestañas de persona + lista compacta */
+.packing-people { width:100%; margin-bottom:14px; }
+.packing-people button { flex:1; }
+.pack-list { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+.pack-item {
+  display:flex; align-items:center; gap:10px;
+  background:var(--bg-elev); border:1px solid var(--line);
+  border-radius:var(--r-sm); padding:7px 11px;
+  transition:opacity .15s var(--ease);
+}
+.pack-item.done { opacity:.5; }
+.pack-item.done .pack-name { text-decoration:line-through; color:var(--text-muted); }
+.pack-check {
+  flex-shrink:0; width:22px; height:22px; border-radius:6px; cursor:pointer; padding:0;
+  border:2px solid var(--line); background:var(--bg-elev); color:#fff;
+  display:inline-flex; align-items:center; justify-content:center;
+  transition:background .12s var(--ease), border-color .12s var(--ease);
+}
+.pack-check.on { background:var(--status-curso); border-color:var(--status-curso); }
+.pack-check svg { width:14px; height:14px; }
+.pack-name { flex:1; min-width:0; font-size:14px; cursor:pointer; word-break:break-word; }
+.pack-del { width:28px; height:28px; flex-shrink:0; }
+.pack-del svg { width:15px; height:15px; }
+
 /* Personas plegables — por defecto se ve solo el ranking */
 .person-card-head { cursor:pointer; }
 .person-collapse { flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); display:inline-flex; }
@@ -2176,6 +2200,12 @@ const CATS_PACKING = [
   { id:'documentos',  label:'Documentos' },
   { id:'bebé',        label:'Bebé' },
   { id:'otros',       label:'Otros' },
+];
+// Personas con maleta propia (independiente de los perfiles de la app).
+const PACKING_PEOPLE = [
+  { id:'ruben',  label:'Rubén' },
+  { id:'sergio', label:'Sergio' },
+  { id:'pablo',  label:'Pablo' },
 ];
 const TYPES_BOOKING = [
   { id:'vuelo',     label:'Vuelo' },
@@ -5087,6 +5117,7 @@ const TripDetail = {
   _planningFilter: 'todo', // 'todo' | 'consulta' | 'direcciones'
   _resumenDayView: 'hoy',  // 'hoy' | 'manana' — toggle del planning del día en el resumen
   _collapsedDays: new Set(),  // días plegados en el planning (por clave de fecha)
+  _packingPerson: 'ruben',    // persona activa en la maleta (ruben | sergio | pablo)
 
   async tabPlanning(root, t, fab) {
     const rawItems = await DB.listByTrip('planning_items', t.id);
@@ -6963,72 +6994,98 @@ const TripDetail = {
 
   /* ----- Maleta ----- */
   async tabMaleta(root, t) {
-    const items = await DB.listByTrip('packing_items', t.id);
+    const allItems = await DB.listByTrip('packing_items', t.id);
+    const person = TripDetail._packingPerson || 'ruben';
+    const items = allItems.filter(i => (i.person || 'ruben') === person);
+
+    // Sub-pestañas por persona (Rubén / Sergio / Pablo).
+    root.appendChild(el('div', { class:'segmented packing-people' }, PACKING_PEOPLE.map(p =>
+      el('button', { class: person === p.id ? 'active' : '',
+        onclick: () => { TripDetail._packingPerson = p.id; Router.render(); } }, p.label))));
 
     const toolbar = el('div', { class:'toolbar' }, [
-      el('button', { class:'btn btn-primary', onclick: () => TripDetail.openPackingEditor(t) }, [
+      canEdit() ? el('button', { class:'btn btn-primary', onclick: () => TripDetail.openPackingEditor(t) }, [
         el('span', { html: svg('plus') }), 'Añadir cosa'
-      ]),
-      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) }, [
-        el('span', { html: svg('suit') }), 'Plantilla'
-      ]),
-      items.length ? el('button', { class:'btn btn-sm', onclick: () => TripDetail.openSaveTemplate(t, items) }, [
-        el('span', { html: svg('download') }), 'Guardar como plantilla'
       ]) : null,
+      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) }, [
+        el('span', { html: svg('suit') }), 'Aplicar plantilla'
+      ]),
     ].filter(Boolean));
     root.appendChild(toolbar);
 
     if (!items.length) {
       root.appendChild(el('div', { class:'empty' }, [
         el('div', { class:'icon', html: svg('suit') }),
-        el('h3', { text:'Maleta vacía' }),
-        el('p', { text:'Aplica una plantilla (Playa, Ciudad, Ciudad fría, Montaña, Business, Bebé) o añade tus cosas a mano.' }),
+        el('h3', { text:`Maleta de ${PACKING_PEOPLE.find(p => p.id === person)?.label || ''} vacía` }),
+        el('p', { text:'Añade cosas a mano o aplica una plantilla.' }),
       ]));
       return;
     }
 
-    // Progreso visual
-    const done = items.filter(i => i.checked).length;
-    const pct = items.length ? (done / items.length) * 100 : 0;
+    // Progreso — se actualiza EN VIVO al marcar (sin re-render, conserva scroll).
+    const fillEl = el('div', { class:'budget-fill' });
+    const legendCount = el('span', { class:'mono' });
+    const legendLabel = el('span', { class:'muted' });
+    const refreshProgress = () => {
+      const d = items.filter(i => i.checked).length;
+      const p = items.length ? (d / items.length) * 100 : 0;
+      fillEl.style.width = p.toFixed(1) + '%';
+      legendCount.textContent = `${d} / ${items.length}`;
+      legendLabel.textContent = p === 100 ? '¡Todo listo!' : 'preparados';
+    };
     root.appendChild(el('div', { class:'card', style:{marginBottom:'16px'} }, el('div', { class:'card-body' }, [
       el('div', { class:'budget-progress' }, [
-        el('div', { class:'budget-bar' }, el('div', { class:'budget-fill', style:{ width: pct.toFixed(1)+'%' } })),
-        el('div', { class:'budget-legend' }, [
-          el('span', { class:'mono', text: `${done} / ${items.length}` }),
-          el('span', { class:'muted', text: pct === 100 ? ' ¡Todo listo!' : ' preparados' }),
-        ]),
+        el('div', { class:'budget-bar' }, fillEl),
+        el('div', { class:'budget-legend' }, [ legendCount, legendLabel ]),
       ]),
     ])));
+    refreshProgress();
 
-    // group por categoría
+    // Lista por categoría — filas compactas con tic verde + apagado al marcar.
     const byCat = {};
     items.forEach(i => { (byCat[i.category] = byCat[i.category] || []).push(i); });
     CATS_PACKING.forEach(c => {
       const list = byCat[c.id]; if (!list || !list.length) return;
       root.appendChild(el('h2', { class:'section-title', text: c.label }));
-      const ul = el('div', { class:'list' });
+      const ul = el('div', { class:'pack-list' });
       list.forEach(i => {
-        ul.appendChild(el('div', { class:'list-item' }, [
-          el('input', { class:'check', type:'checkbox', checked: i.checked?true:null,
-            onchange: async (e) => { if (!canEdit()) { e.target.checked = !e.target.checked; return; } i.checked = e.target.checked; await DB.put('packing_items', i); }
-          }),
-          el('div', { class:'li-main', onclick: () => TripDetail.openPackingEditor(t, i) }, [
-            el('div', { class:'li-title', text: i.name, style: i.checked?{textDecoration:'line-through', opacity:.6}:{} }),
-          ]),
-          el('button', { class:'icon-btn', onclick: async () => {
-            const ok = await UI.confirm(`¿Quitar "${i.name}"?`); if (!ok) return;
-            await DB.remove('packing_items', i.id); Router.render();
-          }, html: svg('trash') }),
-        ]));
+        const row = el('div', { class:'pack-item' + (i.checked ? ' done' : '') });
+        const check = el('button', {
+          class:'pack-check' + (i.checked ? ' on' : ''), 'aria-pressed': i.checked ? 'true' : 'false',
+          title:'Marcar como preparado', html: i.checked ? svg('check') : '',
+          onclick: async () => {
+            if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+            i.checked = !i.checked;
+            row.classList.toggle('done', i.checked);
+            check.classList.toggle('on', i.checked);
+            check.innerHTML = i.checked ? svg('check') : '';
+            check.setAttribute('aria-pressed', i.checked ? 'true' : 'false');
+            refreshProgress();
+            try { await DB.put('packing_items', i); } catch (e) { console.error(e); }
+          }
+        });
+        row.appendChild(check);
+        row.appendChild(el('div', { class:'pack-name', onclick: () => canEdit() && TripDetail.openPackingEditor(t, i) }, i.name));
+        if (canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Quitar', html: svg('trash'),
+          onclick: async () => { const ok = await UI.confirm(`¿Quitar "${i.name}"?`); if (!ok) return; await DB.remove('packing_items', i.id); Router.render(); } }));
+        ul.appendChild(row);
       });
       root.appendChild(ul);
     });
+
+    // Al final: crear plantilla con los elementos de esta lista.
+    if (canEdit()) {
+      root.appendChild(el('div', { style:{marginTop:'22px'} },
+        el('button', { class:'btn btn-sm', onclick: () => TripDetail.openSaveTemplate(t, items) },
+          [ el('span', { html: svg('download') }), 'Crear plantilla con esta lista' ])));
+    }
   },
 
   openPackingEditor(t, existing=null) {
 
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-    const it = existing || { id: uuid(), trip_id: t.id, category:'ropa', name:'', checked:false };
+    const it = existing || { id: uuid(), trip_id: t.id, category:'ropa', name:'', checked:false, person: TripDetail._packingPerson || 'ruben' };
+    if (!it.person) it.person = TripDetail._packingPerson || 'ruben';
     const body = el('div', {}, [
       el('div', { class:'form-row' }, [
         el('label', { text:'Cosa' }),
@@ -7088,6 +7145,7 @@ const TripDetail = {
       await DB.put('packing_items', {
         id: uuid(), trip_id: t.id, category: it.category || 'otros',
         name: it.name, checked: false, template_source: name,
+        person: TripDetail._packingPerson || 'ruben',
       });
     }
     UI.closeSheet(); UI.toast(`Plantilla "${name}" aplicada`); Router.render();
@@ -8149,6 +8207,35 @@ const PerfilView = {
       ]));
     }
 
+    // === Aplicación / actualizaciones ===
+    root.appendChild(el('h2', { class:'section-title', text:'Aplicación' }));
+    root.appendChild(el('p', { class:'muted', style:{marginBottom:'8px'},
+      text:'Busca la última versión y recarga. En iPhone (pantalla de inicio), si tras esto sigues viendo lo mismo, cierra la app del todo y vuelve a abrirla.' }));
+    root.appendChild(el('button', { class:'btn btn-sm', onclick: async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'Buscando…';
+      try {
+        const reg = App._swReg || (('serviceWorker' in navigator) ? await navigator.serviceWorker.getRegistration() : null);
+        if (reg) {
+          await reg.update();
+          await new Promise(r => setTimeout(r, 600));
+          const nw = reg.waiting || reg.installing;
+          if (nw) {
+            // Hay versión nueva: la activamos (controllerchange recargará). Respaldo a 1,5 s.
+            try { nw.postMessage('SKIP_WAITING'); } catch (_) {}
+            UI.toast('Actualizando a la nueva versión…');
+            setTimeout(() => window.location.reload(), 1500);
+            return;
+          }
+        }
+        // Sin versión nueva del shell: recarga igualmente (index.html es network-first → baja lo último).
+        UI.toast('Recargando con la última versión…');
+        setTimeout(() => window.location.reload(), 400);
+      } catch (_) {
+        setTimeout(() => window.location.reload(), 400);
+      }
+    }}, [ el('span', { html: svg('refresh') }), 'Buscar actualizaciones' ]));
+
     // === Notificaciones ===
     if ('Notification' in window) {
       root.appendChild(el('h2', { class:'section-title', text:'Notificaciones' }));
@@ -9102,6 +9189,7 @@ async function boot() {
   if ('serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.register('service-worker.js');
+      App._swReg = reg;   // accesible desde el botón "Buscar actualizaciones"
       // Si hay update, recarga automática (la app es de un solo usuario).
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
