@@ -1128,6 +1128,21 @@ h2.section-title {
 .pending-text { font-weight:600; font-size:14px; word-break:break-word; }
 .pending-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
 .pending-divider { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin:18px 0 8px; }
+/* Pendientes — modo checklist (reutiliza estilos .pack-*) */
+.pending-warn { flex-shrink:0; font-size:15px; line-height:1; }
+.pending-date-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+.pack-item.overdue { border-color: color-mix(in srgb, #f59e0b 50%, var(--line)); background: color-mix(in srgb, #f59e0b 6%, var(--bg-elev)); }
+.pack-item.pending-removing { animation: pendOut .26s var(--ease) forwards; pointer-events:none; }
+@keyframes pendOut { to { opacity:0; transform:translateX(44px) scale(.95); } }
+.pending-done-section { margin-top:20px; border-top:1px solid var(--line-soft); padding-top:8px; }
+.pending-done-toggle {
+  display:flex; align-items:center; gap:8px; width:100%; cursor:pointer;
+  background:none; border:none; padding:8px 2px; color:var(--text-muted);
+  font-weight:600; font-size:14px; font-family:var(--font-ui); text-align:left;
+}
+.pending-done-toggle .pack-group-chevron { transform:rotate(-90deg); transition:transform .2s var(--ease); }
+.pending-done-section.open .pending-done-toggle .pack-group-chevron { transform:rotate(0); }
+.pending-done-section .pack-list { margin-top:8px; gap:6px; }
 
 /* Estadísticas — valor a la derecha de cada fila */
 .stat-val { flex-shrink:0; font-weight:700; font-size:14px; color:var(--accent); font-feature-settings:"tnum"; white-space:nowrap; }
@@ -1195,6 +1210,14 @@ h2.section-title {
 .flash-body .drag-handle { display:none; }
 .flash-empty { margin:auto; text-align:center; color:var(--text-muted); display:flex; flex-direction:column; align-items:center; gap:10px; }
 .flash-empty-emoji { font-size:40px; opacity:.7; }
+.flash-fab {
+  position:absolute; right:20px; bottom:calc(20px + env(safe-area-inset-bottom));
+  width:56px; height:56px; border-radius:50%; border:none; cursor:pointer;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff;
+  box-shadow:var(--sh-3); display:inline-flex; align-items:center; justify-content:center;
+}
+.flash-fab svg { width:26px; height:26px; }
+.flash-fab:active { transform:scale(.95); }
 .day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
@@ -2497,6 +2520,13 @@ const TYPES_PLANNING = [
 ];
 const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[0];
 
+// Categoría de presupuesto a partir del tipo de evento (fuente única de verdad
+// para que un gasto vinculado siempre caiga en la categoría correcta).
+const budgetCategoryForType = (type) => (
+  { hotel:'alojamiento', vuelo:'transporte', coche:'transporte', transporte:'transporte',
+    comida:'comida', compras:'compras' }[type] || 'actividades'
+);
+
 // Modos de transporte → emoji. El icono del evento cambia según metadata.modo.
 const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢' };
 // Emoji efectivo de un planning item (transporte varía con su modo).
@@ -2570,6 +2600,11 @@ const CATS_PACKING = [
   { id:'documentos',  label:'Documentos' },
   { id:'bebé',        label:'Bebé' },
   { id:'otros',       label:'Otros' },
+];
+// Grupo por defecto de la lista de pendientes (el resto son grupos personalizados
+// guardados en t.pending_categories).
+const CATS_PENDING = [
+  { id:'general', label:'Tareas' },
 ];
 // Personas con maleta propia (independiente de los perfiles de la app).
 const PACKING_PEOPLE = [
@@ -5213,6 +5248,11 @@ const TripDetail = {
     const pendAuto = planning.filter(p => ['en_consulta','por_iniciar'].includes(itemStatus(p)));
     const pendDone = pendManual.filter(p => p.done).length;
     const pendTotal = pendManual.length + pendAuto.length;
+    // ¿Hay algún pendiente (manual o evento) con fecha ya pasada? → aviso ⚠️.
+    const _todayP = todayIso();
+    const pendOverdue =
+      pendManual.some(p => !p.done && p.date && p.date < _todayP) ||
+      pendAuto.some(p => { const d = p.day_date || p.consultation_planned_d1 || ''; return d && d < _todayP; });
 
     const goTab = (id) => () => { STATE.currentTab = id; Router.render(); };
     // Rejilla de métricas — ahora clicables. "Planning" pasa a "Pendientes".
@@ -5224,8 +5264,8 @@ const TripDetail = {
       ]),
       el('button', { class:'metric metric-btn', onclick: goTab('pendientes') }, [
         el('div', { class:'label', text:'Pendientes' }),
-        el('div', { class:'value', text: `${pendDone}/${pendTotal}` }),
-        el('div', { class:'sub', text: pendTotal ? 'completadas' : 'sin pendientes' }),
+        el('div', { class:'value' }, [ pendOverdue ? el('span', { title:'Hay pendientes con fecha pasada', text:'⚠️ ' }) : null, el('span', { text:`${pendDone}/${pendTotal}` }) ].filter(Boolean)),
+        el('div', { class:'sub', text: pendOverdue ? 'con fecha pasada' : (pendTotal ? 'completadas' : 'sin pendientes') }),
       ]),
       canSeeMoney() ? el('button', { class:'metric metric-btn', onclick: goTab('presu') }, [
         el('div', { class:'label', text:'Presupuesto' }),
@@ -5495,6 +5535,9 @@ const TripDetail = {
   _packingSort: 'custom',     // 'custom' (arrastrar) | 'abc' (alfabético)
   _packingCollapsedCats: new Set(),  // grupos plegados en la maleta
   _packingEditMode: false,    // modo edición: muestra reordenar/borrar/renombrar grupos
+  _pendingCollapsedCats: new Set(),  // grupos plegados en pendientes
+  _pendingEditMode: false,    // modo edición de pendientes (reordenar/borrar/renombrar grupos)
+  _pendingShowDone: false,    // mostrar el bloque "Ver completados"
 
   async tabPlanning(root, t, fab) {
     const rawItems = await DB.listByTrip('planning_items', t.id);
@@ -5891,7 +5934,7 @@ const TripDetail = {
         el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
           el('div', { class:'li-title', text: it.title }),
         ]),
-        el('span', { class:'night-cont-meta', text:'Continuación' }),
+        el('div', { class:'gap' }),
         dirUrl ? el('a', {
           class:'night-cont-go', href: dirUrl, target:'_blank', rel:'noopener',
           title:'Cómo llegar', onclick: (e) => e.stopPropagation()
@@ -5961,57 +6004,71 @@ const TripDetail = {
   // Vista "tarjetas": pantalla completa, un día por tarjeta, deslizable de lado a lado.
   // Solo lectura/navegación (no aprueba ni rechaza); reutiliza las cards del planning.
   async openPlanningFlashcards(t) {
-    const rawItems = await DB.listByTrip('planning_items', t.id);
-    try {
-      const budgets = await DB.listByTrip('budget_items', t.id);
-      this._budgetByPlanningId = {};
-      for (const b of budgets) if (b.planning_item_id) this._budgetByPlanningId[b.planning_item_id] = b;
-    } catch (_) { this._budgetByPlanningId = {}; }
-    const noteMap = {};
-    (await DB.listByTrip('day_notes', t.id).catch(() => [])).forEach(n => noteMap[n.date] = n);
-
-    const items = this._expandHotels(rawItems);
-    items.sort((a, b) => (a.day_date || '').localeCompare(b.day_date || '') || planningCompare(a, b));
-
-    const byDay = {};
-    for (const it of items) { const k = it.day_date || 'sin-fecha'; (byDay[k] = byDay[k] || []).push(it); }
-    Object.keys(noteMap).forEach(k => { if (!byDay[k]) byDay[k] = []; });
-    if (t.start_date && t.end_date) {
-      let d = parseDate(t.start_date); const end = parseDate(t.end_date);
-      while (d <= end) { const k = d.toISOString().slice(0, 10); if (!byDay[k]) byDay[k] = []; d.setDate(d.getDate() + 1); }
-    }
-    const keys = Object.keys(byDay).filter(k => k !== 'sin-fecha').sort();
-    if (byDay['sin-fecha'] && byDay['sin-fecha'].length) keys.push('sin-fecha');
-    if (!keys.length) { UI.toast('No hay días que mostrar'); return; }
-
+    let keys = [];
     const track = el('div', { class:'flash-track' });
-    keys.forEach(k => {
-      const evs = byDay[k];
-      const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
-      const meta = noteMap[k];
-      track.appendChild(el('div', { class:'flash-card', data:{ day:k } }, [
-        el('div', { class:'flash-date' }, [
-          dayNum ? el('div', { class:'flash-daynum', text:`Día ${dayNum}` }) : null,
-          (k === 'sin-fecha')
-            ? el('div', { class:'flash-date-main', text:'Sin fecha' })
-            : el('div', { class:'flash-date-main' }, [
-                el('span', { class:'flash-wd', text: fmtDate(k, { weekday:'long' }) }),
-                el('span', { class:'flash-dm', text: fmtDate(k, { day:'numeric', month:'long' }) }),
-              ]),
-          (meta && meta.title) ? el('div', { class:'flash-note-title', text: meta.title }) : null,
-        ].filter(Boolean)),
-        el('div', { class:'flash-body' }, evs.length
-          ? evs.map(it => this._planningItem(it, t))
-          : [ el('div', { class:'flash-empty' }, [ el('div', { class:'flash-empty-emoji', text:'🗓️' }), el('div', { text:'Día libre — sin planes' }) ]) ]),
-      ]));
-    });
-
     const counter = el('div', { class:'flash-counter' });
+
     const setCounter = () => {
       const w = track.clientWidth || 1;
       const i = Math.round(track.scrollLeft / w);
-      counter.textContent = `${Math.min(i + 1, keys.length)} / ${keys.length}`;
+      counter.textContent = keys.length ? `${Math.min(i + 1, keys.length)} / ${keys.length}` : '';
     };
+    const currentDayKey = () => {
+      const w = track.clientWidth || 1;
+      const i = Math.max(0, Math.min(keys.length - 1, Math.round(track.scrollLeft / w)));
+      return keys[i];
+    };
+
+    // Carga datos y (re)construye las tarjetas; reenfoca el día indicado.
+    const renderCards = async (focusDay) => {
+      const rawItems = await DB.listByTrip('planning_items', t.id);
+      try {
+        const budgets = await DB.listByTrip('budget_items', t.id);
+        this._budgetByPlanningId = {};
+        for (const b of budgets) if (b.planning_item_id) this._budgetByPlanningId[b.planning_item_id] = b;
+      } catch (_) { this._budgetByPlanningId = {}; }
+      const noteMap = {};
+      (await DB.listByTrip('day_notes', t.id).catch(() => [])).forEach(n => noteMap[n.date] = n);
+
+      const items = this._expandHotels(rawItems);
+      items.sort((a, b) => (a.day_date || '').localeCompare(b.day_date || '') || planningCompare(a, b));
+      const byDay = {};
+      for (const it of items) { const k = it.day_date || 'sin-fecha'; (byDay[k] = byDay[k] || []).push(it); }
+      Object.keys(noteMap).forEach(k => { if (!byDay[k]) byDay[k] = []; });
+      if (t.start_date && t.end_date) {
+        let d = parseDate(t.start_date); const end = parseDate(t.end_date);
+        while (d <= end) { const k = d.toISOString().slice(0, 10); if (!byDay[k]) byDay[k] = []; d.setDate(d.getDate() + 1); }
+      }
+      keys = Object.keys(byDay).filter(k => k !== 'sin-fecha').sort();
+      if (byDay['sin-fecha'] && byDay['sin-fecha'].length) keys.push('sin-fecha');
+
+      track.innerHTML = '';
+      keys.forEach(k => {
+        const evs = byDay[k];
+        const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
+        const meta = noteMap[k];
+        track.appendChild(el('div', { class:'flash-card', data:{ day:k } }, [
+          el('div', { class:'flash-date' }, [
+            dayNum ? el('div', { class:'flash-daynum', text:`Día ${dayNum}` }) : null,
+            (k === 'sin-fecha')
+              ? el('div', { class:'flash-date-main', text:'Sin fecha' })
+              : el('div', { class:'flash-date-main' }, [
+                  el('span', { class:'flash-wd', text: fmtDate(k, { weekday:'long' }) }),
+                  el('span', { class:'flash-dm', text: fmtDate(k, { day:'numeric', month:'long' }) }),
+                ]),
+            (meta && meta.title) ? el('div', { class:'flash-note-title', text: meta.title }) : null,
+          ].filter(Boolean)),
+          el('div', { class:'flash-body' }, evs.length
+            ? evs.map(it => this._planningItem(it, t))
+            : [ el('div', { class:'flash-empty' }, [ el('div', { class:'flash-empty-emoji', text:'🗓️' }), el('div', { text:'Día libre — sin planes' }) ]) ]),
+        ]));
+      });
+      // Reenfocar el día (tras añadir/editar o al abrir).
+      const idx = Math.max(0, keys.indexOf(focusDay));
+      track.scrollLeft = idx * track.clientWidth;
+      setCounter();
+    };
+
     let raf = 0;
     track.addEventListener('scroll', () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; setCounter(); }); }, { passive:true });
 
@@ -6021,6 +6078,14 @@ const TripDetail = {
       else if (e.key === 'ArrowRight') track.scrollBy({ left: track.clientWidth, behavior:'smooth' });
       else if (e.key === 'ArrowLeft') track.scrollBy({ left: -track.clientWidth, behavior:'smooth' });
     };
+
+    // FAB para añadir un evento en el día que se está viendo (refresca al guardar).
+    const addBtn = canEdit() ? el('button', { class:'flash-fab', 'aria-label':'Añadir evento', title:'Añadir evento',
+      onclick: () => {
+        const day = currentDayKey();
+        TripDetail.openPlanningEditor(t, null, { day: (day && day !== 'sin-fecha') ? day : null, onSaved: () => renderCards(day) });
+      }, html: svg('plus') }) : null;
+
     const overlay = el('div', { class:'flashview' }, [
       el('div', { class:'flash-top' }, [
         el('div', { class:'flash-title', text: t.name || 'Planning' }),
@@ -6028,13 +6093,12 @@ const TripDetail = {
         el('button', { class:'flash-close', 'aria-label':'Cerrar', onclick: close, html: svg('close') }),
       ]),
       track,
-    ]);
+      addBtn,
+    ].filter(Boolean));
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onKey);
-    setCounter();
-    // Empezar en HOY si está dentro del viaje.
-    const startIdx = keys.indexOf(todayIso());
-    if (startIdx > 0) { track.scrollLeft = startIdx * track.clientWidth; setCounter(); }
+    await renderCards(todayIso());
+    if (!keys.length) { close(); UI.toast('No hay días que mostrar'); }
   },
 
   // Fila para la vista "Direcciones" — incluye botón "Ir" (Google Maps directions)
@@ -7165,7 +7229,7 @@ const TripDetail = {
             const rate = FX.rateToEur(cur) ?? 1;
             await DB.put('budget_items', {
               id: uuid(), trip_id: t.id, planning_item_id: it.id,
-              category: ({comida:'comida', compras:'compras', transporte:'transporte'})[it.type] || 'actividades',
+              category: budgetCategoryForType(it.type),
               concept, amount: amt, currency: cur,
               rate_to_eur: rate, amount_eur: +(amt * rate).toFixed(2),
               status: 'planeado', date: it.day_date,
@@ -7181,6 +7245,8 @@ const TripDetail = {
         await Router.render();
         requestAnimationFrame(() => window.scrollTo(0, sy));
         setTimeout(() => window.scrollTo(0, sy), 90);
+        // Permite a quien abrió el editor (p. ej. la vista tarjetas) refrescarse.
+        if (opts && typeof opts.onSaved === 'function') { try { opts.onSaved(); } catch (_) {} }
       }
     };
 
@@ -7465,7 +7531,7 @@ const TripDetail = {
           const rate = FX.rateToEur(currency) ?? 1;
           const budgetItem = {
             id: uuid(), trip_id: t.id, planning_item_id: it.id,
-            category: ({hotel:'alojamiento', vuelo:'transporte', coche:'transporte', transporte:'transporte', comida:'comida', compras:'compras'})[it.type] || 'actividades',
+            category: budgetCategoryForType(it.type),
             concept: it.title, amount, currency,
             rate_to_eur: rate, amount_eur: +(amount * rate).toFixed(2),
             status: 'reservado', date: newD1,
@@ -8694,104 +8760,328 @@ const TripDetail = {
 
   /* ----- Pendientes (checklist manual + eventos en consulta/por iniciar) ----- */
   async tabPendientes(root, t, fab) {
+    // Migración del modelo: cada pendiente con id/grupo/orden.
+    const manual = TripDetail._pendingItems(t);
+    let changed = false;
+    manual.forEach((m, i) => {
+      if (!m.id) { m.id = uuid(); changed = true; }
+      if (!m.group) { m.group = 'general'; changed = true; }
+      if (typeof m.order_index !== 'number') { m.order_index = i; changed = true; }
+    });
+    if (changed) { try { await DB.put('trips', t); } catch (_) {} }
+
+    const editMode = TripDetail._pendingEditMode;
+    const today = todayIso();
+    const isOverdue = (m) => !m.done && m.date && m.date < today;
+    const saveManual = async () => { await DB.put('trips', t); };
+
+    // Eventos automáticos (en consulta / por iniciar) — solo lectura.
     const planning = await DB.listByTrip('planning_items', t.id);
-    const manual = Array.isArray(t.pending_items) ? t.pending_items : [];
     const auto = planning
       .filter(p => ['en_consulta','por_iniciar'].includes(itemStatus(p)))
-      .map(p => ({ kind:'auto', item:p, date: p.day_date || p.consultation_planned_d1 || '', time: p.time || p.consultation_planned_t1 || '' }));
+      .map(p => ({ item:p, date: p.day_date || p.consultation_planned_d1 || '', time: p.time || p.consultation_planned_t1 || '' }))
+      .sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||''));
 
-    const saveManual = async () => { t.pending_items = manual; await DB.put('trips', t); };
-
-    // Cabecera con botón "+"
-    root.appendChild(el('div', { class:'resumen-day-head', style:{marginTop:'4px'} }, [
-      el('h2', { class:'section-title', style:{margin:0}, text:'Pendientes' }),
-      canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir pendiente', 'aria-label':'Añadir pendiente',
-        onclick: () => TripDetail._openPendingEditor(t, null), html: svg('plus') }) : null,
-    ].filter(Boolean)));
-
-    // Item manual (checklist) — fila con checkbox, texto, fecha/hora y borrar.
-    const manualRow = (m) => el('div', { class:'pending-item' + (m.done ? ' done' : '') }, [
-      el('button', { class:'pending-check' + (m.done ? ' on' : ''), 'aria-pressed': m.done ? 'true':'false', title: m.done ? 'Marcar pendiente' : 'Marcar hecho',
-        onclick: async () => { m.done = !m.done; await saveManual(); Router.render(); }, html: m.done ? svg('check') : '' }),
-      el('div', { class:'pending-main', onclick: () => canEdit() && TripDetail._openPendingEditor(t, m) }, [
-        el('div', { class:'pending-text', text: m.text || '(sin texto)' }),
-        (m.date || m.time) ? el('div', { class:'pending-sub', text: [ m.date ? fmtDateShort(m.date) : '', m.time || '' ].filter(Boolean).join(' · ') }) : null,
-      ].filter(Boolean)),
-      canEdit() ? el('button', { class:'icon-btn', title:'Borrar', 'aria-label':'Borrar pendiente',
-        onclick: async () => { const i = manual.indexOf(m); if (i>=0) manual.splice(i,1); await saveManual(); Router.render(); }, html: svg('trash') }) : null,
-    ].filter(Boolean));
-
-    // Evento automático (en consulta / por iniciar) — clicable, no marcable.
-    const autoRow = (a) => {
-      const it = a.item; const td = typeDef(it.type);
-      const st = itemStatus(it); const stDef = STATUS_PLANNING.find(s => s.id === st);
-      return el('div', { class:'pending-item auto interactive', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-        el('div', { class:'item-emoji', text: planEmoji(it) }),
-        el('div', { class:'pending-main' }, [
-          el('div', { class:'pending-text', text: it.place_name || it.title || td.label }),
-          el('div', { class:'pending-sub', text: [ a.date ? fmtDateShort(a.date) : 'Sin fecha', a.time || '' ].filter(Boolean).join(' · ') }),
-        ]),
-        stDef ? el('span', { class:`status-badge s-${st}`, text: stDef.label }) : null,
-      ].filter(Boolean));
+    // Cabecera: progreso (izq) + controles (der).
+    const fillEl = el('div', { class:'budget-fill' });
+    const legendCount = el('span', { class:'mono' });
+    const legendLabel = el('span', { class:'muted' });
+    const refreshProgress = () => {
+      const d = manual.filter(m => m.done).length;
+      const p = manual.length ? (d / manual.length) * 100 : 0;
+      fillEl.style.width = p.toFixed(1) + '%';
+      legendCount.textContent = `${d} / ${manual.length}`;
+      legendLabel.textContent = (manual.length && d === manual.length) ? '¡Todo hecho!' : 'completadas';
     };
-
-    const noDate = manual.filter(m => !m.date);
-    const dated  = [
-      ...manual.filter(m => m.date).map(m => ({ kind:'manual', m, date:m.date, time:m.time || '' })),
-      ...auto,
-    ].sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||''));
+    const collapseAllBtn = el('button', { class:'icon-btn pack-collapse-all', title:'Plegar / desplegar todo',
+      'aria-label':'Plegar o desplegar todos los grupos', html: svg('chevron'),
+      onclick: () => {
+        const groups = Array.from(root.querySelectorAll('.pack-group[data-cat]'));
+        if (!groups.length) return;
+        const anyOpen = groups.some(g => !g.classList.contains('collapsed'));
+        groups.forEach(g => { g.classList.toggle('collapsed', anyOpen); const cid = g.dataset.cat; if (anyOpen) TripDetail._pendingCollapsedCats.add(cid); else TripDetail._pendingCollapsedCats.delete(cid); });
+        collapseAllBtn.classList.toggle('all-collapsed', anyOpen);
+        collapseAllBtn.title = anyOpen ? 'Desplegar todo' : 'Plegar todo';
+      } });
+    root.appendChild(el('div', { class:'pack-header' }, [
+      el('div', { class:'pack-progress' }, [ el('div', { class:'budget-bar' }, fillEl), el('div', { class:'budget-legend' }, [ legendCount, legendLabel ]) ]),
+      el('div', { class:'pack-controls' }, [
+        collapseAllBtn,
+        canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir pendiente', 'aria-label':'Añadir pendiente',
+          onclick: () => TripDetail._openPendingEditor(t, null), html: svg('plus') }) : null,
+        canEdit() ? el('button', { class:'icon-btn', title:'Nuevo grupo', 'aria-label':'Nuevo grupo',
+          onclick: () => TripDetail._openNewPendingGroup(t), html: svg('folderplus') }) : null,
+        canEdit() ? el('button', { class:'icon-btn' + (editMode ? ' edit-on' : ''), title: editMode ? 'Listo' : 'Editar grupos',
+          'aria-pressed': editMode ? 'true' : 'false', 'aria-label':'Editar',
+          onclick: () => { TripDetail._pendingEditMode = !TripDetail._pendingEditMode; Router.render(); }, html: svg(editMode ? 'check' : 'edit') }) : null,
+      ].filter(Boolean)),
+    ]));
+    refreshProgress();
 
     if (!manual.length && !auto.length) {
       root.appendChild(el('div', { class:'empty' }, [
         el('div', { class:'icon', html: svg('note') }),
         el('h3', { text:'Sin pendientes' }),
-        el('p', { text:'Pulsa “+” para añadir una tarea. Los eventos del planning en consulta o por iniciar aparecerán aquí automáticamente.' }),
+        el('p', { text:'Pulsa “+” para añadir una tarea o crea un grupo. Los eventos del planning en consulta o por iniciar aparecen aquí.' }),
       ]));
       return;
     }
 
-    // 1) Manuales sin fecha — arriba del todo, fuera de la cronología.
-    if (noDate.length) {
-      const wrap = el('div', { class:'list pending-list' });
-      noDate.forEach(m => wrap.appendChild(manualRow(m)));
-      root.appendChild(wrap);
+    // --- Eventos del planning (en consulta / por iniciar) — solo lectura ---
+    if (auto.length) {
+      root.appendChild(el('div', { class:'pending-divider', text:'Del planning' }));
+      const list = el('div', { class:'list pending-list' });
+      auto.forEach(a => {
+        const it = a.item; const td = typeDef(it.type); const st = itemStatus(it); const stDef = STATUS_PLANNING.find(s => s.id === st);
+        const overdue = a.date && a.date < today;
+        list.appendChild(el('div', { class:'pending-item auto interactive', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
+          el('div', { class:'item-emoji', text: planEmoji(it) }),
+          el('div', { class:'pending-main' }, [
+            el('div', { class:'pending-text' }, [ overdue ? el('span', { class:'pending-warn', title:'Fecha pasada', text:'⚠️ ' }) : null, el('span', { text: it.place_name || it.title || td.label }) ].filter(Boolean)),
+            el('div', { class:'pending-sub', text: [ a.date ? fmtDateShort(a.date) : 'Sin fecha', a.time || '' ].filter(Boolean).join(' · ') }),
+          ]),
+          stDef ? el('span', { class:`status-badge s-${st}`, text: stDef.label }) : null,
+        ].filter(Boolean)));
+      });
+      root.appendChild(list);
     }
-    // 2) Cronológico: manuales con fecha + eventos automáticos, intercalados por fecha.
-    if (dated.length) {
-      if (noDate.length) root.appendChild(el('div', { class:'pending-divider', text:'Por fecha' }));
-      const wrap = el('div', { class:'list pending-list' });
-      dated.forEach(d => wrap.appendChild(d.kind === 'manual' ? manualRow(d.m) : autoRow(d)));
-      root.appendChild(wrap);
+
+    // --- Pendientes manuales agrupados (solo los NO completados) ---
+    const pending = manual.filter(m => !m.done);
+    const { cats, byCat } = TripDetail._pendingCats(t, pending);
+    const allCollapsedInit = cats.length > 0 && cats.every(c => TripDetail._pendingCollapsedCats.has(c.id));
+    collapseAllBtn.classList.toggle('all-collapsed', allCollapsedInit);
+    collapseAllBtn.title = allCollapsedInit ? 'Desplegar todo' : 'Plegar todo';
+
+    let draggedRow = null;
+    const clearDnd = () => root.querySelectorAll('.drag-over-top,.drag-over-bot,.pack-cat-target').forEach(n => n.classList.remove('drag-over-top','drag-over-bot','pack-cat-target'));
+
+    // Completar con efecto: destello verde + deslizar y, tras unos ms, re-render.
+    const completeWithAnim = async (m, row) => {
+      m.done = true; m.done_at = Date.now();
+      row.classList.add('just-checked');
+      const ck = row.querySelector('.pack-check'); if (ck) { ck.classList.add('on'); ck.innerHTML = svg('check'); }
+      await saveManual();
+      refreshProgress();
+      setTimeout(() => {
+        row.classList.add('pending-removing');
+        setTimeout(() => { const sy = window.scrollY; Router.render().then(() => window.scrollTo(0, sy)); }, 250);
+      }, 300);
+    };
+
+    for (const c of cats) {
+      const collapsed = TripDetail._pendingCollapsedCats.has(c.id);
+      const grp = el('div', { class:'pack-group' + (collapsed ? ' collapsed' : ''), data:{ cat:c.id } });
+      const grp_list = (byCat[c.id] || []).slice().sort((a,b) => (a.order_index||0)-(b.order_index||0));
+      const titleEl = (editMode && canEdit())
+        ? el('input', { class:'pack-group-title-input', value: c.label, 'aria-label':'Nombre del grupo',
+            onkeydown:(e)=>{ if (e.key==='Enter') { e.preventDefault(); e.target.blur(); } }, onblur:(e)=>TripDetail._renamePendingGroup(t, c.id, e.target.value) })
+        : el('span', { class:'pack-group-title', text: c.label });
+      const head = el('div', { class:'pack-group-head', onclick:(e)=>{ if (e.target.closest('.pack-group-act')||e.target.closest('.pack-group-title-input')) return; const willCollapse=!grp.classList.contains('collapsed'); grp.classList.toggle('collapsed', willCollapse); if (willCollapse) TripDetail._pendingCollapsedCats.add(c.id); else TripDetail._pendingCollapsedCats.delete(c.id); } }, [
+        el('span', { class:'pack-group-chevron', html: svg('chevron') }),
+        titleEl,
+        el('span', { class:'pack-group-count', text: String(grp_list.length) }),
+        el('div', { class:'gap' }),
+        (editMode && canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Subir grupo', html: svg('arrup'), disabled: cats.indexOf(c)===0?true:null, onclick:()=>TripDetail._movePendingGroup(t, c.id, -1) }) : null,
+        (editMode && canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Bajar grupo', html: svg('arrdown'), disabled: cats.indexOf(c)===cats.length-1?true:null, onclick:()=>TripDetail._movePendingGroup(t, c.id, 1) }) : null,
+        canEdit() ? el('button', { class:'icon-btn pack-group-act', title:'Añadir a este grupo', html: svg('plus'), onclick:()=>TripDetail._openPendingEditor(t, null, c.id) }) : null,
+        (editMode && canEdit() && c.custom) ? el('button', { class:'icon-btn pack-group-act', title:'Borrar grupo', html: svg('trash'), onclick:()=>TripDetail._deletePendingGroup(t, c.id) }) : null,
+      ].filter(Boolean));
+      grp.appendChild(head);
+
+      const ul = el('div', { class:'pack-list', data:{ cat:c.id } });
+      const reorderTo = (y, dragRow) => {
+        const sibs = [...ul.querySelectorAll('.pack-item:not(.dragging)')];
+        for (const sib of sibs) { const rect = sib.getBoundingClientRect(); if (y < rect.top + rect.height/2) { ul.insertBefore(dragRow, sib); return; } }
+        ul.appendChild(dragRow);
+      };
+      const persistGroupOrder = async () => {
+        const order = [...ul.querySelectorAll('.pack-item')].map(r => r.dataset.id);
+        let oi = 0; for (const id of order) { const it = manual.find(x => x.id === id); if (!it) continue; it.order_index = oi; oi++; }
+        await saveManual();
+      };
+      const makeRow = (m) => {
+        const draggable = editMode && canEdit();
+        const row = el('div', { class:'pack-item pending-item' + (isOverdue(m) ? ' overdue' : ''), data:{ id:m.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
+        const check = el('button', { class:'pack-check', 'aria-pressed':'false', title:'Marcar hecho', html:'',
+          onclick:(e)=>{ e.stopPropagation(); if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; } completeWithAnim(m, row); } });
+        row.appendChild(check);
+        if (isOverdue(m)) row.appendChild(el('span', { class:'pending-warn', title:'Fecha pasada', text:'⚠️' }));
+        row.appendChild(el('div', { class:'pack-name', onclick:()=>{ if (canEdit()) TripDetail._openPendingEditor(t, m); } }, [
+          el('div', { text: m.text || '(sin texto)' }),
+          (m.date || m.time) ? el('div', { class:'pending-date-sub', text: [ m.date ? fmtDateShort(m.date) : '', m.time || '' ].filter(Boolean).join(' · ') }) : null,
+        ].filter(Boolean)));
+        if (editMode && canEdit()) row.appendChild(el('button', { class:'icon-btn pack-del', title:'Editar', html: svg('edit'), onclick:(e)=>{ e.stopPropagation(); TripDetail._openPendingEditor(t, m); } }));
+        if (draggable) {
+          row.addEventListener('dragstart', (e)=>{ draggedRow=row; row.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain', m.id);}catch(_){} });
+          row.addEventListener('dragend', ()=>{ row.classList.remove('dragging'); clearDnd(); draggedRow=null; });
+          row.addEventListener('dragover', (e)=>{ if(!draggedRow||draggedRow===row) return; e.preventDefault(); const r=row.getBoundingClientRect(); const before=(e.clientY-r.top)<r.height/2; root.querySelectorAll('.drag-over-top,.drag-over-bot').forEach(n=>{ if(n!==row) n.classList.remove('drag-over-top','drag-over-bot'); }); row.classList.toggle('drag-over-top', before); row.classList.toggle('drag-over-bot', !before); });
+          row.addEventListener('drop', async (e)=>{ if(!draggedRow||draggedRow===row) return; e.preventDefault(); e.stopPropagation(); const before=row.classList.contains('drag-over-top'); clearDnd(); await TripDetail._reorderPending(t, draggedRow.dataset.id, row.dataset.id, before, row.dataset.cat); });
+          let lpTimer=null, lpDrag=false, lpStartY=0;
+          row.addEventListener('touchstart', (e)=>{ if (e.target.closest('button')) return; lpStartY=e.touches[0].clientY; lpTimer=setTimeout(()=>{ lpDrag=true; row.classList.add('dragging'); document.body.classList.add('pack-dragging'); if (navigator.vibrate) { try{navigator.vibrate(12);}catch(_){} } }, 320); }, { passive:true });
+          row.addEventListener('touchmove', (e)=>{ if (!lpDrag) { if (lpTimer && Math.abs(e.touches[0].clientY-lpStartY)>8) { clearTimeout(lpTimer); lpTimer=null; } return; } e.preventDefault(); reorderTo(e.touches[0].clientY, row); }, { passive:false });
+          const endTouch=()=>{ clearTimeout(lpTimer); lpTimer=null; if (lpDrag) { lpDrag=false; row.classList.remove('dragging'); document.body.classList.remove('pack-dragging'); persistGroupOrder(); } };
+          row.addEventListener('touchend', endTouch);
+          row.addEventListener('touchcancel', endTouch);
+        }
+        return row;
+      };
+      grp_list.forEach(m => ul.appendChild(makeRow(m)));
+
+      if (canEdit()) {
+        grp.addEventListener('dragover', (e)=>{ if(!draggedRow) return; if(e.target.closest('.pack-item')) return; e.preventDefault(); grp.classList.add('pack-cat-target'); });
+        grp.addEventListener('dragleave', (e)=>{ if(!grp.contains(e.relatedTarget)) grp.classList.remove('pack-cat-target'); });
+        grp.addEventListener('drop', async (e)=>{ if(!draggedRow) return; if(e.target.closest('.pack-item')) return; e.preventDefault(); grp.classList.remove('pack-cat-target'); await TripDetail._reorderPending(t, draggedRow.dataset.id, null, false, c.id); });
+      }
+      grp.appendChild(ul);
+      root.appendChild(grp);
+    }
+
+    // --- Completados (ocultos; se abren con "Ver completados") ---
+    const doneItems = manual.filter(m => m.done).sort((a,b) => (b.done_at||0)-(a.done_at||0));
+    if (doneItems.length) {
+      const open = TripDetail._pendingShowDone;
+      const sec = el('div', { class:'pending-done-section' + (open ? ' open' : '') });
+      sec.appendChild(el('button', { class:'pending-done-toggle', onclick:()=>{ TripDetail._pendingShowDone = !TripDetail._pendingShowDone; Router.render(); } }, [
+        el('span', { class:'pack-group-chevron', html: svg('chevron') }),
+        el('span', { text:'Ver completados' }),
+        el('span', { class:'pack-group-count', text: String(doneItems.length) }),
+      ]));
+      if (open) {
+        const list = el('div', { class:'pack-list' });
+        doneItems.forEach(m => {
+          list.appendChild(el('div', { class:'pack-item pending-item done' }, [
+            el('button', { class:'pack-check on', title:'Marcar pendiente', html: svg('check'),
+              onclick:()=>{ if (!canEdit()) return; m.done=false; m.done_at=null; saveManual().then(()=>{ const sy=window.scrollY; Router.render().then(()=>window.scrollTo(0,sy)); }); } }),
+            el('div', { class:'pack-name', onclick:()=>{ if (canEdit()) TripDetail._openPendingEditor(t, m); } }, [
+              el('div', { text: m.text || '(sin texto)' }),
+              (m.date || m.time) ? el('div', { class:'pending-date-sub', text: [ m.date ? fmtDateShort(m.date) : '', m.time || '' ].filter(Boolean).join(' · ') }) : null,
+            ].filter(Boolean)),
+          ]));
+        });
+        sec.appendChild(list);
+      }
+      root.appendChild(sec);
     }
   },
 
-  // Editor de un pendiente manual: texto + fecha/hora opcionales.
-  _openPendingEditor(t, existing) {
+  // --- Helpers de pendientes (modelo array en t.pending_items) ---
+  _pendingItems(t) {
+    if (!Array.isArray(t.pending_items)) t.pending_items = [];
+    return t.pending_items;
+  },
+  _pendingCats(t, items) {
+    const byCat = {};
+    items.forEach(i => { const k = i.group || 'general'; (byCat[k] = byCat[k] || []).push(i); });
+    const builtinIds = new Set(CATS_PENDING.map(c => c.id));
+    const labelOf = {}; (t.pending_categories || []).forEach(c => { labelOf[c.id] = c.label; });
+    const cats = []; const seen = new Set();
+    CATS_PENDING.forEach(c => { if ((byCat[c.id] || []).length || labelOf[c.id]) { cats.push({ id:c.id, label: labelOf[c.id] || c.label, custom:false }); seen.add(c.id); } });
+    (t.pending_categories || []).forEach(c => { if (!seen.has(c.id) && !builtinIds.has(c.id)) { cats.push({ id:c.id, label:c.label, custom:true }); seen.add(c.id); } });
+    Object.keys(byCat).forEach(cid => { if (!seen.has(cid)) { cats.push({ id:cid, label: labelOf[cid] || cid, custom: !builtinIds.has(cid) }); seen.add(cid); } });
+    if (!cats.length) cats.push({ id:'general', label:'Tareas', custom:false });
+    const order = Array.isArray(t.pending_group_order) ? t.pending_group_order : [];
+    if (order.length) cats.sort((a, b) => { const ia=order.indexOf(a.id), ib=order.indexOf(b.id); if (ia===-1&&ib===-1) return 0; if (ia===-1) return 1; if (ib===-1) return -1; return ia-ib; });
+    return { cats, byCat };
+  },
+  async _renamePendingGroup(t, catId, newLabel) {
+    if (!canEdit()) return;
+    newLabel = (newLabel || '').trim(); if (!newLabel) return;
+    const cats = Array.isArray(t.pending_categories) ? t.pending_categories : (t.pending_categories = []);
+    const existing = cats.find(c => c.id === catId);
+    const cur = existing ? existing.label : (CATS_PENDING.find(c => c.id === catId)?.label || catId);
+    if (newLabel === cur) return;
+    if (existing) existing.label = newLabel; else cats.push({ id: catId, label: newLabel });
+    try { await DB.put('trips', t); } catch (e) { console.error(e); }
+  },
+  async _movePendingGroup(t, catId, dir) {
+    if (!canEdit()) return;
+    const { cats } = TripDetail._pendingCats(t, TripDetail._pendingItems(t).filter(m => !m.done));
+    const ids = cats.map(c => c.id); const idx = ids.indexOf(catId); const swap = idx + dir;
+    if (idx < 0 || swap < 0 || swap >= ids.length) return;
+    [ids[idx], ids[swap]] = [ids[swap], ids[idx]];
+    const prev = Array.isArray(t.pending_group_order) ? t.pending_group_order : [];
+    const extra = prev.filter(id => !ids.includes(id));
+    t.pending_group_order = [...ids, ...extra];
+    await DB.put('trips', t); Router.render();
+  },
+  async _reorderPending(t, draggedId, targetId, before, targetCat) {
+    if (!canEdit()) return;
+    const arr = TripDetail._pendingItems(t);
+    const dragged = arr.find(m => m.id === draggedId); if (!dragged) return;
+    if (targetCat && targetCat !== (dragged.group || 'general')) dragged.group = targetCat;
+    const group = arr.filter(m => m.id !== draggedId && (m.group || 'general') === (dragged.group || 'general') && !m.done)
+      .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+    let newIndex = group.length;
+    if (targetId) { const idx = group.findIndex(m => m.id === targetId); if (idx >= 0) newIndex = before ? idx : idx + 1; }
+    group.splice(newIndex, 0, dragged);
+    group.forEach((m, i) => { m.order_index = i; });
+    await DB.put('trips', t); Router.render();
+  },
+  _openNewPendingGroup(t) {
+    if (!canEdit()) return;
+    const body = el('div', {}, [ el('div', { class:'form-row' }, [ el('label', { text:'Nombre del grupo' }), el('input', { id:'pg-name', type:'text', placeholder:'Ej. Antes de salir' }) ]) ]);
+    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+      const label = ($('#pg-name')?.value || '').trim(); if (!label) { UI.toast('Pon un nombre'); return; }
+      const id = 'pg-' + uuid().slice(0, 8);
+      const cats = Array.isArray(t.pending_categories) ? t.pending_categories : (t.pending_categories = []);
+      cats.push({ id, label });
+      const order = Array.isArray(t.pending_group_order) ? t.pending_group_order : [];
+      t.pending_group_order = [...order.filter(x => x !== id), id];
+      await DB.put('trips', t); UI.closeSheet(); Router.render();
+    } }, 'Crear');
+    UI.openSheet({ title:'Nuevo grupo', body, footer:[ el('button', { class:'btn btn-ghost', onclick:()=>UI.closeSheet() }, 'Cancelar'), save ] });
+  },
+  async _deletePendingGroup(t, catId) {
+    if (!canEdit()) return;
+    const ok = await UI.confirm('¿Borrar este grupo? Sus tareas pasarán a "Tareas".');
+    if (!ok) return;
+    TripDetail._pendingItems(t).forEach(m => { if ((m.group || 'general') === catId) m.group = 'general'; });
+    t.pending_categories = (t.pending_categories || []).filter(c => c.id !== catId);
+    t.pending_group_order = (t.pending_group_order || []).filter(id => id !== catId);
+    await DB.put('trips', t); Router.render();
+  },
+
+  // Editor de un pendiente manual: texto + grupo + fecha/hora opcionales.
+  _openPendingEditor(t, existing, defaultGroup) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-    const m = existing || { id: uuid(), text:'', done:false, date:'', time:'' };
+    const arr = TripDetail._pendingItems(t);
+    const m = existing || { id: uuid(), text:'', done:false, date:'', time:'', group: defaultGroup || 'general', order_index: arr.length };
+    const { cats } = TripDetail._pendingCats(t, arr.filter(x => !x.done));
+    const groupOpts = cats.length ? cats : [{ id:'general', label:'Tareas' }];
+    // Asegura que el grupo actual aparezca aunque esté vacío.
+    if (!groupOpts.some(c => c.id === (m.group || 'general'))) {
+      const lbl = (t.pending_categories || []).find(c => c.id === m.group)?.label || (CATS_PENDING.find(c => c.id === m.group)?.label) || 'Tareas';
+      groupOpts.unshift({ id: m.group || 'general', label: lbl });
+    }
     const body = el('div', {}, [
       el('div', { class:'form-row' }, [
         el('label', { text:'Tarea pendiente' }),
         el('input', { id:'pe-text', type:'text', value: m.text || '', placeholder:'Ej. Reservar entradas del museo' }),
       ]),
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Grupo' }),
+        el('select', { id:'pe-group' }, groupOpts.map(c => el('option', { value:c.id, selected:(m.group||'general')===c.id?true:null }, c.label))),
+      ]),
       el('div', { class:'form-grid-2' }, [
         el('div', { class:'form-row' }, [ el('label', { text:'Fecha (opcional)' }), el('input', { id:'pe-date', type:'date', value: m.date || '' }) ]),
         el('div', { class:'form-row' }, [ el('label', { text:'Hora (opcional)' }), el('input', { id:'pe-time', type:'time', value: m.time || '' }) ]),
       ]),
-      el('div', { class:'field-hint', text:'Si pones fecha, se ordena cronológicamente junto a los eventos del planning. Sin fecha, queda arriba.' }),
+      el('div', { class:'field-hint', text:'Si pones fecha y ya ha pasado, saldrá un aviso ⚠️ mientras siga pendiente.' }),
     ]);
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
       m.text = ($('#pe-text')?.value || '').trim();
       if (!m.text) { UI.toast('Escribe la tarea'); return; }
+      m.group = $('#pe-group')?.value || 'general';
       m.date = $('#pe-date')?.value || '';
       m.time = $('#pe-time')?.value || '';
-      const arr = Array.isArray(t.pending_items) ? t.pending_items : (t.pending_items = []);
+      if (typeof m.order_index !== 'number') m.order_index = arr.length;
       if (!existing) arr.push(m);
       await DB.put('trips', t);
       UI.toast('Guardado'); UI.closeSheet(); Router.render();
     }}, 'Guardar');
     const delBtn = existing ? el('button', { class:'btn btn-danger', onclick: async () => {
-      const arr = t.pending_items || []; const i = arr.indexOf(m); if (i>=0) arr.splice(i,1);
+      const i = arr.indexOf(m); if (i>=0) arr.splice(i,1);
       await DB.put('trips', t); UI.closeSheet(); Router.render();
     }}, 'Borrar') : null;
     UI.openSheet({ title: existing ? 'Editar pendiente' : 'Nuevo pendiente', body,
