@@ -989,6 +989,23 @@ h2.section-title {
 /* Estadísticas — valor a la derecha de cada fila */
 .stat-val { flex-shrink:0; font-weight:700; font-size:14px; color:var(--accent); font-feature-settings:"tnum"; white-space:nowrap; }
 
+/* Recordatorio de gasto pendiente */
+.expense-remind-btn {
+  display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  padding:5px 10px; border-radius:var(--r-pill); font-size:12px; font-weight:600;
+  border:1.5px solid var(--line); background:var(--bg-elev); color:var(--text-muted); font-family:inherit;
+  transition:all .15s var(--ease);
+}
+.expense-remind-btn.on { border-color:#f59e0b; background:color-mix(in srgb, #f59e0b 14%, var(--bg-elev)); color:#b45309; }
+.expense-warn {
+  margin-top:12px; padding:12px 14px; border-radius:var(--r-md);
+  background:color-mix(in srgb, #f59e0b 12%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, #f59e0b 45%, var(--line));
+}
+.expense-warn-msg { display:flex; align-items:center; gap:8px; font-weight:600; font-size:13.5px; margin-bottom:10px; }
+.expense-warn-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.expense-warn-flag { font-size:13px; line-height:1; }
+
 /* Selector de estado en el editor — pill segmentado vertical con color por opción */
 .status-picker {
   display:grid; gap:8px;
@@ -5324,6 +5341,7 @@ const TripDetail = {
           timeRangeText ? el('span', { class:'time-pill', text: timeRangeText }) : null,
           el('span', { text: displayTitle }),
           (statusDef && !isVirtual) ? el('span', { class:`status-badge s-${status}`, text: statusDef.label }) : null,
+          (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
         ].filter(Boolean)),
         // Los virtuales (noche/check-out/llegada) no caen al fallback td.label si no hay sub.
         el('div', { class:'li-sub', text: subParts.join(' · ') || (isVirtual ? '' : td.label) }),
@@ -6043,6 +6061,15 @@ const TripDetail = {
 
     // --- Personas (con quién): chips toggleables + añadir nueva ---
     let currentPeople = Array.isArray(it.people) ? [...it.people] : [];
+    // Recordatorio de gasto pendiente (⚠️ en la pill + listado en Presupuesto).
+    let currentExpenseReminder = !!it.expense_reminder;
+    const refreshExpenseReminderUI = () => {
+      const btn = document.getElementById('f-expense-remind');
+      if (btn) {
+        btn.classList.toggle('on', currentExpenseReminder);
+        btn.setAttribute('aria-pressed', currentExpenseReminder ? 'true' : 'false');
+      }
+    };
     const peopleBlock = el('div', { class:'form-row', id:'people-block' });
     const addPerson = () => {
       const inp = document.getElementById('person-new');
@@ -6198,10 +6225,18 @@ const TripDetail = {
       ]),
       consultaBlock,
       el('div', { class:'form-row', id:'f-amount-row' }, [
-        el('label', { text:'Importe asociado (crea gasto)' }),
+        el('div', { style:{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'} }, [
+          el('label', { text:'Importe asociado (crea gasto)', style:{margin:0} }),
+          el('div', { class:'gap' }),
+          // Toggle manual del recordatorio — por si descartaste sin querer.
+          el('button', { type:'button', id:'f-expense-remind', class:'expense-remind-btn',
+            title:'Recordarme añadir el gasto', 'aria-pressed': currentExpenseReminder ? 'true':'false',
+            onclick: () => { currentExpenseReminder = !currentExpenseReminder; refreshExpenseReminderUI(); } },
+            [ el('span', { text:'⚠️' }), el('span', { text:'Recordar gasto' }) ]),
+        ]),
         // Concepto opcional — por defecto el título de la parada al guardar si lo dejas vacío
         el('input', { id:'f-concept', type:'text', placeholder:'Concepto (por defecto: título)',
-          value: linkedBudget?.concept || '' }),
+          value: linkedBudget?.concept || '', style:{marginTop:'8px'} }),
         el('div', { class:'form-grid-2', style:{marginTop:'8px'} }, [
           el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00',
             value: linkedBudget ? String(linkedBudget.amount) : '' }),
@@ -6209,8 +6244,18 @@ const TripDetail = {
             value: linkedBudget ? (linkedBudget.currency || t.default_currency || 'EUR') : (t.default_currency || 'EUR') }),
         ]),
         el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado". Vacíalo a 0 para eliminarlo.' }),
+        // Banner de advertencia (oculto) — aparece al guardar sin gasto en un evento nuevo.
+        el('div', { id:'f-expense-warn', class:'expense-warn', style:{display:'none'} }, [
+          el('div', { class:'expense-warn-msg' }, [ el('span', { text:'⚠️' }), el('span', { text:'No has añadido ningún gasto a este evento.' }) ]),
+          el('div', { class:'expense-warn-actions' }, [
+            el('button', { type:'button', class:'btn btn-sm btn-primary', id:'ew-add' }, 'Añadir gasto'),
+            el('button', { type:'button', class:'btn btn-sm', id:'ew-remind' }, [ el('span',{text:'⚠️'}), 'Recordar más tarde' ]),
+            el('button', { type:'button', class:'btn btn-sm btn-ghost', id:'ew-discard' }, 'Descartar' ),
+          ]),
+        ]),
       ]),
     ]);
+    setTimeout(refreshExpenseReminderUI, 0);
     setTimeout(() => {
       renderConsultationDates(); renderStatusPicker();
       refreshTimeVisibility(); refreshHotelDatesVisibility(); refreshTzVisibility();
@@ -6310,33 +6355,31 @@ const TripDetail = {
       return true;
     };
 
-    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+    // Persiste el item + gasto vinculado, cierra el editor y MANTIENE la posición de
+    // scroll (no salta arriba; te deja en el día donde estabas).
+    const persistAndClose = async () => {
       try {
-        if (!collect()) return;
+        // Si hay importe, el gasto está puesto → no queda recordatorio pendiente.
+        const amtRaw0 = ($('#f-amount')?.value || '').trim();
+        const amt0 = parseFloat(amtRaw0);
+        if (!isNaN(amt0) && amt0 > 0) currentExpenseReminder = false;
+        it.expense_reminder = currentExpenseReminder;
         await DB.put('planning_items', it);
         if (!it.in_consultation) {
-          const amtRaw = ($('#f-amount').value || '').trim();
+          const amtRaw = amtRaw0;
           const amt = parseFloat(amtRaw);
           const cur = (($('#f-cur').value || '').trim() || 'EUR').toUpperCase();
-          // Concepto opcional — si vacío, usa el título de la parada
           const concept = ($('#f-concept')?.value || '').trim() || it.title;
           if (linkedBudget) {
             if (amtRaw === '' || isNaN(amt) || amt <= 0) {
-              // Usuario borró el importe → eliminamos el budget vinculado
               await DB.remove('budget_items', linkedBudget.id);
             } else {
-              // Actualizamos el existente (mismo id, no duplica)
               const rate = FX.rateToEur(cur) ?? 1;
-              linkedBudget.amount = amt;
-              linkedBudget.currency = cur;
-              linkedBudget.rate_to_eur = rate;
-              linkedBudget.amount_eur = +(amt * rate).toFixed(2);
-              linkedBudget.concept = concept;
-              linkedBudget.date = it.day_date;
+              linkedBudget.amount = amt; linkedBudget.currency = cur; linkedBudget.rate_to_eur = rate;
+              linkedBudget.amount_eur = +(amt * rate).toFixed(2); linkedBudget.concept = concept; linkedBudget.date = it.day_date;
               await DB.put('budget_items', linkedBudget);
             }
           } else if (!isNaN(amt) && amt > 0) {
-            // No había budget vinculado y el usuario ha puesto importe → crear nuevo
             const rate = FX.rateToEur(cur) ?? 1;
             await DB.put('budget_items', {
               id: uuid(), trip_id: t.id, planning_item_id: it.id,
@@ -6348,9 +6391,34 @@ const TripDetail = {
           }
         }
         UI.toast('Guardado');
-        try { Notifications.scheduleAll(); } catch (_) {}   // reprogramar avisos del planning
+        try { Notifications.scheduleAll(); } catch (_) {}
       } catch (err) { console.error(err); UI.toast('Error al guardar'); }
-      finally { UI.closeSheet(); Router.render(); }
+      finally {
+        const sy = window.scrollY;
+        UI.closeSheet();
+        await Router.render();
+        requestAnimationFrame(() => window.scrollTo(0, sy));
+        setTimeout(() => window.scrollTo(0, sy), 90);
+      }
+    };
+
+    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+      if (!collect()) return;
+      const amtRaw = ($('#f-amount')?.value || '').trim();
+      const hasAmount = amtRaw !== '' && !isNaN(parseFloat(amtRaw)) && parseFloat(amtRaw) > 0;
+      // Con importe, ya marcado "recordar", o editando un evento existente → guardar directo.
+      if (hasAmount || currentExpenseReminder || existing) return persistAndClose();
+      // Evento NUEVO sin gasto → avisar con 3 opciones.
+      const warn = document.getElementById('f-expense-warn');
+      if (!warn) return persistAndClose();
+      warn.style.display = 'block';
+      warn.scrollIntoView({ behavior:'smooth', block:'center' });
+      document.getElementById('ew-add').onclick = () => {
+        warn.style.display = 'none';
+        const a = document.getElementById('f-amount'); a?.scrollIntoView({ behavior:'smooth', block:'center' }); a?.focus();
+      };
+      document.getElementById('ew-remind').onclick = () => { currentExpenseReminder = true; persistAndClose(); };
+      document.getElementById('ew-discard').onclick = () => { currentExpenseReminder = false; persistAndClose(); };
     }}, 'Guardar');
 
     // El botón Confirmar aparece si existe y su estado es por_iniciar o en_consulta
@@ -6606,6 +6674,28 @@ const TripDetail = {
       el('div', { class:'metric' }, [ el('div',{class:'label',text:'Reservado'}), el('div',{class:'value',text:fmtMoney(reservado,'EUR')}) ]),
       el('div', { class:'metric' }, [ el('div',{class:'label',text:'Por reservar'}), el('div',{class:'value',text:fmtMoney(pendiente,'EUR')}) ]),
     ]));
+
+    // Eventos marcados "recordar añadir gasto" (⚠️). Clicables → abren el evento.
+    const planning = await DB.listByTrip('planning_items', t.id).catch(() => []);
+    const pendingExpense = planning.filter(p => p.expense_reminder);
+    if (pendingExpense.length) {
+      root.appendChild(el('h2', { class:'section-title', text:'Pendientes de añadir gasto' }));
+      const list = el('div', { class:'list' });
+      pendingExpense
+        .sort((a,b) => (a.day_date||'').localeCompare(b.day_date||''))
+        .forEach(p => {
+          const td = typeDef(p.type);
+          list.appendChild(el('div', { class:'list-item interactive', onclick: () => TripDetail.openPlanningEditor(t, p) }, [
+            el('div', { class:'item-emoji', text: planEmoji(p) }),
+            el('div', { class:'li-main' }, [
+              el('div', { class:'li-title' }, [ el('span', { text:'⚠️ ' }), el('span', { text: p.place_name || p.title || td.label }) ]),
+              el('div', { class:'li-sub', text: [ p.day_date ? fmtDateShort(p.day_date) : 'Sin fecha', p.time || '' ].filter(Boolean).join(' · ') }),
+            ]),
+            el('span', { class:'btn btn-sm', style:{pointerEvents:'none'}, text:'Añadir gasto' }),
+          ]));
+        });
+      root.appendChild(list);
+    }
 
     // Barra de progreso respecto al objetivo
     if (target > 0) {
