@@ -2419,7 +2419,9 @@ const itemStatus = (it) => {
   if (it.in_consultation) return 'en_consulta';
   // Si tiene datos de consulta o booking implícito, asumimos confirmado
   if (it.consultation_planned_d1 || it.consultation_price != null) return 'confirmado';
-  return 'por_iniciar';
+  // Actividad: por defecto SIN estado → muestra su color de tipo (morado). Las demás
+  // reservas (vuelo/hotel/transporte/coche) sí arrancan en "por iniciar".
+  return td.id === 'actividad' ? null : 'por_iniciar';
 };
 
 // Orden cronológico estricto para items del mismo día:
@@ -6338,7 +6340,7 @@ const TripDetail = {
       // incluidas las reservas (se guarda el centinela 'ninguno').
       const opts = [{ id:'ninguno', label:'Sin estado', hint:'Color del tipo, sin pill' }, ...STATUS_PLANNING];
       // Por defecto: reservas → "por iniciar"; el resto → "sin estado".
-      const defaultId = td.requiresBooking ? 'por_iniciar' : 'ninguno';
+      const defaultId = (td.requiresBooking && td.id !== 'actividad') ? 'por_iniciar' : 'ninguno';
       const activeId = currentStatus || defaultId;
       opts.forEach(s => {
         const isActive = activeId === s.id;
@@ -6402,7 +6404,7 @@ const TripDetail = {
     ]);
 
     // Si abre por primera vez y el tipo requiere reserva pero no tiene status, asigna por_iniciar
-    if (!currentStatus && typeDef(it.type).requiresBooking) currentStatus = 'por_iniciar';
+    if (!currentStatus && typeDef(it.type).requiresBooking && it.type !== 'actividad') currentStatus = 'por_iniciar';
 
     // (La hora puntual y "hora fin" ahora viven en el bloque unificado de fechas, arriba.)
 
@@ -6703,7 +6705,10 @@ const TripDetail = {
       el('label', { text:'Tipo' }),
       el('select', { id:'f-type', onchange: () => {
         const td = typeDef($('#f-type').value);
-        if (td.requiresBooking && !currentStatus) currentStatus = 'por_iniciar';
+        // Actividad arranca sin estado (color morado de tipo); si traía el "por iniciar"
+        // por defecto de otra reserva, lo limpiamos.
+        if (td.id === 'actividad' && currentStatus === 'por_iniciar') currentStatus = null;
+        if (td.requiresBooking && td.id !== 'actividad' && !currentStatus) currentStatus = 'por_iniciar';
         if (!td.requiresBooking) currentStatus = null;
         renderDatesBlock();
         renderStatusPicker();
@@ -6718,20 +6723,20 @@ const TripDetail = {
     ]);
 
     const body = el('div', {}, [
-      // 1) Título — arriba del todo.
+      // 1) Tipo — arriba del todo (define qué campos aplican).
+      typeRow,
+      // 2) Título.
       el('div', { class:'form-row' }, [
         el('label', { text:'Título (auto si lo dejas vacío)' }),
         el('input', { id:'f-title', type:'text', value: it.title || '' }),
       ]),
-      // 2) Fecha y hora (Día + Hora uno al lado del otro).
+      // 3) Fecha y hora (Día + Hora uno al lado del otro).
       datesBlock,
-      // 3) Lugar + búsqueda + dirección.
+      // 4) Lugar + búsqueda + dirección.
       placeBlock,
-      // 4) Personas (con quién).
+      // 5) Personas (con quién).
       peopleBlock,
       // ---- resto de campos ----
-      // Tipo (define qué campos aplican).
-      typeRow,
       // Importador de reservas (solo tipos con reserva).
       importBlock,
       // Estado
