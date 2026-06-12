@@ -1151,7 +1151,50 @@ h2.section-title {
 
 /* Días plegables en el planning */
 .day-head { align-items:center; }
-.plan-collapse-bar { display:flex; justify-content:flex-end; margin-bottom:12px; }
+.plan-collapse-bar { display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px; }
+
+/* ===== Vista "tarjetas" del planning: pantalla completa, un día por tarjeta ===== */
+.flashview {
+  position:fixed; inset:0; z-index:80; background:var(--bg);
+  display:flex; flex-direction:column;
+  animation:flash-in .2s var(--ease);
+}
+@keyframes flash-in { from { opacity:0; } to { opacity:1; } }
+.flash-top {
+  flex-shrink:0; display:flex; align-items:center; gap:12px;
+  padding:14px 16px; padding-top:max(14px, env(safe-area-inset-top));
+  border-bottom:1px solid var(--line-soft);
+}
+.flash-title { font-weight:700; font-size:15px; letter-spacing:-.01em; color:var(--text); flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.flash-counter { font-weight:700; font-size:14px; color:var(--text-muted); font-feature-settings:"tnum","ss01"; }
+.flash-close {
+  flex-shrink:0; width:38px; height:38px; border-radius:50%;
+  border:1px solid var(--line); background:var(--bg-elev); color:var(--text);
+  display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+}
+.flash-close svg { width:18px; height:18px; }
+.flash-track {
+  flex:1; display:flex; overflow-x:auto; overflow-y:hidden;
+  scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none;
+}
+.flash-track::-webkit-scrollbar { display:none; }
+.flash-card {
+  flex:0 0 100%; width:100%; box-sizing:border-box;
+  scroll-snap-align:center; scroll-snap-stop:always;
+  display:flex; flex-direction:column; overflow:hidden; padding:0 16px;
+}
+.flash-date { flex-shrink:0; padding:14px 4px 18px; }
+.flash-daynum { font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+.flash-date-main { font-family:var(--font-titulo); font-weight:700; font-size:30px; line-height:1.06; letter-spacing:-.03em; color:var(--text); }
+.flash-date-main .flash-wd { display:block; }
+.flash-date-main .flash-wd::first-letter { text-transform:uppercase; }
+.flash-date-main .flash-dm::first-letter { text-transform:uppercase; }
+.flash-note-title { margin-top:8px; font-size:14px; font-weight:600; color:var(--accent); }
+.flash-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; gap:8px; padding-bottom:28px; }
+.flash-body .drag-handle { display:none; }
+.flash-empty { margin:auto; text-align:center; color:var(--text-muted); display:flex; flex-direction:column; align-items:center; gap:10px; }
+.flash-empty-emoji { font-size:40px; opacity:.7; }
 .day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
@@ -5582,7 +5625,10 @@ const TripDetail = {
       groups.forEach(g => toggleDayGroup(g, g.dataset.day, anyOpen));
       collapseAllBtn.lastChild.textContent = anyOpen ? 'Desplegar todo' : 'Plegar todo';
     } }, [ el('span', { html: svg('chevron') }), el('span', { text: allCollapsedNow ? 'Desplegar todo' : 'Plegar todo' }) ]);
-    if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ collapseAllBtn ]));
+    // Botón "vista tarjetas": pantalla completa, un día por tarjeta, deslizable.
+    const flashBtn = el('button', { class:'btn btn-sm', title:'Vista en tarjetas (un día por pantalla)',
+      onclick: () => TripDetail.openPlanningFlashcards(t) }, [ el('span', { html: svg('copy') }), el('span', { text:'Tarjetas' }) ]);
+    if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ flashBtn, collapseAllBtn ]));
 
     // Viaje EN CURSO: ocultamos los días ya pasados y dejamos un botón para verlos.
     const todayStr = todayIso();
@@ -5910,6 +5956,85 @@ const TripDetail = {
     ].filter(Boolean));
     if (customColor) node.style.setProperty('--card-color', customColor);
     return node;
+  },
+
+  // Vista "tarjetas": pantalla completa, un día por tarjeta, deslizable de lado a lado.
+  // Solo lectura/navegación (no aprueba ni rechaza); reutiliza las cards del planning.
+  async openPlanningFlashcards(t) {
+    const rawItems = await DB.listByTrip('planning_items', t.id);
+    try {
+      const budgets = await DB.listByTrip('budget_items', t.id);
+      this._budgetByPlanningId = {};
+      for (const b of budgets) if (b.planning_item_id) this._budgetByPlanningId[b.planning_item_id] = b;
+    } catch (_) { this._budgetByPlanningId = {}; }
+    const noteMap = {};
+    (await DB.listByTrip('day_notes', t.id).catch(() => [])).forEach(n => noteMap[n.date] = n);
+
+    const items = this._expandHotels(rawItems);
+    items.sort((a, b) => (a.day_date || '').localeCompare(b.day_date || '') || planningCompare(a, b));
+
+    const byDay = {};
+    for (const it of items) { const k = it.day_date || 'sin-fecha'; (byDay[k] = byDay[k] || []).push(it); }
+    Object.keys(noteMap).forEach(k => { if (!byDay[k]) byDay[k] = []; });
+    if (t.start_date && t.end_date) {
+      let d = parseDate(t.start_date); const end = parseDate(t.end_date);
+      while (d <= end) { const k = d.toISOString().slice(0, 10); if (!byDay[k]) byDay[k] = []; d.setDate(d.getDate() + 1); }
+    }
+    const keys = Object.keys(byDay).filter(k => k !== 'sin-fecha').sort();
+    if (byDay['sin-fecha'] && byDay['sin-fecha'].length) keys.push('sin-fecha');
+    if (!keys.length) { UI.toast('No hay días que mostrar'); return; }
+
+    const track = el('div', { class:'flash-track' });
+    keys.forEach(k => {
+      const evs = byDay[k];
+      const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
+      const meta = noteMap[k];
+      track.appendChild(el('div', { class:'flash-card', data:{ day:k } }, [
+        el('div', { class:'flash-date' }, [
+          dayNum ? el('div', { class:'flash-daynum', text:`Día ${dayNum}` }) : null,
+          (k === 'sin-fecha')
+            ? el('div', { class:'flash-date-main', text:'Sin fecha' })
+            : el('div', { class:'flash-date-main' }, [
+                el('span', { class:'flash-wd', text: fmtDate(k, { weekday:'long' }) }),
+                el('span', { class:'flash-dm', text: fmtDate(k, { day:'numeric', month:'long' }) }),
+              ]),
+          (meta && meta.title) ? el('div', { class:'flash-note-title', text: meta.title }) : null,
+        ].filter(Boolean)),
+        el('div', { class:'flash-body' }, evs.length
+          ? evs.map(it => this._planningItem(it, t))
+          : [ el('div', { class:'flash-empty' }, [ el('div', { class:'flash-empty-emoji', text:'🗓️' }), el('div', { text:'Día libre — sin planes' }) ]) ]),
+      ]));
+    });
+
+    const counter = el('div', { class:'flash-counter' });
+    const setCounter = () => {
+      const w = track.clientWidth || 1;
+      const i = Math.round(track.scrollLeft / w);
+      counter.textContent = `${Math.min(i + 1, keys.length)} / ${keys.length}`;
+    };
+    let raf = 0;
+    track.addEventListener('scroll', () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; setCounter(); }); }, { passive:true });
+
+    const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+      else if (e.key === 'ArrowRight') track.scrollBy({ left: track.clientWidth, behavior:'smooth' });
+      else if (e.key === 'ArrowLeft') track.scrollBy({ left: -track.clientWidth, behavior:'smooth' });
+    };
+    const overlay = el('div', { class:'flashview' }, [
+      el('div', { class:'flash-top' }, [
+        el('div', { class:'flash-title', text: t.name || 'Planning' }),
+        counter,
+        el('button', { class:'flash-close', 'aria-label':'Cerrar', onclick: close, html: svg('close') }),
+      ]),
+      track,
+    ]);
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', onKey);
+    setCounter();
+    // Empezar en HOY si está dentro del viaje.
+    const startIdx = keys.indexOf(todayIso());
+    if (startIdx > 0) { track.scrollLeft = startIdx * track.clientWidth; setCounter(); }
   },
 
   // Fila para la vista "Direcciones" — incluye botón "Ir" (Google Maps directions)
