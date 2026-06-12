@@ -872,6 +872,7 @@ h2.section-title {
   --tipo-actividad:  #a855f7;
   --tipo-hotel:      #15803d;
   --tipo-lugar:      #0ea5e9;
+  --tipo-personas:   #0ea5e9; /* mismo cian que Lugar */
   --tipo-playa:      #2dd4bf; /* turquesa aqua vivo — distinto del cian de lugar */
   --tipo-compras:    #ec4899;
   --tipo-otro:       #64748b;
@@ -893,6 +894,8 @@ h2.section-title {
 .timeline-item.type-hotel      { background: color-mix(in srgb, var(--tipo-hotel)      12%, var(--bg-elev)); }
 .list-item.type-lugar,
 .timeline-item.type-lugar      { background: color-mix(in srgb, var(--tipo-lugar)      12%, var(--bg-elev)); }
+.list-item.type-personas,
+.timeline-item.type-personas   { background: color-mix(in srgb, var(--tipo-personas)   12%, var(--bg-elev)); }
 .list-item.type-playa,
 .timeline-item.type-playa      { background: color-mix(in srgb, var(--tipo-playa)      12%, var(--bg-elev)); }
 .list-item.type-compras,
@@ -968,6 +971,15 @@ h2.section-title {
 .timeline-item.status-confirmado.type-coche {
   background: color-mix(in srgb, var(--tipo-transporte) 12%, var(--bg-elev));
   border-color: color-mix(in srgb, var(--tipo-transporte) 35%, var(--line));
+}
+/* Alojamiento confirmado (incl. noches): conserva su verde bosque de tipo, no el
+   verde esmeralda de confirmación. El emoji también va en verde bosque; la pill basta. */
+.timeline-item.status-confirmado.type-hotel {
+  background: color-mix(in srgb, var(--tipo-hotel) 12%, var(--bg-elev));
+  border-color: color-mix(in srgb, var(--tipo-hotel) 35%, var(--line));
+}
+.timeline-item.status-confirmado.type-hotel .item-emoji {
+  background: color-mix(in srgb, var(--tipo-hotel) 20%, var(--bg-elev)) !important;
 }
 
 /* Items virtuales (noches de hotel + check-out) — más sutiles para que se note
@@ -1050,6 +1062,22 @@ h2.section-title {
 .person-chip.active .tic { width:14px; }
 .people-add { display:flex; gap:8px; align-items:center; }
 .people-add input { flex:1; }
+/* Desplegable de selección múltiple de personas (tipo "Personas") */
+.people-dropdown { margin:8px 0; border:1px solid var(--line); border-radius:var(--r-md); background:var(--bg-elev); }
+.people-dropdown > summary {
+  list-style:none; cursor:pointer; padding:11px 13px;
+  font-size:14px; font-weight:600; color:var(--text);
+  display:flex; align-items:center; justify-content:space-between;
+}
+.people-dropdown > summary::-webkit-details-marker { display:none; }
+.people-dropdown > summary::after {
+  content:''; width:8px; height:8px; border-right:2px solid var(--text-muted);
+  border-bottom:2px solid var(--text-muted); transform:rotate(45deg);
+  transition:transform .2s var(--ease); margin-left:8px;
+}
+.people-dropdown[open] > summary::after { transform:rotate(-135deg); }
+.people-dropdown > div { padding:0 13px 12px; }
+.people-dropdown .people-chips { margin:0; }
 
 .person-card { background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); padding:14px; margin-bottom:14px; }
 .person-card-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
@@ -1503,6 +1531,7 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 /* Tipo de planning_item — punto de color */
 .dot-type { width:8px; height:8px; border-radius:50%; }
 .dot-type.lugar       { background:var(--tipo-lugar); }
+.dot-type.personas    { background:var(--tipo-personas); }
 .dot-type.playa       { background:var(--tipo-playa); }
 .dot-type.hotel       { background:var(--tipo-hotel); }
 .dot-type.vuelo       { background:var(--tipo-vuelo); }
@@ -1543,6 +1572,7 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-item.type-actividad  .item-emoji { background: color-mix(in srgb, var(--tipo-actividad) 20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-actividad) 55%, var(--line)); }
 .timeline-item.type-hotel      .item-emoji { background: color-mix(in srgb, var(--tipo-hotel)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-hotel)     55%, var(--line)); }
 .timeline-item.type-lugar      .item-emoji { background: color-mix(in srgb, var(--tipo-lugar)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-lugar)     55%, var(--line)); }
+.timeline-item.type-personas   .item-emoji { background: color-mix(in srgb, var(--tipo-personas) 20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-personas) 55%, var(--line)); }
 .timeline-item.type-playa      .item-emoji { background: color-mix(in srgb, var(--tipo-playa)     20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-playa)     55%, var(--line)); }
 .timeline-item.type-compras    .item-emoji { background: color-mix(in srgb, var(--tipo-compras)   20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-compras)   55%, var(--line)); }
 .timeline-item.type-otro       .item-emoji { background: color-mix(in srgb, var(--tipo-otro)      20%, var(--bg-elev)); border-color: color-mix(in srgb, var(--tipo-otro)      55%, var(--line)); }
@@ -1550,6 +1580,7 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 /* El emoji conserva el color de su TIPO también en tarjetas con fondo de estado,
    para que el icono destaque sobre el color (confirmado es la excepción: verde). */
 .timeline-item.type-lugar      .timeline-icon { border-color:var(--tipo-lugar);      color:#0369a1; }
+.timeline-item.type-personas   .timeline-icon { border-color:var(--tipo-personas);   color:#0369a1; }
 .timeline-item.type-playa      .timeline-icon { border-color:var(--tipo-playa);      color:#0f766e; }
 .timeline-item.type-hotel      .timeline-icon { border-color:var(--tipo-hotel);      color:#166534; }
 .timeline-item.type-vuelo      .timeline-icon { border-color:var(--tipo-vuelo);      color:#1e3a8a; }
@@ -1745,6 +1776,18 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .bar-row .bar-wrap { flex:1; background:var(--bg-soft); height:8px; border-radius:var(--r-pill); overflow:hidden; }
 .bar-row .bar-fill { height:100%; background:linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius:var(--r-pill); }
 .bar-row .amount { font-feature-settings:"tnum","ss01"; font-weight:600; font-size:13px; min-width:80px; text-align:right; }
+/* Categoría desplegable (Transporte → reparto por tipo) */
+.bar-group { margin-bottom:10px; }
+.bar-group .bar-row { margin-bottom:0; }
+.bar-row-clickable { cursor:pointer; }
+.bar-row-clickable .cat { display:inline-flex; align-items:center; }
+.cat-caret { display:inline-flex; align-items:center; margin-left:5px; color:var(--text-muted); transition:transform .2s var(--ease); }
+.cat-caret svg { width:13px; height:13px; }
+.bar-row.open .cat-caret { transform:rotate(90deg); }
+.bar-sub { margin:8px 0 2px; padding-left:18px; display:flex; flex-direction:column; gap:6px; }
+.bar-sub-row { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.bar-sub-label { font-size:13px; color:var(--text-muted); }
+.bar-sub-amount { font-size:13px; font-weight:600; color:var(--text); }
 
 /* Donut presupuesto */
 .budget-split {
@@ -2120,6 +2163,7 @@ body.readonly .timeline-item { cursor:default; }
   border-left:2px solid var(--text-muted);
 }
 .cal-evt.evt-lugar       { border-left-color:var(--tipo-lugar); }
+.cal-evt.evt-personas    { border-left-color:var(--tipo-personas); }
 .cal-evt.evt-playa       { border-left-color:var(--tipo-playa); }
 .cal-evt.evt-hotel       { border-left-color:var(--tipo-hotel); }
 .cal-evt.evt-vuelo       { border-left-color:var(--tipo-vuelo); }
@@ -2380,7 +2424,8 @@ const COMMON_TIMEZONES = [
 ];
 
 const TYPES_PLANNING = [
-  { id:'lugar',      label:'Lugar',                       requiresBooking:false, icon:'walk',   emoji:'🚶🏽‍♂️' },
+  { id:'lugar',      label:'Lugar',                       requiresBooking:false, icon:'walk',   emoji:'📍' },
+  { id:'personas',   label:'Personas',                    requiresBooking:false, icon:'pin',    emoji:'👥' },
   { id:'playa',      label:'Playa',                       requiresBooking:false, icon:'palm',   emoji:'🌴' },
   { id:'hotel',      label:'Alojamiento',                 requiresBooking:true,  hideTime:true, endOfDay:true, icon:'hotel', emoji:'🏨' },
   { id:'vuelo',      label:'Vuelo',                       requiresBooking:true,  icon:'plane',  emoji:'✈️' },
@@ -5724,8 +5769,17 @@ const TripDetail = {
       }
       subParts.push(priceStr);
     }
-    // Personas (con quién) — "Con Pepe", "Con Pepe y Juan"
-    if (Array.isArray(it.people) && it.people.length) subParts.push('Con ' + fmtList(it.people));
+    // Personas (con quién) — "Con Pepe", "Con Pepe y Juan".
+    // En el tipo "personas" las personas son el sujeto: se muestran sin "Con" y solo si
+    // el título no son ya esos nombres (para no duplicar).
+    if (Array.isArray(it.people) && it.people.length) {
+      if (it.type === 'personas') {
+        const namesStr = fmtList(it.people);
+        if (it.title !== namesStr) subParts.push(namesStr);
+      } else {
+        subParts.push('Con ' + fmtList(it.people));
+      }
+    }
     const gm = gmapsUrl(it.lat, it.lng, it.place_name);
 
     // Mostrar hora SOLO si:
@@ -5931,6 +5985,10 @@ const TripDetail = {
       }
       case 'lugar': {
         return place || (tCity ? `Visita en ${tCity}` : 'Visita');
+      }
+      case 'personas': {
+        // El título real (nombres) se resuelve en collect() con las personas elegidas.
+        return place || 'Personas';
       }
       case 'otro':
       default: {
@@ -6181,6 +6239,13 @@ const TripDetail = {
     // Personas ya usadas en el viaje (para ofrecerlas como chips toggleables).
     const _planForPeople = await DB.listByTrip('planning_items', t.id).catch(() => []);
     const tripPeople = [...new Set(_planForPeople.flatMap(p => Array.isArray(p.people) ? p.people : []))];
+    // Frecuencia de cada persona en el viaje → las 4 más comunes salen como pills rápidas.
+    const _peopleFreq = {};
+    _planForPeople.forEach(p => { (Array.isArray(p.people) ? p.people : []).forEach(n => { _peopleFreq[n] = (_peopleFreq[n] || 0) + 1; }); });
+    const topPeople = Object.entries(_peopleFreq)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
+      .slice(0, 4).map(e => e[0]);
+    let personasDropdownOpen = false;
     const it = existing || {
       id: uuid(), trip_id: t.id, type:'lugar',
       day_date: (opts && opts.day) || t.start_date || todayIso(), time:'', title:'',
@@ -6490,7 +6555,7 @@ const TripDetail = {
 
     // Bloque "Lugar + dirección + buscador" — útil solo para tipos con localización física
     // (lugar, comida, hotel, actividad). Vuelo/coche/transporte usan sus propios campos.
-    const TYPES_WITH_PLACE = ['lugar', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
+    const TYPES_WITH_PLACE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
 
     // Confirmación visual del lugar seleccionado — se refresca cuando el usuario
     // pulsa un resultado de Nominatim o cuando reabre un item con coords.
@@ -6526,6 +6591,11 @@ const TripDetail = {
       el('div', { class:'form-row' }, [
         el('label', { text:'Dirección' }),
         el('input', { id:'f-address', type:'text', value: it.address || '' }),
+      ]),
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Zona / población (para agrupar gastos)' }),
+        el('input', { id:'f-zona', type:'text', value: it.zona || '', placeholder:'Ej. Benidorm, Villalba…' }),
+        el('div', { class:'field-hint', text:'Opcional. Agrupa en el presupuesto los gastos de este evento por esta zona (si está vacío, se usa el Lugar).' }),
       ]),
     ]);
     const refreshPlaceVisibility = () => {
@@ -6594,25 +6664,48 @@ const TripDetail = {
       if (inp) inp.value = '';
       renderPeople();
     };
+    const personChip = (name) => {
+      const active = currentPeople.includes(name);
+      return el('button', { type:'button', class:'person-chip' + (active ? ' active' : ''),
+        onclick: (e) => { e.preventDefault(); currentPeople = active ? currentPeople.filter(n => n !== name) : [...currentPeople, name]; renderPeople(); } },
+        [ el('span', { class:'tic', html: active ? svg('check') : '' }), el('span', { text: name }) ]);
+    };
+    const peopleAddRow = (placeholder) => el('div', { class:'people-add' }, [
+      el('input', { id:'person-new', type:'text', placeholder,
+        onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson(); } } }),
+      el('button', { type:'button', class:'btn btn-sm', onclick: addPerson }, [ el('span', { html: svg('plus') }), 'Añadir' ]),
+    ]);
     const renderPeople = () => {
       peopleBlock.innerHTML = '';
-      peopleBlock.appendChild(el('label', { text:'Personas (con quién)' }));
+      const type = $('#f-type')?.value || it.type;
       const names = [...new Set([...tripPeople, ...currentPeople])].sort((a,b) => a.localeCompare(b,'es'));
-      if (names.length) {
-        const chips = el('div', { class:'people-chips' });
-        names.forEach(name => {
-          const active = currentPeople.includes(name);
-          chips.appendChild(el('button', { type:'button', class:'person-chip' + (active ? ' active' : ''),
-            onclick: () => { currentPeople = active ? currentPeople.filter(n => n !== name) : [...currentPeople, name]; renderPeople(); } },
-            [ el('span', { class:'tic', html: active ? svg('check') : '' }), el('span', { text: name }) ]));
-        });
-        peopleBlock.appendChild(chips);
+
+      // ---- Tipo "Personas": pills de las 4 más comunes + desplegable multi-selección ----
+      if (type === 'personas') {
+        peopleBlock.appendChild(el('label', { text:'Personas' }));
+        const quick = topPeople.length ? topPeople : names.slice(0, 4);
+        if (quick.length) {
+          peopleBlock.appendChild(el('div', { class:'people-chips' }, quick.map(personChip)));
+        }
+        const n = currentPeople.length;
+        const details = el('details', { class:'people-dropdown', open: personasDropdownOpen ? '' : null,
+          ontoggle: (e) => { personasDropdownOpen = e.target.open; } }, [
+          el('summary', {}, n ? `${n} persona${n > 1 ? 's' : ''} seleccionada${n > 1 ? 's' : ''}` : 'Seleccionar personas'),
+          names.length
+            ? el('div', { class:'people-chips', style:{marginTop:'10px'} }, names.map(personChip))
+            : el('div', { class:'field-hint', style:{marginTop:'8px'}, text:'Aún no hay personas en el viaje. Añade una abajo.' }),
+        ]);
+        peopleBlock.appendChild(details);
+        peopleBlock.appendChild(peopleAddRow('Añadir persona nueva…'));
+        return;
       }
-      peopleBlock.appendChild(el('div', { class:'people-add' }, [
-        el('input', { id:'person-new', type:'text', placeholder:'Añadir persona…',
-          onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson(); } } }),
-        el('button', { type:'button', class:'btn btn-sm', onclick: addPerson }, [ el('span', { html: svg('plus') }), 'Añadir' ]),
-      ]));
+
+      // ---- Resto de tipos: "con quién" tal cual (sin cambios) ----
+      peopleBlock.appendChild(el('label', { text:'Personas (con quién)' }));
+      if (names.length) {
+        peopleBlock.appendChild(el('div', { class:'people-chips' }, names.map(personChip)));
+      }
+      peopleBlock.appendChild(peopleAddRow('Añadir persona…'));
     };
 
     // --- Importador local: pegar el texto de una confirmación y autocompletar ---
@@ -6717,6 +6810,7 @@ const TripDetail = {
         refreshPlaceVisibility();
         refreshImportVisibility();
         renderBorderPicker();
+        renderPeople();
       }},
         TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
       ),
@@ -6800,8 +6894,12 @@ const TripDetail = {
       let title = ($('#f-title').value || '').trim();
       // Si no hay título, generar uno por defecto según el tipo y los datos disponibles
       if (!title) {
-        title = TripDetail._defaultTitle(type, t);
-        if (!title) { UI.toast('Pon un título'); return false; }
+        if (type === 'personas') {
+          title = currentPeople.length ? fmtList(currentPeople) : 'Personas';
+        } else {
+          title = TripDetail._defaultTitle(type, t);
+          if (!title) { UI.toast('Pon un título'); return false; }
+        }
       }
       it.title = title;
       it.type = type;
@@ -6827,10 +6925,11 @@ const TripDetail = {
         it.end_time = (it.type === 'lugar' || it.type === 'playa') ? (($('#f-end-time')?.value || '').trim() || null) : null;
       }
       // place_name / address: solo si el tipo los expone
-      const TYPES_WITH_PLACE_LOCAL = ['lugar', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
+      const TYPES_WITH_PLACE_LOCAL = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
       if (TYPES_WITH_PLACE_LOCAL.includes(it.type)) {
         it.place_name = $('#f-place')?.value.trim() || null;
         it.address = $('#f-address')?.value.trim() || null;
+        it.zona = $('#f-zona')?.value.trim() || null;
       } else {
         // Para vuelo/coche/transporte mantenemos los valores anteriores si los había
         // (no hay UI para editarlos directamente). Pueden venir del buscador Nominatim.
@@ -7393,6 +7492,18 @@ const TripDetail = {
     const maxVal = Math.max(1, ...Object.values(byCat));
     const totalByCat = Object.values(byCat).reduce((a, b) => a + b, 0) || 1;
 
+    // Mapa evento→datos (para subdesglose de transporte y agrupado por lugar/zona).
+    const planById = {};
+    planning.forEach(p => { planById[p.id] = p; });
+    // Subdesglose de "Transporte" por tipo del evento vinculado (vuelo/transporte/coche).
+    const TR_LABEL = { vuelo:'Vuelo', transporte:'Transporte', coche:'Coche', otro:'Otro transporte' };
+    const transBySub = {};
+    items.filter(i => i.category === 'transporte').forEach(i => {
+      const ev = planById[i.planning_item_id];
+      const sub = (ev && ['vuelo', 'transporte', 'coche'].includes(ev.type)) ? ev.type : 'otro';
+      transBySub[sub] = (transBySub[sub] || 0) + (Number(i.amount_eur) || 0);
+    });
+
     const donutWrap = el('div', { class:'budget-split' });
     const NS = 'http://www.w3.org/2000/svg';
     const donut = document.createElementNS(NS, 'svg');
@@ -7425,29 +7536,86 @@ const TripDetail = {
     const cont = el('div', { class:'budget-bars' });
     CATS_BUDGET.forEach(c => {
       const v = byCat[c.id] || 0; if (!v) return;
-      cont.appendChild(el('div', { class:'bar-row' }, [
+      const col = CAT_COLORS[c.id] || '#94a3b8';
+      // "Transporte" se puede desplegar para ver el reparto por tipo (vuelo/tren/coche).
+      const subEntries = (c.id === 'transporte')
+        ? Object.entries(transBySub).filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1])
+        : [];
+      const canExpand = subEntries.length > 1;
+
+      const row = el('div', { class:'bar-row' + (canExpand ? ' bar-row-clickable' : '') }, [
         el('div', { class:'cat' }, [
-          el('span', { style:{display:'inline-block', width:'8px', height:'8px', borderRadius:'50%', background: CAT_COLORS[c.id] || '#94a3b8', marginRight:'6px' } }),
+          el('span', { style:{display:'inline-block', width:'8px', height:'8px', borderRadius:'50%', background: col, marginRight:'6px' } }),
           c.label,
-        ]),
-        el('div', { class:'bar-wrap' }, el('div', { class:'bar-fill', style:{ width: (v / maxVal * 100).toFixed(1) + '%', background: CAT_COLORS[c.id] || '#94a3b8' } })),
+          canExpand ? el('span', { class:'cat-caret', html: svg('chevron') }) : null,
+        ].filter(Boolean)),
+        el('div', { class:'bar-wrap' }, el('div', { class:'bar-fill', style:{ width: (v / maxVal * 100).toFixed(1) + '%', background: col } })),
         el('div', { class:'amount mono', text: fmtMoney(v, 'EUR') }),
-      ]));
+      ]);
+
+      if (!canExpand) { cont.appendChild(row); return; }
+
+      const sub = el('div', { class:'bar-sub', style:{display:'none'} },
+        subEntries.map(([k, x]) => el('div', { class:'bar-sub-row' }, [
+          el('span', { class:'bar-sub-label', text: TR_LABEL[k] || k }),
+          el('span', { class:'bar-sub-amount mono', text: fmtMoney(x, 'EUR') }),
+        ]))
+      );
+      row.onclick = () => {
+        const open = sub.style.display === 'none';
+        sub.style.display = open ? '' : 'none';
+        row.classList.toggle('open', open);
+      };
+      cont.appendChild(el('div', { class:'bar-group' }, [ row, sub ]));
     });
     donutWrap.appendChild(cont);
     root.appendChild(el('h2', { class:'section-title', text:'Por categoría' }));
     root.appendChild(donutWrap);
 
-    // Lista de gastos
+    // Por lugar — agrupa los gastos cuyo evento vinculado tiene un lugar/zona indicado
+    // (p. ej. Villalba, Benidorm). Solo aparece si hay al menos un gasto con lugar.
+    const placeOf = (i) => {
+      const p = planById[i.planning_item_id];
+      if (!p) return null;
+      // La "Zona" del evento manda; si no hay, se usa el Lugar.
+      const z = (p.zona ? String(p.zona).trim() : '');
+      const nm = (p.place_name ? String(p.place_name).trim() : '');
+      return z || nm || null;
+    };
+    const byPlace = {};
+    items.forEach(i => { const pl = placeOf(i); if (pl) byPlace[pl] = (byPlace[pl] || 0) + (Number(i.amount_eur) || 0); });
+    const placeEntries = Object.entries(byPlace).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    if (placeEntries.length) {
+      const maxPlace = Math.max(1, ...placeEntries.map(e => e[1]));
+      const PLACE_COLORS = ['#0ea5e9', '#a855f7', '#f97316', '#10b981', '#ec4899', '#14b8a6', '#f59e0b', '#6366f1'];
+      root.appendChild(el('h2', { class:'section-title', text:'Por lugar' }));
+      const placeCont = el('div', { class:'budget-bars' });
+      placeEntries.forEach(([name, v], idx) => {
+        const col = PLACE_COLORS[idx % PLACE_COLORS.length];
+        placeCont.appendChild(el('div', { class:'bar-row' }, [
+          el('div', { class:'cat' }, [
+            el('span', { style:{display:'inline-block', width:'8px', height:'8px', borderRadius:'50%', background: col, marginRight:'6px'} }),
+            name,
+          ]),
+          el('div', { class:'bar-wrap' }, el('div', { class:'bar-fill', style:{ width:(v / maxPlace * 100).toFixed(1) + '%', background: col } })),
+          el('div', { class:'amount mono', text: fmtMoney(v, 'EUR') }),
+        ]));
+      });
+      root.appendChild(placeCont);
+    }
+
+    // Lista de gastos — solo los que tienen importe distinto de 0 (los de 0 €,
+    // p. ej. reservas confirmadas sin precio, no ensucian la lista).
     root.appendChild(el('h2', { class:'section-title', text:'Gastos' }));
     const list = el('div', { class:'list' });
-    items.forEach(i => {
+    items.filter(i => (Number(i.amount) || 0) !== 0).forEach(i => {
       const catLabel = CATS_BUDGET.find(c => c.id === i.category)?.label || i.category;
       const statusLabel = STATUS_BUDGET.find(s => s.id === i.status)?.label || i.status;
       list.appendChild(el('div', { class:'list-item' }, [
         el('div', { class:'li-main', onclick: () => TripDetail.openBudgetEditor(t, i) }, [
           el('div', { class:'li-title', text: i.concept }),
           el('div', { class:'li-sub', text: [
+            placeOf(i) ? '📍 ' + placeOf(i) : null,
             catLabel,
             statusLabel,
             i.date ? fmtDateShort(i.date) : null,
