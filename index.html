@@ -930,6 +930,61 @@ h2.section-title {
 #dates-block .form-grid-2 + .form-grid-2,
 #dates-block .form-grid-2 + .form-row,
 #dates-block .form-row + .form-row { margin-top:8px; }
+/* Alinear fecha/hora (Salida–Hora, Llegada–Hora) por la base del input. */
+#dates-block .form-grid-2 { align-items:end; }
+#dates-block .form-grid-2 .form-row { margin:0; }
+
+/* Personas: chips toggleables en el editor + tarjetas en la pestaña Personas */
+.people-chips { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+.person-chip {
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  padding:6px 12px; border-radius:var(--r-pill);
+  border:1.5px solid var(--line); background:var(--bg-elev);
+  font-size:13px; font-weight:600; color:var(--text); font-family:inherit;
+  transition:all .15s var(--ease);
+}
+.person-chip .tic { display:inline-flex; width:0; overflow:hidden; transition:width .15s var(--ease); }
+.person-chip .tic svg { width:14px; height:14px; }
+.person-chip.active { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, var(--bg-elev)); color:var(--accent); }
+.person-chip.active .tic { width:14px; }
+.people-add { display:flex; gap:8px; align-items:center; }
+.people-add input { flex:1; }
+
+.person-card { background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); padding:14px; margin-bottom:14px; }
+.person-card-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.person-avatar {
+  width:34px; height:34px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2, var(--accent)));
+  color:#fff; font-weight:700; font-size:15px;
+}
+.person-name { font-weight:700; font-size:15px; flex:1; min-width:0; }
+.person-count {
+  font-size:12px; font-weight:600; color:var(--accent); flex-shrink:0;
+  background:color-mix(in srgb, var(--accent) 12%, var(--bg-elev));
+  padding:3px 10px; border-radius:var(--r-pill);
+}
+
+/* Pendientes */
+.pending-list { gap:8px; }
+.pending-item {
+  display:flex; align-items:center; gap:10px;
+  background:var(--bg-elev); border:1px solid var(--line);
+  border-radius:var(--r-md); padding:10px 12px;
+}
+.pending-item.auto { cursor:pointer; }
+.pending-item.done .pending-text { text-decoration:line-through; color:var(--text-muted); }
+.pending-check {
+  flex-shrink:0; width:24px; height:24px; border-radius:7px; cursor:pointer;
+  border:2px solid var(--line); background:var(--bg-elev);
+  display:inline-flex; align-items:center; justify-content:center; color:#fff;
+}
+.pending-check.on { background:var(--status-curso); border-color:var(--status-curso); }
+.pending-check svg { width:14px; height:14px; }
+.pending-main { flex:1; min-width:0; }
+.pending-text { font-weight:600; font-size:14px; word-break:break-word; }
+.pending-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+.pending-divider { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin:18px 0 8px; }
 
 /* Selector de estado en el editor — pill segmentado vertical con color por opción */
 .status-picker {
@@ -1072,6 +1127,12 @@ h2.section-title {
 .metric .label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
 .metric .value { font-feature-settings:"tnum","ss01"; font-weight:700; font-size:22px; margin-top:4px; letter-spacing:-.02em; }
 .metric .sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+/* Métricas clicables — botón con el mismo aspecto que la tarjeta métrica. */
+.metric-btn {
+  font-family:inherit; text-align:left; cursor:pointer; width:100%;
+  color:var(--text); transition:transform .15s var(--ease), box-shadow .15s var(--ease);
+}
+.metric-btn:hover { transform:translateY(-1px); box-shadow:var(--sh-1); }
 
 /* Barra "Próximo evento" con cuenta atrás — arriba del Resumen, pegajosa al hacer scroll. */
 .next-event {
@@ -2186,6 +2247,13 @@ const fmtDate = (iso, opts={}) => {
   return d.toLocaleDateString('es-ES', opts);
 };
 const fmtDayLong = (iso) => fmtDate(iso, {weekday:'long', day:'numeric', month:'long'});
+// Lista legible: ["A"]→"A", ["A","B"]→"A y B", ["A","B","C"]→"A, B y C".
+const fmtList = (arr) => {
+  const a = (arr || []).filter(Boolean);
+  if (!a.length) return '';
+  if (a.length === 1) return a[0];
+  return a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1];
+};
 // Etiqueta de comida según la hora (HH:MM): desayuno / comida / merienda / cena.
 // Fuera de rango o sin hora → "Restaurante".
 const mealLabel = (time) => {
@@ -4529,6 +4597,10 @@ const TripDetail = {
       }
     }
 
+    // ¿El viaje tiene encuentros con personas? Solo entonces aparece la pestaña Personas.
+    const _planAll = await DB.listByTrip('planning_items', t.id).catch(() => []);
+    const _hasPeople = _planAll.some(p => Array.isArray(p.people) && p.people.length);
+
     // Sub-tabs — Invitado no ve pestañas financieras
     const tabs = [
       { id:'resumen',   label:'Resumen' },
@@ -4537,13 +4609,15 @@ const TripDetail = {
       { id:'maleta',    label:'Maleta' },
       { id:'reservas',  label:'Reservas' },
       { id:'mapa',      label:'Mapa' },
+      _hasPeople ? { id:'personas', label:'Personas' } : null,   // entre Mapa y Ficha destino
       { id:'destino',   label:'Ficha destino' },
     ].filter(Boolean);
     if (t.is_shared && canSeeMoney()) tabs.push({ id:'gastos', label:'Compartir gastos' });
     tabs.push({ id:'diario', label:'Diario' });
 
-    // Si Invitado intenta entrar a una pestaña no permitida, redirige a resumen
-    if (!tabs.some(tb => tb.id === STATE.currentTab)) STATE.currentTab = 'resumen';
+    // 'pendientes' es enrutable (se abre desde la pill del resumen) aunque no esté en la barra.
+    // Si Invitado intenta entrar a una pestaña no permitida, redirige a resumen.
+    if (STATE.currentTab !== 'pendientes' && !tabs.some(tb => tb.id === STATE.currentTab)) STATE.currentTab = 'resumen';
 
     const subtabs = el('div', { class:'subtabs', role:'tablist', 'aria-label':'Secciones del viaje', style:{marginTop:'24px'} });
     tabs.forEach((tb, idx) => {
@@ -4585,6 +4659,8 @@ const TripDetail = {
     else if (tab === 'maleta')  await TripDetail.tabMaleta(panel, t, fab);
     else if (tab === 'reservas')await TripDetail.tabReservas(panel, t, fab);
     else if (tab === 'mapa')    await TripDetail.tabMapa(panel, t);
+    else if (tab === 'personas')await TripDetail.tabPersonas(panel, t);
+    else if (tab === 'pendientes') await TripDetail.tabPendientes(panel, t);
     else if (tab === 'destino') await TripDetail.tabDestino(panel, t);
     else if (tab === 'gastos')  await TripDetail.tabGastos(panel, t, fab);
     else if (tab === 'diario')  await TripDetail.tabDiario(panel, t, fab);
@@ -4643,25 +4719,31 @@ const TripDetail = {
       }, 1000);
     }
 
-    // Rejilla de métricas (Días / Planning / Presupuesto / Maleta). Se construye ya,
-    // pero su posición depende de si el viaje está en curso (ver más abajo).
+    // Pendientes: items manuales (t.pending_items) + eventos en consulta/por iniciar.
+    const pendManual = Array.isArray(t.pending_items) ? t.pending_items : [];
+    const pendAuto = planning.filter(p => ['en_consulta','por_iniciar'].includes(itemStatus(p)));
+    const pendDone = pendManual.filter(p => p.done).length;
+    const pendTotal = pendManual.length + pendAuto.length;
+
+    const goTab = (id) => () => { STATE.currentTab = id; Router.render(); };
+    // Rejilla de métricas — ahora clicables. "Planning" pasa a "Pendientes".
     const metricCells = [
-      el('div', { class:'metric' }, [
+      el('button', { class:'metric metric-btn', onclick: goTab('planning') }, [
         el('div', { class:'label', text:'Días' }),
         el('div', { class:'value', text: t.start_date && t.end_date ? (daysBetween(t.start_date, t.end_date)+1) : '—' }),
         el('div', { class:'sub', text: statusDays(t) }),
       ]),
-      el('div', { class:'metric' }, [
-        el('div', { class:'label', text:'Planning' }),
-        el('div', { class:'value', text: String(planning.length) }),
-        el('div', { class:'sub', text:'paradas' }),
+      el('button', { class:'metric metric-btn', onclick: goTab('pendientes') }, [
+        el('div', { class:'label', text:'Pendientes' }),
+        el('div', { class:'value', text: `${pendDone}/${pendTotal}` }),
+        el('div', { class:'sub', text: pendTotal ? 'completadas' : 'sin pendientes' }),
       ]),
-      canSeeMoney() ? el('div', { class:'metric' }, [
+      canSeeMoney() ? el('button', { class:'metric metric-btn', onclick: goTab('presu') }, [
         el('div', { class:'label', text:'Presupuesto' }),
         el('div', { class:'value', text: fmtMoney(totalEur, 'EUR') }),
         el('div', { class:'sub', text:`Pagado ${fmtMoney(paidEur,'EUR')}` }),
       ]) : null,
-      el('div', { class:'metric' }, [
+      el('button', { class:'metric metric-btn', onclick: goTab('maleta') }, [
         el('div', { class:'label', text:'Maleta' }),
         el('div', { class:'value', text: `${packDone}/${packing.length}` }),
         el('div', { class:'sub', text: packing.length ? 'preparados' : 'sin lista' }),
@@ -4828,6 +4910,7 @@ const TripDetail = {
       ? md.asientos.map(s => s.asiento || s.nombre).filter(Boolean).join(' - ')
       : (md.asiento || '');
     const time = it.time ? it.time + 'h' : '';
+    const ppl = (Array.isArray(it.people) && it.people.length) ? ('Con ' + fmtList(it.people)) : '';
     const resvUrl = (md.url || '').trim() || null;       // enlace de la reserva (si existe)
     const walkUrl = gmapsWalkUrl(it.lat, it.lng, it.address);  // null si no hay dirección/coords
 
@@ -4836,6 +4919,7 @@ const TripDetail = {
         it.consultation_planned_t1 ? 'Check-in ' + it.consultation_planned_t1 : '',
         md.habitacion || '',
         md.localizador ? 'Loc. ' + md.localizador : '',
+        ppl,
       ].filter(Boolean).join(' · ');
       return { label:'Alojamiento', emoji:'🏨', value: it.place_name || it.title || 'Hotel', sub, resvUrl, mapsUrl: walkUrl };
     }
@@ -4843,19 +4927,19 @@ const TripDetail = {
       const ori  = code(md.origen)  || tzCity(it.origin_tz);
       const dest = code(md.destino) || tzCity(it.dest_tz);
       const route = (ori && dest) ? `${ori} - ${dest}` : (dest || ori || it.title || 'Vuelo');
-      const sub = [ time, md.numero || '', md.aerolinea || '', seats ? 'Asientos ' + seats : '' ]
+      const sub = [ time, md.numero || '', md.aerolinea || '', seats ? 'Asientos ' + seats : '', ppl ]
         .filter(Boolean).join(' · ');
       return { label:'Vuelo', emoji:'✈️', value: route, sub, resvUrl, mapsUrl: null };
     }
     if (it.type === 'transporte') {
       const ori = code(md.origen), dest = code(md.destino);
       const route = (ori && dest) ? `${ori} - ${dest}` : (it.title || 'Transporte');
-      const sub = [ time, md.numero || '', md.vagon ? 'Coche ' + md.vagon : '', seats ? 'Asientos ' + seats : '' ]
+      const sub = [ time, md.numero || '', md.vagon ? 'Coche ' + md.vagon : '', seats ? 'Asientos ' + seats : '', ppl ]
         .filter(Boolean).join(' · ');
       return { label:'Transporte', emoji:'🚆', value: route, sub, resvUrl, mapsUrl: null };
     }
     if (it.type === 'actividad') {
-      const sub = [ time, md.organizador || '', md.duracion || '' ].filter(Boolean).join(' · ');
+      const sub = [ time, md.organizador || '', md.duracion || '', ppl ].filter(Boolean).join(' · ');
       return { label:'Actividad', emoji:'🎫', value: it.place_name || it.title || 'Actividad', sub, resvUrl: null, mapsUrl: null };
     }
     if (it.type === 'comida') {
@@ -4864,10 +4948,10 @@ const TripDetail = {
       const name = it.place_name
         || (it.title && it.title.toLowerCase() !== 'comida' ? it.title : '')
         || 'Restaurante';
-      return { label: meal, emoji:'🍽️', value: name, sub: time, resvUrl: null, mapsUrl: walkUrl };
+      return { label: meal, emoji:'🍽️', value: name, sub: [time, ppl].filter(Boolean).join(' · '), resvUrl: null, mapsUrl: walkUrl };
     }
     if (it.type === 'compras') {
-      return { label:'Compras', emoji:'🛍️', value: it.place_name || it.title || 'Compras', sub: time, resvUrl: null, mapsUrl: walkUrl };
+      return { label:'Compras', emoji:'🛍️', value: it.place_name || it.title || 'Compras', sub: [time, ppl].filter(Boolean).join(' · '), resvUrl: null, mapsUrl: walkUrl };
     }
     return null;
   },
@@ -5173,6 +5257,8 @@ const TripDetail = {
       }
       subParts.push(priceStr);
     }
+    // Personas (con quién) — "Con Pepe", "Con Pepe y Juan"
+    if (Array.isArray(it.people) && it.people.length) subParts.push('Con ' + fmtList(it.people));
     const gm = gmapsUrl(it.lat, it.lng, it.place_name);
 
     // Mostrar hora SOLO si:
@@ -5570,6 +5656,9 @@ const TripDetail = {
         linkedBudget = all.find(b => b.planning_item_id === existing.id) || null;
       } catch (_) {}
     }
+    // Personas ya usadas en el viaje (para ofrecerlas como chips toggleables).
+    const _planForPeople = await DB.listByTrip('planning_items', t.id).catch(() => []);
+    const tripPeople = [...new Set(_planForPeople.flatMap(p => Array.isArray(p.people) ? p.people : []))];
     const it = existing || {
       id: uuid(), trip_id: t.id, type:'lugar',
       day_date: t.start_date || todayIso(), time:'', title:'',
@@ -5912,6 +6001,39 @@ const TripDetail = {
       borderBlock.appendChild(el('div', { class:'field-hint', text:'Verde = sitio seguro; amarillo = dudoso/a mover; rojo = quitar o no visto. Solo se colorea el borde.' }));
     };
 
+    // --- Personas (con quién): chips toggleables + añadir nueva ---
+    let currentPeople = Array.isArray(it.people) ? [...it.people] : [];
+    const peopleBlock = el('div', { class:'form-row', id:'people-block' });
+    const addPerson = () => {
+      const inp = document.getElementById('person-new');
+      const name = (inp?.value || '').trim();
+      if (!name) return;
+      if (!currentPeople.includes(name)) currentPeople.push(name);
+      if (!tripPeople.includes(name)) tripPeople.push(name);
+      if (inp) inp.value = '';
+      renderPeople();
+    };
+    const renderPeople = () => {
+      peopleBlock.innerHTML = '';
+      peopleBlock.appendChild(el('label', { text:'Personas (con quién)' }));
+      const names = [...new Set([...tripPeople, ...currentPeople])].sort((a,b) => a.localeCompare(b,'es'));
+      if (names.length) {
+        const chips = el('div', { class:'people-chips' });
+        names.forEach(name => {
+          const active = currentPeople.includes(name);
+          chips.appendChild(el('button', { type:'button', class:'person-chip' + (active ? ' active' : ''),
+            onclick: () => { currentPeople = active ? currentPeople.filter(n => n !== name) : [...currentPeople, name]; renderPeople(); } },
+            [ el('span', { class:'tic', html: active ? svg('check') : '' }), el('span', { text: name }) ]));
+        });
+        peopleBlock.appendChild(chips);
+      }
+      peopleBlock.appendChild(el('div', { class:'people-add' }, [
+        el('input', { id:'person-new', type:'text', placeholder:'Añadir persona…',
+          onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson(); } } }),
+        el('button', { type:'button', class:'btn btn-sm', onclick: addPerson }, [ el('span', { html: svg('plus') }), 'Añadir' ]),
+      ]));
+    };
+
     // --- Importador local: pegar el texto de una confirmación y autocompletar ---
     const applyParsed = () => {
       const txt = document.getElementById('paste-import-text')?.value || '';
@@ -5951,6 +6073,7 @@ const TripDetail = {
         consultation_query_date: todayIso(),
         consultation_planned_d1:null, consultation_planned_t1:null, consultation_planned_d2:null, consultation_planned_t2:null,
         origin_tz: it.dest_tz || null, dest_tz: it.origin_tz || null,
+        people: Array.isArray(currentPeople) ? [...currentPeople] : [],
         metadata: {
           aerolinea: md.aerolinea || '',
           localizador: md.localizador || '',
@@ -6026,6 +6149,8 @@ const TripDetail = {
       placeBlock,
       // Color del borde (solo lugar/playa)
       borderBlock,
+      // Personas (con quién) — cualquier tipo de evento
+      peopleBlock,
       // Notas
       el('div', { class:'form-row' }, [
         el('label', { text:'Notas' }),
@@ -6050,7 +6175,7 @@ const TripDetail = {
       renderConsultationDates(); renderStatusPicker();
       refreshTimeVisibility(); refreshHotelDatesVisibility(); refreshTzVisibility();
       renderMetadata(); refreshPlaceVisibility(); refreshStandaloneTime();
-      renderBorderPicker(); refreshSelectedPlace();
+      renderBorderPicker(); refreshSelectedPlace(); renderPeople();
     }, 0);
 
     const collect = () => {
@@ -6094,6 +6219,7 @@ const TripDetail = {
         // (no hay UI para editarlos directamente). Pueden venir del buscador Nominatim.
       }
       it.notes = $('#f-notes').value;
+      it.people = currentPeople.filter(Boolean);
       if (it.lat != null) it.gmaps_url = gmapsUrl(it.lat, it.lng);
 
       // Metadata específica del tipo
@@ -7110,6 +7236,163 @@ const TripDetail = {
       }
       STATE.leaflet = map;
     }, 50);
+  },
+
+  /* ----- Personas ----- */
+  async tabPersonas(root, t) {
+    const planning = await DB.listByTrip('planning_items', t.id);
+    const withPeople = planning.filter(p => Array.isArray(p.people) && p.people.length);
+    const byPerson = new Map();
+    for (const p of withPeople) {
+      for (const name of p.people) {
+        if (!byPerson.has(name)) byPerson.set(name, []);
+        byPerson.get(name).push(p);
+      }
+    }
+    if (!byPerson.size) {
+      root.appendChild(el('div', { class:'empty' }, [
+        el('div', { class:'icon', html: svg('heart') }),
+        el('h3', { text:'Aún no hay personas' }),
+        el('p', { text:'Al crear o editar un evento del planning, añade con quién estuviste y aparecerán aquí.' }),
+      ]));
+      return;
+    }
+    const totalEnc = withPeople.length;
+    root.appendChild(el('div', { class:'metric-grid', style:{gridTemplateColumns:'repeat(2,1fr)'} }, [
+      el('div', { class:'metric' }, [ el('div',{class:'label',text:'Personas'}), el('div',{class:'value',text:String(byPerson.size)}) ]),
+      el('div', { class:'metric' }, [ el('div',{class:'label',text:'Encuentros'}), el('div',{class:'value',text:String(totalEnc)}) ]),
+    ]));
+    const people = [...byPerson.entries()].sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0],'es'));
+    for (const [name, items] of people) {
+      const sorted = items.slice().sort((a,b) => (a.day_date||'').localeCompare(b.day_date||'') || (a.time||'').localeCompare(b.time||''));
+      const list = el('div', { class:'list' });
+      for (const it of sorted) {
+        const td = typeDef(it.type);
+        const place = it.place_name || it.title || td.label;
+        const when = [ it.day_date ? fmtDateShort(it.day_date) : 'Sin fecha', it.time || '' ].filter(Boolean).join(' · ');
+        list.appendChild(el('div', { class:'list-item interactive', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
+          el('div', { class:'item-emoji', text: td.emoji || '📌' }),
+          el('div', { class:'li-main' }, [
+            el('div', { class:'li-title', text: place }),
+            el('div', { class:'li-sub', text: when }),
+          ]),
+        ]));
+      }
+      root.appendChild(el('div', { class:'person-card' }, [
+        el('div', { class:'person-card-head' }, [
+          el('div', { class:'person-avatar', text: (name[0] || '?').toUpperCase() }),
+          el('div', { class:'person-name', text: name }),
+          el('div', { class:'person-count', text: `${items.length} ${items.length === 1 ? 'vez' : 'veces'}` }),
+        ]),
+        list,
+      ]));
+    }
+  },
+
+  /* ----- Pendientes (checklist manual + eventos en consulta/por iniciar) ----- */
+  async tabPendientes(root, t, fab) {
+    const planning = await DB.listByTrip('planning_items', t.id);
+    const manual = Array.isArray(t.pending_items) ? t.pending_items : [];
+    const auto = planning
+      .filter(p => ['en_consulta','por_iniciar'].includes(itemStatus(p)))
+      .map(p => ({ kind:'auto', item:p, date: p.day_date || p.consultation_planned_d1 || '', time: p.time || p.consultation_planned_t1 || '' }));
+
+    const saveManual = async () => { t.pending_items = manual; await DB.put('trips', t); };
+
+    // Cabecera con botón "+"
+    root.appendChild(el('div', { class:'resumen-day-head', style:{marginTop:'4px'} }, [
+      el('h2', { class:'section-title', style:{margin:0}, text:'Pendientes' }),
+      canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir pendiente', 'aria-label':'Añadir pendiente',
+        onclick: () => TripDetail._openPendingEditor(t, null), html: svg('plus') }) : null,
+    ].filter(Boolean)));
+
+    // Item manual (checklist) — fila con checkbox, texto, fecha/hora y borrar.
+    const manualRow = (m) => el('div', { class:'pending-item' + (m.done ? ' done' : '') }, [
+      el('button', { class:'pending-check' + (m.done ? ' on' : ''), 'aria-pressed': m.done ? 'true':'false', title: m.done ? 'Marcar pendiente' : 'Marcar hecho',
+        onclick: async () => { m.done = !m.done; await saveManual(); Router.render(); }, html: m.done ? svg('check') : '' }),
+      el('div', { class:'pending-main', onclick: () => canEdit() && TripDetail._openPendingEditor(t, m) }, [
+        el('div', { class:'pending-text', text: m.text || '(sin texto)' }),
+        (m.date || m.time) ? el('div', { class:'pending-sub', text: [ m.date ? fmtDateShort(m.date) : '', m.time || '' ].filter(Boolean).join(' · ') }) : null,
+      ].filter(Boolean)),
+      canEdit() ? el('button', { class:'icon-btn', title:'Borrar', 'aria-label':'Borrar pendiente',
+        onclick: async () => { const i = manual.indexOf(m); if (i>=0) manual.splice(i,1); await saveManual(); Router.render(); }, html: svg('trash') }) : null,
+    ].filter(Boolean));
+
+    // Evento automático (en consulta / por iniciar) — clicable, no marcable.
+    const autoRow = (a) => {
+      const it = a.item; const td = typeDef(it.type);
+      const st = itemStatus(it); const stDef = STATUS_PLANNING.find(s => s.id === st);
+      return el('div', { class:'pending-item auto interactive', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
+        el('div', { class:'item-emoji', text: td.emoji || '📌' }),
+        el('div', { class:'pending-main' }, [
+          el('div', { class:'pending-text', text: it.place_name || it.title || td.label }),
+          el('div', { class:'pending-sub', text: [ a.date ? fmtDateShort(a.date) : 'Sin fecha', a.time || '' ].filter(Boolean).join(' · ') }),
+        ]),
+        stDef ? el('span', { class:`status-badge s-${st}`, text: stDef.label }) : null,
+      ].filter(Boolean));
+    };
+
+    const noDate = manual.filter(m => !m.date);
+    const dated  = [
+      ...manual.filter(m => m.date).map(m => ({ kind:'manual', m, date:m.date, time:m.time || '' })),
+      ...auto,
+    ].sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||''));
+
+    if (!manual.length && !auto.length) {
+      root.appendChild(el('div', { class:'empty' }, [
+        el('div', { class:'icon', html: svg('note') }),
+        el('h3', { text:'Sin pendientes' }),
+        el('p', { text:'Pulsa “+” para añadir una tarea. Los eventos del planning en consulta o por iniciar aparecerán aquí automáticamente.' }),
+      ]));
+      return;
+    }
+
+    // 1) Manuales sin fecha — arriba del todo, fuera de la cronología.
+    if (noDate.length) {
+      const wrap = el('div', { class:'list pending-list' });
+      noDate.forEach(m => wrap.appendChild(manualRow(m)));
+      root.appendChild(wrap);
+    }
+    // 2) Cronológico: manuales con fecha + eventos automáticos, intercalados por fecha.
+    if (dated.length) {
+      if (noDate.length) root.appendChild(el('div', { class:'pending-divider', text:'Por fecha' }));
+      const wrap = el('div', { class:'list pending-list' });
+      dated.forEach(d => wrap.appendChild(d.kind === 'manual' ? manualRow(d.m) : autoRow(d)));
+      root.appendChild(wrap);
+    }
+  },
+
+  // Editor de un pendiente manual: texto + fecha/hora opcionales.
+  _openPendingEditor(t, existing) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const m = existing || { id: uuid(), text:'', done:false, date:'', time:'' };
+    const body = el('div', {}, [
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Tarea pendiente' }),
+        el('input', { id:'pe-text', type:'text', value: m.text || '', placeholder:'Ej. Reservar entradas del museo' }),
+      ]),
+      el('div', { class:'form-grid-2' }, [
+        el('div', { class:'form-row' }, [ el('label', { text:'Fecha (opcional)' }), el('input', { id:'pe-date', type:'date', value: m.date || '' }) ]),
+        el('div', { class:'form-row' }, [ el('label', { text:'Hora (opcional)' }), el('input', { id:'pe-time', type:'time', value: m.time || '' }) ]),
+      ]),
+      el('div', { class:'field-hint', text:'Si pones fecha, se ordena cronológicamente junto a los eventos del planning. Sin fecha, queda arriba.' }),
+    ]);
+    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+      m.text = ($('#pe-text')?.value || '').trim();
+      if (!m.text) { UI.toast('Escribe la tarea'); return; }
+      m.date = $('#pe-date')?.value || '';
+      m.time = $('#pe-time')?.value || '';
+      const arr = Array.isArray(t.pending_items) ? t.pending_items : (t.pending_items = []);
+      if (!existing) arr.push(m);
+      await DB.put('trips', t);
+      UI.toast('Guardado'); UI.closeSheet(); Router.render();
+    }}, 'Guardar');
+    const delBtn = existing ? el('button', { class:'btn btn-danger', onclick: async () => {
+      const arr = t.pending_items || []; const i = arr.indexOf(m); if (i>=0) arr.splice(i,1);
+      await DB.put('trips', t); UI.closeSheet(); Router.render();
+    }}, 'Borrar') : null;
+    UI.openSheet({ title: existing ? 'Editar pendiente' : 'Nuevo pendiente', body,
+      footer:[delBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean) });
   },
 
   /* ----- Ficha destino ----- */
