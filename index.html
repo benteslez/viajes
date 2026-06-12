@@ -864,9 +864,10 @@ h2.section-title {
      clase `.has-custom-color`. Persistido en planning_items.custom_color.
    =========================================================================== */
 :root {
-  --tipo-vuelo:      #3b82f6;
-  --tipo-transporte: #1e40af; /* azul oscuro (no morado) — distinto de vuelo (azul) y lugar (cian) */
-  --tipo-coche:      #3b82f6;
+  /* Todos los transportes (vuelo, transporte, coche) comparten el mismo azul oscuro. */
+  --tipo-vuelo:      #1e40af;
+  --tipo-transporte: #1e40af;
+  --tipo-coche:      #1e40af;
   --tipo-comida:     #f97316;
   --tipo-actividad:  #a855f7;
   --tipo-hotel:      #15803d;
@@ -959,8 +960,11 @@ h2.section-title {
 .timeline-item.status-confirmado .item-emoji {
   background: color-mix(in srgb, #10b981 24%, var(--bg-elev)) !important;
 }
-/* Transporte confirmado: la TARJETA conserva su color índigo; emoji y pill verdes. */
-.timeline-item.status-confirmado.type-transporte {
+/* Transportes confirmados (vuelo, transporte, coche): la TARJETA conserva su
+   color azul oscuro; el emoji y la pill van en verde para marcar la confirmación. */
+.timeline-item.status-confirmado.type-transporte,
+.timeline-item.status-confirmado.type-vuelo,
+.timeline-item.status-confirmado.type-coche {
   background: color-mix(in srgb, var(--tipo-transporte) 12%, var(--bg-elev));
   border-color: color-mix(in srgb, var(--tipo-transporte) 35%, var(--line));
 }
@@ -1497,16 +1501,16 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 
 /* Tipo de planning_item — punto de color */
 .dot-type { width:8px; height:8px; border-radius:50%; }
-.dot-type.lugar       { background:#0ea5e9; }
-.dot-type.playa       { background:#fbbf24; }
-.dot-type.hotel       { background:#a855f7; }
-.dot-type.vuelo       { background:#3b82f6; }
-.dot-type.transporte  { background:#1e40af; }
-.dot-type.coche       { background:#ec4899; }
-.dot-type.actividad   { background:#10b981; }
-.dot-type.comida      { background:#f97316; }
-.dot-type.compras     { background:#14b8a6; }
-.dot-type.otro        { background:#64748b; }
+.dot-type.lugar       { background:var(--tipo-lugar); }
+.dot-type.playa       { background:var(--tipo-playa); }
+.dot-type.hotel       { background:var(--tipo-hotel); }
+.dot-type.vuelo       { background:var(--tipo-vuelo); }
+.dot-type.transporte  { background:var(--tipo-transporte); }
+.dot-type.coche       { background:var(--tipo-coche); }
+.dot-type.actividad   { background:var(--tipo-actividad); }
+.dot-type.comida      { background:var(--tipo-comida); }
+.dot-type.compras     { background:var(--tipo-compras); }
+.dot-type.otro        { background:var(--tipo-otro); }
 
 /* El círculo exterior con SVG queda oculto — ahora el icono va DENTRO de la card como emoji. */
 .timeline-item { position:relative; align-items:center; }
@@ -1544,16 +1548,16 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 
 /* El emoji conserva el color de su TIPO también en tarjetas con fondo de estado,
    para que el icono destaque sobre el color (confirmado es la excepción: verde). */
-.timeline-item.type-lugar      .timeline-icon { border-color:#0ea5e9; color:#0369a1; }
-.timeline-item.type-playa      .timeline-icon { border-color:#fbbf24; color:#92400e; }
-.timeline-item.type-hotel      .timeline-icon { border-color:#a855f7; color:#6b21a8; }
-.timeline-item.type-vuelo      .timeline-icon { border-color:#3b82f6; color:#1e40af; }
-.timeline-item.type-transporte .timeline-icon { border-color:#1e40af; color:#1e3a8a; }
-.timeline-item.type-coche      .timeline-icon { border-color:#ec4899; color:#9d174d; }
-.timeline-item.type-actividad  .timeline-icon { border-color:#10b981; color:#047857; }
-.timeline-item.type-comida     .timeline-icon { border-color:#f97316; color:#9a3412; }
-.timeline-item.type-compras    .timeline-icon { border-color:#14b8a6; color:#0f766e; }
-.timeline-item.type-otro       .timeline-icon { border-color:#64748b; color:#334155; }
+.timeline-item.type-lugar      .timeline-icon { border-color:var(--tipo-lugar);      color:#0369a1; }
+.timeline-item.type-playa      .timeline-icon { border-color:var(--tipo-playa);      color:#0f766e; }
+.timeline-item.type-hotel      .timeline-icon { border-color:var(--tipo-hotel);      color:#166534; }
+.timeline-item.type-vuelo      .timeline-icon { border-color:var(--tipo-vuelo);      color:#1e3a8a; }
+.timeline-item.type-transporte .timeline-icon { border-color:var(--tipo-transporte); color:#1e3a8a; }
+.timeline-item.type-coche      .timeline-icon { border-color:var(--tipo-coche);      color:#1e3a8a; }
+.timeline-item.type-actividad  .timeline-icon { border-color:var(--tipo-actividad);  color:#6b21a8; }
+.timeline-item.type-comida     .timeline-icon { border-color:var(--tipo-comida);     color:#9a3412; }
+.timeline-item.type-compras    .timeline-icon { border-color:var(--tipo-compras);    color:#9d174d; }
+.timeline-item.type-otro       .timeline-icon { border-color:var(--tipo-otro);       color:#334155; }
 :root[data-tema="oscuro"] .timeline-item .timeline-icon { color:#e2e8f0; }
 /* Si está en estado por_iniciar/en_consulta/etc, el color del borde lo gana el estado */
 .timeline-item.status-por_iniciar .timeline-icon { border-color:#f59e0b; }
@@ -2114,13 +2118,16 @@ body.readonly .timeline-item { cursor:default; }
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   border-left:2px solid var(--text-muted);
 }
-.cal-evt.evt-lugar       { border-left-color:#0ea5e9; }
-.cal-evt.evt-hotel       { border-left-color:#a855f7; }
-.cal-evt.evt-vuelo       { border-left-color:#3b82f6; }
-.cal-evt.evt-transporte  { border-left-color:#a855f7; }
-.cal-evt.evt-coche       { border-left-color:#ec4899; }
-.cal-evt.evt-actividad   { border-left-color:#10b981; }
-.cal-evt.evt-comida      { border-left-color:#f97316; }
+.cal-evt.evt-lugar       { border-left-color:var(--tipo-lugar); }
+.cal-evt.evt-playa       { border-left-color:var(--tipo-playa); }
+.cal-evt.evt-hotel       { border-left-color:var(--tipo-hotel); }
+.cal-evt.evt-vuelo       { border-left-color:var(--tipo-vuelo); }
+.cal-evt.evt-transporte  { border-left-color:var(--tipo-transporte); }
+.cal-evt.evt-coche       { border-left-color:var(--tipo-coche); }
+.cal-evt.evt-actividad   { border-left-color:var(--tipo-actividad); }
+.cal-evt.evt-comida      { border-left-color:var(--tipo-comida); }
+.cal-evt.evt-compras     { border-left-color:var(--tipo-compras); }
+.cal-evt.evt-otro        { border-left-color:var(--tipo-otro); }
 .cal-more { font-size:10px; color:var(--text-muted); padding-left:4px; }
 
 /* World map (visited countries) */
@@ -7372,7 +7379,9 @@ const TripDetail = {
     }
 
     // Donut + barras por categoría
-    const CAT_COLORS = { transporte:'#0ea5e9', alojamiento:'#a855f7', comida:'#f97316', actividades:'#10b981', compras:'#ec4899', otros:'#64748b' };
+    // Mismos colores que los tipos de planning (var --tipo-*) para que un gasto y su
+    // evento compartan color: transporte azul oscuro, alojamiento verde, actividades morado…
+    const CAT_COLORS = { transporte:'#1e40af', alojamiento:'#15803d', comida:'#f97316', actividades:'#a855f7', compras:'#ec4899', otros:'#64748b' };
     const byCat = {};
     items.forEach(i => { byCat[i.category] = (byCat[i.category] || 0) + (Number(i.amount_eur) || 0); });
     const maxVal = Math.max(1, ...Object.values(byCat));
