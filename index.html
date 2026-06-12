@@ -1266,8 +1266,10 @@ h2.section-title {
    ====================================================================== */
 .day-group { margin-bottom:24px; }
 .day-head {
-  display:flex; align-items:baseline; gap:10px; margin-bottom:10px;
-  padding:0 4px;
+  display:flex; align-items:center; gap:10px; margin-bottom:10px;
+  /* Mismo inset horizontal que el contenido de las tarjetas (padding 10 + borde 1)
+     para que los iconos de acción queden alineados en columna con los de los eventos. */
+  padding:0 11px;
 }
 .day-head .day-num {
   font-family:var(--font-ui);
@@ -1539,7 +1541,10 @@ body.dragging-planning .day-head { color: var(--accent); }
   margin:0 0 12px 38px; font-size:13.5px;
   white-space:pre-wrap;
 }
-.day-actions { display:flex; gap:6px; }
+.day-actions { display:flex; gap:4px; flex-shrink:0; }
+/* Iconos del día del mismo tamaño que los de las tarjetas → columna alineada. */
+.day-actions .icon-btn { width:30px; height:30px; }
+.day-actions .icon-btn svg { width:16px; height:16px; }
 
 /* Pill del título del día */
 .day-title-pill {
@@ -5228,6 +5233,12 @@ const TripDetail = {
           }) : null,
         ].filter(Boolean)),
         el('div', { class:'day-actions' }, [
+          canEdit() ? el('button', {
+            class:'icon-btn', title:'Añadir evento a este día',
+            onclick: () => TripDetail.openPlanningEditor(t, null, { day: k !== 'sin-fecha' ? k : null }),
+            html: svg('plus'),
+            'aria-label':'Añadir evento a este día',
+          }) : null,
           el('button', {
             class:'icon-btn', title:'Editar título/color del día',
             onclick: () => TripDetail.openDayEditor(t, k, dayMeta),
@@ -5240,7 +5251,7 @@ const TripDetail = {
             html: svg('note'),
             'aria-label':'Editar nota del día',
           }),
-        ]),
+        ].filter(Boolean)),
       ].filter(Boolean));
       g.appendChild(head);
 
@@ -5763,7 +5774,7 @@ const TripDetail = {
     UI.openSheet({ title:'Nota del día', body, footer:[delBtn, el('button',{ class:'btn btn-ghost', onclick:() => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean) });
   },
 
-  async openPlanningEditor(t, existing=null) {
+  async openPlanningEditor(t, existing=null, opts=null) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
     // Si llega un item VIRTUAL (noche/check-out/llegada), editamos el item BASE:
     // quitamos las marcas y restauramos día/hora de salida/entrada.
@@ -5787,7 +5798,7 @@ const TripDetail = {
     const tripPeople = [...new Set(_planForPeople.flatMap(p => Array.isArray(p.people) ? p.people : []))];
     const it = existing || {
       id: uuid(), trip_id: t.id, type:'lugar',
-      day_date: t.start_date || todayIso(), time:'', title:'',
+      day_date: (opts && opts.day) || t.start_date || todayIso(), time:'', title:'',
       place_name:'', lat:null, lng:null, gmaps_url:'', address:'', notes:'', order_index:0,
       status: null,                       // se setea según el tipo al renderizar
       in_consultation: false,             // legacy, derivado de status
