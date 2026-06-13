@@ -204,7 +204,11 @@ create unique index if not exists day_notes_unique on day_notes(trip_id, date) w
 create table if not exists packing_items (
   id uuid primary key default gen_random_uuid(),
   trip_id uuid not null references trips(id) on delete cascade,
-  category text not null check (category in ('ropa','tecnología','aseo','documentos','bebé','otros')),
+  -- Las categorías fijas son 'ropa','tecnología','aseo','documentos','bebé','otros',
+  -- pero el viaje puede definir grupos personalizados (t.packing_categories) con ids
+  -- arbitrarios (p. ej. 'cg_botiquin_a1b2'). Por eso NO se restringe con un check:
+  -- hacerlo rompería la sincronización al insertar items de grupos personalizados.
+  category text not null,
   name text not null,
   checked boolean not null default false,
   template_source text,
@@ -458,3 +462,16 @@ begin
     $p$, t, t, t, t);
   end loop;
 end$$;
+
+-- ============================================================
+-- MIGRACIONES (idempotentes — seguras de re-ejecutar)
+-- ============================================================
+
+-- packing_items.category admite grupos personalizados con ids arbitrarios
+-- (t.packing_categories). El antiguo check (category in (...)) rompía la
+-- sincronización con el error:
+--   new row for relation "packing_items" violates check constraint
+--   "packing_items_category_check"
+-- Eliminamos la restricción si todavía existe.
+alter table if exists packing_items
+  drop constraint if exists packing_items_category_check;
