@@ -2566,6 +2566,12 @@ const budgetCategoryForType = (type) => (
     comida:'comida', compras:'compras' }[type] || 'actividades'
 );
 
+// Preferencias de interfaz por viaje, guardadas TODAS en una sola columna `settings`
+// (jsonb). Así un ajuste de UI nuevo no necesita una columna propia en Supabase.
+// `tripSettings` lee sin mutar; `tripSettingsMut` garantiza el objeto para escribir.
+const tripSettings = (t) => (t && t.settings && typeof t.settings === 'object' && !Array.isArray(t.settings)) ? t.settings : {};
+const tripSettingsMut = (t) => { if (!t.settings || typeof t.settings !== 'object' || Array.isArray(t.settings)) t.settings = {}; return t.settings; };
+
 // Modos de transporte → emoji. El icono del evento cambia según metadata.modo.
 const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢' };
 // Emoji efectivo de un planning item (transporte varía con su modo).
@@ -4731,8 +4737,9 @@ const Trips = {
     const body = el('div', { class:'tabs-config' });
     const render = () => {
       body.innerHTML = '';
-      const hidden = new Set(Array.isArray(t.tabs_hidden) ? t.tabs_hidden : []);
-      const order = Array.isArray(t.tabs_order) ? t.tabs_order : [];
+      const s = tripSettings(t);
+      const hidden = new Set(Array.isArray(s.tabs_hidden) ? s.tabs_hidden : (Array.isArray(t.tabs_hidden) ? t.tabs_hidden : []));
+      const order = Array.isArray(s.tabs_order) ? s.tabs_order : (Array.isArray(t.tabs_order) ? t.tabs_order : []);
       const ordered = ALL.slice().sort((a, b) => { const ia = order.indexOf(a.id), ib = order.indexOf(b.id); if (ia === -1 && ib === -1) return 0; if (ia === -1) return 1; if (ib === -1) return -1; return ia - ib; });
       body.appendChild(el('div', { class:'field-hint', style:{margin:'0 0 10px'}, text:'Activa o desactiva pestañas y reordénalas con las flechas. "Resumen" no se puede ocultar.' }));
       ordered.forEach((tb, idx) => {
@@ -4741,7 +4748,7 @@ const Trips = {
           const ids = ordered.map(x => x.id); const j = idx + dir;
           if (j < 0 || j >= ids.length) return;
           [ids[idx], ids[j]] = [ids[j], ids[idx]];
-          t.tabs_order = ids; await DB.put('trips', t); render();
+          tripSettingsMut(t).tabs_order = ids; await DB.put('trips', t); render();
         };
         body.appendChild(el('div', { class:'tab-config-row' + (isHidden ? ' off' : '') }, [
           el('button', { class:'icon-btn', title:'Subir', html: svg('arrup'), disabled: idx === 0 ? true : null, onclick: () => setOrder(-1) }),
@@ -4749,7 +4756,7 @@ const Trips = {
           el('span', { class:'tab-config-label', text: tb.label }),
           el('button', { class:'icon-btn tab-vis' + (isHidden ? '' : ' on'), title: tb.lock ? 'Siempre visible' : (isHidden ? 'Mostrar' : 'Ocultar'),
             disabled: tb.lock ? true : null, html: svg('eye'),
-            onclick: async () => { if (tb.lock) return; const h = new Set(hidden); h.has(tb.id) ? h.delete(tb.id) : h.add(tb.id); t.tabs_hidden = [...h]; await DB.put('trips', t); render(); } }),
+            onclick: async () => { if (tb.lock) return; const h = new Set(hidden); h.has(tb.id) ? h.delete(tb.id) : h.add(tb.id); tripSettingsMut(t).tabs_hidden = [...h]; await DB.put('trips', t); render(); } }),
         ]));
       });
     };
@@ -5267,8 +5274,10 @@ const TripDetail = {
       { id:'estadisticas', label:'Estadísticas' },
     ].filter(Boolean);
     // Aplicar ocultas (nunca se oculta 'resumen') y el orden personalizado.
-    const tabsHidden = new Set((Array.isArray(t.tabs_hidden) ? t.tabs_hidden : []).filter(id => id !== 'resumen'));
-    const tabsOrder = Array.isArray(t.tabs_order) ? t.tabs_order : [];
+    const _ts = tripSettings(t);
+    const _hiddenRaw = Array.isArray(_ts.tabs_hidden) ? _ts.tabs_hidden : (Array.isArray(t.tabs_hidden) ? t.tabs_hidden : []);
+    const tabsHidden = new Set(_hiddenRaw.filter(id => id !== 'resumen'));
+    const tabsOrder = Array.isArray(_ts.tabs_order) ? _ts.tabs_order : (Array.isArray(t.tabs_order) ? t.tabs_order : []);
     let tabs = tabCandidates.filter(tb => !tabsHidden.has(tb.id));
     if (tabsOrder.length) tabs.sort((a, b) => { const ia = tabsOrder.indexOf(a.id), ib = tabsOrder.indexOf(b.id); if (ia === -1 && ib === -1) return 0; if (ia === -1) return 1; if (ib === -1) return -1; return ia - ib; });
     if (!tabs.length) tabs = [{ id:'resumen', label:'Resumen' }];
