@@ -845,7 +845,8 @@ h2.section-title {
 /* Cards de planning — estilo más "Apple": hairline tenue, esquinas más redondas,
    sombra suave y emoji en "squircle" sin borde duro. */
 .timeline-item.list-item {
-  padding:11px 13px; gap:12px;
+  padding:12px 13px 32px; gap:12px;
+  min-height:84px; box-sizing:border-box;
   border:1px solid var(--line-soft);
   border-radius:18px;
   box-shadow:var(--sh-1);
@@ -853,7 +854,7 @@ h2.section-title {
 .timeline-item.list-item:active { transform:scale(.99); }
 .timeline-item.list-item .item-emoji { width:40px; height:40px; font-size:20px; border:none; border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
 .timeline-item.list-item .drag-handle { padding:2px; }
-.timeline-item.list-item .icon-btn { width:30px; height:30px; }
+.timeline-item.list-item .icon-btn { width:28px; height:28px; }
 .timeline-item.list-item .icon-btn svg { width:16px; height:16px; }
 .timeline-item.list-item .li-actions .btn.btn-sm { height:28px; padding:0 9px; font-size:12px; }
 /* Sub-texto en 1-2 líneas máximo con ellipsis para que no expanda la card */
@@ -959,17 +960,15 @@ h2.section-title {
 .list-item.status-cancelado .li-title,
 .timeline-item.status-cancelado .li-title { text-decoration:line-through; opacity:.75; }
 
-/* Esquina inferior derecha: botón "Confirmar" (si aplica) + pill de estado. */
-.timeline-item.status-confirmado,
-.timeline-item.status-cancelado { padding-bottom:32px; }
-.timeline-item.status-por_iniciar,
-.timeline-item.status-en_consulta { padding-bottom:44px; }
+/* Esquina inferior derecha: botón "Confirmar" (si aplica) + pill de estado.
+   La reserva inferior (32px) ya está en TODAS las tarjetas (.list-item) para que
+   tengan el mismo alto con o sin pill. */
 .timeline-item .li-corner {
-  position:absolute; right:13px; bottom:9px;
+  position:absolute; right:13px; bottom:8px;
   display:flex; align-items:center; gap:8px;
 }
 .timeline-item .li-corner .status-badge { margin:0; }
-.timeline-item .li-corner .li-confirm-btn { height:28px; padding:0 11px; font-size:12px; }
+.timeline-item .li-corner .li-confirm-btn { height:25px; padding:0 10px; font-size:12px; }
 
 /* Confirmado: emoji en verde (la pill ya es verde). */
 .timeline-item.status-confirmado .item-emoji {
@@ -1201,8 +1200,10 @@ h2.section-title {
 .flash-card {
   flex:0 0 100%; width:100%; box-sizing:border-box;
   scroll-snap-align:center; scroll-snap-stop:always;
-  display:flex; flex-direction:column; overflow:hidden; padding:0 16px;
+  display:flex; flex-direction:column; align-items:center; overflow:hidden; padding:0 16px;
 }
+/* La columna de contenido se centra y no se estira en pantallas anchas (escritorio). */
+.flash-date, .flash-body { width:100%; max-width:620px; }
 .flash-date { flex-shrink:0; padding:14px 4px 18px; }
 .flash-daynum { font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
 .flash-date-main { font-family:var(--font-titulo); font-weight:700; font-size:30px; line-height:1.06; letter-spacing:-.03em; color:var(--text); }
@@ -1610,6 +1611,9 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-item .li-actions .icon-btn:active { background:var(--bg-soft); color:var(--text); }
 /* Título del evento un punto más marcado, jerarquía más clara. */
 .timeline-item .li-title { font-size:15px; font-weight:600; letter-spacing:-.01em; }
+/* Título en una sola línea (elipsis si no cabe); la hora va a su derecha sin partir. */
+.timeline-item .li-title .li-title-text { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.timeline-item .li-title .time-pill { flex-shrink:0; }
 .timeline-item .li-sub { font-size:12.5px; }
 /* Hora con números tabulares, más sobria. */
 .timeline-item .time-pill { background:var(--bg-soft); color:var(--text-muted); font-weight:600; }
@@ -2386,16 +2390,15 @@ const canEdit = () => {
 };
 const isReadonly = () => !canEdit();
 
-// Sergio e Invitado consultan los datos del PERFIL OWNER (Rubén).
-// Así "modo lector" significa "ver el viaje de Rubén", no un perfil vacío propio.
+// SOLO Sergio consulta los datos del PERFIL OWNER (Rubén) en modo lector.
+// Invitado NO accede a viajes de otros perfiles (ni en modo lector): solo ve los
+// suyos propios (normalmente, ninguno).
 // Los datos personales (travel_docs, packing_templates, visited_countries)
 // siguen siendo por perfil — no se comparten.
-// Perfil "dueño" de los datos — Sergio e Invitado ven los datos de este perfil.
-// Tras la migración a IDs ASCII puros, es 'ruben' (sin tilde).
 const OWNER_PROFILE = 'ruben';
 const dataProfile = () => {
   const me = STATE.profile;
-  return (me === 'sergio' || me === 'invitado') ? OWNER_PROFILE : me;
+  return (me === 'sergio') ? OWNER_PROFILE : me;
 };
 
 // Restricciones de Invitado: no ve precios, ni enlaces, ni documentos.
@@ -5961,9 +5964,11 @@ const TripDetail = {
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
       el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-        el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'wrap', gap:'4px'} }, [
+        el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
+          el('span', { class:'li-title-text', text: displayTitle }),
+          // La hora (salida/llegada) va a la DERECHA del título para que todos los
+          // títulos queden alineados al mismo margen izquierdo.
           timeRangeText ? el('span', { class:'time-pill', text: timeRangeText }) : null,
-          el('span', { text: displayTitle }),
           (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
         ].filter(Boolean)),
         // Los virtuales (noche/check-out/llegada) no caen al fallback td.label si no hay sub.
