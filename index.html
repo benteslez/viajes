@@ -616,6 +616,9 @@ h2.section-title {
 .form-row input, .form-row select, .form-row textarea {
   border:1px solid var(--line); background:var(--bg-input); color:var(--text);
   border-radius:var(--r-md); padding:11px 14px;
+  /* width:100% + min-width:0 + border-box → no fuerzan su ancho intrínseco
+     (evita que el grid de 2 columnas se desborde por los lados en móvil). */
+  width:100%; min-width:0; box-sizing:border-box;
   /* 16px evita el auto-zoom de iOS al enfocar un campo. */
   font-size:16px; font-family:var(--font-ui);
   transition:border .18s var(--ease), box-shadow .18s var(--ease);
@@ -627,6 +630,9 @@ h2.section-title {
 .form-row textarea { min-height:80px; resize:vertical; }
 .form-row.num input { font-feature-settings:"tnum","ss01"; }
 .form-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+/* Las celdas del grid pueden encoger por debajo del contenido (si no, los inputs
+   fuerzan el ancho y la rejilla se sale por los lados). */
+.form-grid-2 > * { min-width:0; }
 /* Hora con botón ✕ para vaciarla (necesario en iOS, donde el time nativo no se
    puede dejar en blanco una vez puesto). */
 .time-with-clear { display:flex; align-items:center; gap:6px; }
