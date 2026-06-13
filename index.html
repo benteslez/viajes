@@ -1629,9 +1629,17 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-item .li-actions .icon-btn:active { background:var(--bg-soft); color:var(--text); }
 /* Título del evento un punto más marcado, jerarquía más clara. */
 .timeline-item .li-title { font-size:15px; font-weight:600; letter-spacing:-.01em; }
-/* La hora va a la DERECHA del título; si no cabe (móvil estrecho) baja a la 2ª
-   fila, debajo del título, sin truncarlo. */
-.timeline-item .li-title .time-pill { flex-shrink:0; }
+/* Título en 1 línea (elipsis si es largo); la hora y los datos van en la 2ª fila,
+   así todas las tarjetas tienen el mismo alto. */
+.timeline-item .li-title .li-title-text { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.timeline-item .li-subrow {
+  display:flex; align-items:center; gap:6px; min-height:23px; margin-top:1px;
+}
+.timeline-item .li-subrow .time-pill { flex-shrink:0; }
+.timeline-item .li-sub-text {
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:12.5px; color:var(--text-muted); line-height:1.35;
+}
 .timeline-item .li-sub { font-size:12.5px; }
 /* Hora con números tabulares, más sobria. */
 .timeline-item .time-pill { background:var(--bg-soft); color:var(--text-muted); font-weight:600; }
@@ -6078,15 +6086,21 @@ const TripDetail = {
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
       el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-        el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'wrap', gap:'6px'} }, [
+        el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
           el('span', { class:'li-title-text', text: displayTitle }),
-          // La hora (salida/llegada) va a la DERECHA del título para que todos los
-          // títulos queden alineados al mismo margen izquierdo.
-          timeRangeText ? el('span', { class:'time-pill', text: timeRangeText }) : null,
           (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
         ].filter(Boolean)),
-        // Los virtuales (noche/check-out/llegada) no caen al fallback td.label si no hay sub.
-        el('div', { class:'li-sub', text: subParts.join(' · ') || (isVirtual ? '' : td.label) }),
+        // 2ª fila: hora (a la izquierda) + datos. En transporte/vuelo/coche NO se pone
+        // el label genérico ("Transporte"): solo datos reales (compañía, asiento,
+        // localizador, ruta…). Si no hay nada, la fila queda vacía pero reserva alto.
+        (() => {
+          const isTransportType = ['vuelo', 'transporte', 'coche'].includes(it.type);
+          const subText = subParts.join(' · ') || ((isVirtual || isTransportType) ? '' : td.label);
+          return el('div', { class:'li-subrow' }, [
+            timeRangeText ? el('span', { class:'time-pill', text: timeRangeText }) : null,
+            subText ? el('span', { class:'li-sub-text', text: subText }) : null,
+          ].filter(Boolean));
+        })(),
         (status === 'en_consulta' && it.consultation_url && canSeeLinks() && !isVirtual) ? el('div', { style:{marginTop:'4px', fontSize:'13px'} },
           el('a', { href: it.consultation_url, target:'_blank', rel:'noopener',
             onclick: (e) => e.stopPropagation(), text: TripDetail._shortUrl(it.consultation_url) })
