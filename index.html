@@ -1223,6 +1223,24 @@ h2.section-title {
 }
 .flash-fab svg { width:26px; height:26px; }
 .flash-fab:active { transform:scale(.95); }
+
+/* Indicador del gesto "volver" (deslizar desde el borde izquierdo). */
+#edge-back-ind {
+  position:fixed; left:8px; top:50%; transform:translateY(-50%);
+  width:42px; height:42px; border-radius:50%;
+  background:var(--bg-elev); box-shadow:var(--sh-2); color:var(--accent);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; z-index:120; transition:opacity .12s var(--ease);
+}
+#edge-back-ind svg { width:22px; height:22px; }
+
+/* Configurar pestañas del menú del viaje (mostrar/ocultar + reordenar). */
+.tabs-config { display:flex; flex-direction:column; gap:6px; }
+.tab-config-row { display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--bg-elev); }
+.tab-config-row.off { opacity:.5; }
+.tab-config-label { flex:1; min-width:0; font-weight:600; font-size:14.5px; }
+.tab-config-row .tab-vis { color:var(--text-muted); }
+.tab-config-row .tab-vis.on { color:var(--accent); }
 .day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
@@ -1611,8 +1629,8 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-item .li-actions .icon-btn:active { background:var(--bg-soft); color:var(--text); }
 /* Título del evento un punto más marcado, jerarquía más clara. */
 .timeline-item .li-title { font-size:15px; font-weight:600; letter-spacing:-.01em; }
-/* Título en una sola línea (elipsis si no cabe); la hora va a su derecha sin partir. */
-.timeline-item .li-title .li-title-text { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* La hora va a la DERECHA del título; si no cabe (móvil estrecho) baja a la 2ª
+   fila, debajo del título, sin truncarlo. */
 .timeline-item .li-title .time-pill { flex-shrink:0; }
 .timeline-item .li-sub { font-size:12.5px; }
 /* Hora con números tabulares, más sobria. */
@@ -3833,6 +3851,43 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault(); close();
   }, { passive: false });
 })();
+
+// Gesto "volver" deslizando desde el borde IZQUIERDO hacia la derecha (estilo Chrome),
+// solo en táctil. Cierra el overlay de tarjetas o el sheet abierto; si no, vuelve atrás.
+(function attachEdgeBackGesture(){
+  const EDGE = 28, THRESH = 84;
+  let st = null;
+  const ind = el('div', { id:'edge-back-ind', html: svg('back') });
+  document.body.appendChild(ind);
+  const reset = () => { ind.style.opacity = '0'; ind.style.transform = 'translateY(-50%)'; };
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { st = null; return; }
+    const tch = e.touches[0];
+    st = (tch.clientX <= EDGE) ? { x: tch.clientX, y: tch.clientY } : null;
+  }, { passive:true });
+  document.addEventListener('touchmove', (e) => {
+    if (!st || e.touches.length !== 1) return;
+    const tch = e.touches[0];
+    const dx = tch.clientX - st.x, dy = Math.abs(tch.clientY - st.y);
+    if (dy > 44 && dy > dx) { st = null; reset(); return; }   // gesto vertical → cancelar
+    if (dx > 10) { ind.style.opacity = String(Math.min(1, dx / THRESH)); ind.style.transform = `translateY(-50%) translateX(${Math.min(dx * 0.4, 34)}px)`; }
+  }, { passive:true });
+  document.addEventListener('touchend', (e) => {
+    if (!st) { reset(); return; }
+    const tch = e.changedTouches[0];
+    const dx = tch.clientX - st.x, dy = Math.abs(tch.clientY - st.y);
+    st = null; reset();
+    if (dx > THRESH && dy < 70) {
+      const flashClose = document.querySelector('.flashview .flash-close');
+      if (flashClose) { flashClose.click(); return; }
+      const sheet = document.getElementById('sheet');
+      if (sheet && sheet.classList.contains('show')) { UI.closeSheet(); return; }
+      const back = document.getElementById('btn-back');
+      if (back && !back.hidden) back.click();
+    }
+  }, { passive:true });
+  document.addEventListener('touchcancel', () => { st = null; reset(); });
+})();
 // Enter dentro de un sheet (en input, no en textarea) → dispara el botón primario
 // del footer. Permite guardar formularios sin levantar el dedo del teclado.
 document.addEventListener('keydown', (e) => {
@@ -4643,6 +4698,52 @@ const Trips = {
     setTimeout(() => document.addEventListener('click', closeOnOutside, true), 0);
   },
 
+  // Configurar las pestañas del menú del viaje: mostrar/ocultar y reordenar.
+  openTabsConfig(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const ALL = [
+      { id:'resumen', label:'Resumen', lock:true },
+      { id:'planning', label:'Planning' },
+      { id:'presu', label:'Presupuesto' },
+      { id:'maleta', label:'Maleta' },
+      { id:'reservas', label:'Reservas' },
+      { id:'mapa', label:'Mapa' },
+      { id:'personas', label:'Personas' },
+      { id:'destino', label:'Ficha destino' },
+      { id:'gastos', label:'Compartir gastos' },
+      { id:'diario', label:'Diario' },
+      { id:'estadisticas', label:'Estadísticas' },
+    ];
+    const body = el('div', { class:'tabs-config' });
+    const render = () => {
+      body.innerHTML = '';
+      const hidden = new Set(Array.isArray(t.tabs_hidden) ? t.tabs_hidden : []);
+      const order = Array.isArray(t.tabs_order) ? t.tabs_order : [];
+      const ordered = ALL.slice().sort((a, b) => { const ia = order.indexOf(a.id), ib = order.indexOf(b.id); if (ia === -1 && ib === -1) return 0; if (ia === -1) return 1; if (ib === -1) return -1; return ia - ib; });
+      body.appendChild(el('div', { class:'field-hint', style:{margin:'0 0 10px'}, text:'Activa o desactiva pestañas y reordénalas con las flechas. "Resumen" no se puede ocultar.' }));
+      ordered.forEach((tb, idx) => {
+        const isHidden = hidden.has(tb.id);
+        const setOrder = async (dir) => {
+          const ids = ordered.map(x => x.id); const j = idx + dir;
+          if (j < 0 || j >= ids.length) return;
+          [ids[idx], ids[j]] = [ids[j], ids[idx]];
+          t.tabs_order = ids; await DB.put('trips', t); render();
+        };
+        body.appendChild(el('div', { class:'tab-config-row' + (isHidden ? ' off' : '') }, [
+          el('button', { class:'icon-btn', title:'Subir', html: svg('arrup'), disabled: idx === 0 ? true : null, onclick: () => setOrder(-1) }),
+          el('button', { class:'icon-btn', title:'Bajar', html: svg('arrdown'), disabled: idx === ordered.length - 1 ? true : null, onclick: () => setOrder(1) }),
+          el('span', { class:'tab-config-label', text: tb.label }),
+          el('button', { class:'icon-btn tab-vis' + (isHidden ? '' : ' on'), title: tb.lock ? 'Siempre visible' : (isHidden ? 'Mostrar' : 'Ocultar'),
+            disabled: tb.lock ? true : null, html: svg('eye'),
+            onclick: async () => { if (tb.lock) return; const h = new Set(hidden); h.has(tb.id) ? h.delete(tb.id) : h.add(tb.id); t.tabs_hidden = [...h]; await DB.put('trips', t); render(); } }),
+        ]));
+      });
+    };
+    render();
+    UI.openSheet({ title:'Pestañas del menú', body,
+      footer:[ el('button', { class:'btn btn-primary', onclick: () => { UI.closeSheet(); Router.render(); } }, 'Listo') ] });
+  },
+
   openTripEditor(existing=null) {
     if (!canEdit()) { UI.toast('Modo lector: no puedes modificar viajes'); return; }
     const t = existing || {
@@ -4824,7 +4925,12 @@ const Trips = {
         el('label', { text:'Notas' }),
         el('textarea', { id:'f-notes', placeholder:'Cualquier nota libre…' }, t.notes || ''),
       ]),
-    ]);
+      // Configurar qué pestañas se ven en el menú del viaje y en qué orden.
+      existing ? el('div', { class:'form-row' }, [
+        el('button', { type:'button', class:'btn btn-sm', onclick: () => Trips.openTabsConfig(t) },
+          [ el('span', { html: svg('menu') }), 'Pestañas del menú' ]),
+      ]) : null,
+    ].filter(Boolean));
 
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
       try {
@@ -5130,24 +5236,32 @@ const TripDetail = {
     const _planAll = await DB.listByTrip('planning_items', t.id).catch(() => []);
     const _hasPeople = _planAll.some(p => Array.isArray(p.people) && p.people.length);
 
-    // Sub-tabs — Invitado no ve pestañas financieras
-    const tabs = [
+    // Sub-tabs — Invitado no ve pestañas financieras.
+    // Candidatas disponibles (según condiciones); luego se aplican ocultas/orden
+    // configurados en el viaje (Editar viaje → Pestañas del menú).
+    const tabCandidates = [
       { id:'resumen',   label:'Resumen' },
       { id:'planning',  label:'Planning' },
       canSeeMoney() ? { id:'presu',    label:'Presupuesto' } : null,
       { id:'maleta',    label:'Maleta' },
       { id:'reservas',  label:'Reservas' },
       { id:'mapa',      label:'Mapa' },
-      _hasPeople ? { id:'personas', label:'Personas' } : null,   // entre Mapa y Ficha destino
+      _hasPeople ? { id:'personas', label:'Personas' } : null,
       { id:'destino',   label:'Ficha destino' },
+      (t.is_shared && canSeeMoney()) ? { id:'gastos', label:'Compartir gastos' } : null,
+      { id:'diario', label:'Diario' },
+      { id:'estadisticas', label:'Estadísticas' },
     ].filter(Boolean);
-    if (t.is_shared && canSeeMoney()) tabs.push({ id:'gastos', label:'Compartir gastos' });
-    tabs.push({ id:'diario', label:'Diario' });
-    tabs.push({ id:'estadisticas', label:'Estadísticas' });
+    // Aplicar ocultas (nunca se oculta 'resumen') y el orden personalizado.
+    const tabsHidden = new Set((Array.isArray(t.tabs_hidden) ? t.tabs_hidden : []).filter(id => id !== 'resumen'));
+    const tabsOrder = Array.isArray(t.tabs_order) ? t.tabs_order : [];
+    let tabs = tabCandidates.filter(tb => !tabsHidden.has(tb.id));
+    if (tabsOrder.length) tabs.sort((a, b) => { const ia = tabsOrder.indexOf(a.id), ib = tabsOrder.indexOf(b.id); if (ia === -1 && ib === -1) return 0; if (ia === -1) return 1; if (ib === -1) return -1; return ia - ib; });
+    if (!tabs.length) tabs = [{ id:'resumen', label:'Resumen' }];
 
     // 'pendientes' es enrutable (se abre desde la pill del resumen) aunque no esté en la barra.
-    // Si Invitado intenta entrar a una pestaña no permitida, redirige a resumen.
-    if (STATE.currentTab !== 'pendientes' && !tabs.some(tb => tb.id === STATE.currentTab)) STATE.currentTab = 'resumen';
+    // Si la pestaña actual no existe (oculta o no permitida), redirige a la primera.
+    if (STATE.currentTab !== 'pendientes' && !tabs.some(tb => tb.id === STATE.currentTab)) STATE.currentTab = tabs[0].id;
 
     const subtabs = el('div', { class:'subtabs', role:'tablist', 'aria-label':'Secciones del viaje', style:{marginTop:'24px'} });
     tabs.forEach((tb, idx) => {
@@ -5964,7 +6078,7 @@ const TripDetail = {
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
       el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-        el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
+        el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'wrap', gap:'6px'} }, [
           el('span', { class:'li-title-text', text: displayTitle }),
           // La hora (salida/llegada) va a la DERECHA del título para que todos los
           // títulos queden alineados al mismo margen izquierdo.
