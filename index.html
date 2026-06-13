@@ -1504,6 +1504,32 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-list .leg-chip .leg-src { width:6px; height:6px; border-radius:50%; margin-left:6px; flex-shrink:0; }
 .timeline-list .leg-chip .leg-src.offline { background:#f59e0b; }
 .timeline-list .leg-chip .leg-src.online  { background:#10b981; }
+/* Punto parpadeante mientras se recalcula la ruta real en segundo plano. */
+.timeline-list .leg-chip .leg-src.pending { animation:legPulse 1s ease-in-out infinite; }
+@keyframes legPulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.35; transform:scale(.7); } }
+/* Tramo largo = "trayecto" entre ciudades: informativo, no alarmante. */
+.timeline-list .leg-chip.leg-long .leg-info {
+  color:var(--accent); background:color-mix(in srgb, var(--accent) 9%, var(--bg-soft));
+  border-color:color-mix(in srgb, var(--accent) 22%, var(--line-soft));
+}
+/* Resumen de ruta del día. */
+.day-route-summary {
+  margin:2px 0 8px 20px; font-size:11.5px; font-weight:600; color:var(--text-muted);
+  display:flex; align-items:center; gap:6px; font-feature-settings:"tnum","ss01";
+}
+.day-group.collapsed .day-route-summary { display:none; }
+/* Aviso "quizá no dé tiempo" a nivel de día, con botón "Es correcto". */
+.day-fit-warn {
+  display:flex; gap:10px; align-items:flex-start;
+  margin:0 0 10px; padding:10px 12px; border-radius:var(--r-md);
+  background:color-mix(in srgb, #f59e0b 11%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, #f59e0b 38%, var(--line));
+}
+.day-group.collapsed .day-fit-warn { display:none; }
+.day-fit-warn .dfw-ico { font-size:15px; line-height:1.3; flex-shrink:0; }
+.day-fit-warn .dfw-body { display:flex; flex-direction:column; gap:7px; min-width:0; }
+.day-fit-warn .dfw-msg { font-size:12.5px; color:var(--text); line-height:1.4; }
+.day-fit-warn .dfw-ok { align-self:flex-start; }
 /* Aviso de horario (posible cierre). */
 .oh-warn { flex-shrink:0; font-size:12px; }
 
@@ -5726,10 +5752,73 @@ const TripDetail = {
     Router.render();
   },
 
+  // Controlador de la ruta de un día: agrupa sus tramos, pinta el resumen y el aviso
+  // de "quizá no dé tiempo", y lanza el recálculo online en lote.
+  _dayRoute(t, dayKey) {
+    const legs = [];
+    const summaryEl = el('div', { class:'day-route-summary' });
+    let warnEl = null, dayArrRef = null, listRef = null, ready = false;
+    const self = {
+      addLeg(leg) { legs.push(leg); return leg; },
+      recompute() {
+        if (!ready) return;
+        const travelMin = legs.reduce((s, l) => s + (l.val ? l.val.min : 0), 0);
+        const travelKm  = legs.reduce((s, l) => s + (l.val ? l.val.km : 0), 0);
+        const realStops = dayArrRef.filter(i => !i._virtual);
+        // Resumen de ruta del día.
+        if (legs.length) {
+          summaryEl.style.display = '';
+          summaryEl.textContent = `🧭 ${realStops.length} ${realStops.length === 1 ? 'parada' : 'paradas'} · 🚗 ${fmtDur(travelMin)} en ruta · ${fmtKm(travelKm)}`;
+        } else { summaryEl.style.display = 'none'; }
+        // ¿Cabe el día? Ventana = desde la primera hora asignada (o 9:00) hasta las 23:00.
+        const times = realStops.map(i => i.time).filter(Boolean).map(s => parseInt(s.slice(0,2),10) * 60 + parseInt(s.slice(3,5),10));
+        const startMin = times.length ? Math.min(...times) : 9 * 60;
+        const available = 23 * 60 - startMin;
+        const needed = realStops.reduce((s, i) => s + visitMinutes(i), 0) + travelMin;
+        const sig = daySig(dayArrRef);
+        const ackd = (tripSettings(t).day_fit_ok || {})[dayKey] === sig;
+        const shouldWarn = legs.length > 0 && (needed - available) > 45 && !ackd;
+        const msg = `Quizá no dé tiempo: ~${fmtDur(needed)} entre visitas y trayectos para una jornada de ~${fmtDur(available)}.`;
+        if (shouldWarn && !warnEl) {
+          warnEl = el('div', { class:'day-fit-warn' }, [
+            el('span', { class:'dfw-ico', text:'⚠️' }),
+            el('div', { class:'dfw-body' }, [
+              el('div', { class:'dfw-msg', text: msg }),
+              canEdit() ? el('button', { class:'btn btn-sm btn-ghost dfw-ok', onclick: () => {
+                const s = tripSettingsMut(t); (s.day_fit_ok = s.day_fit_ok || {})[dayKey] = daySig(dayArrRef);
+                try { DB.put('trips', t); } catch (_) {}
+                if (warnEl) { warnEl.remove(); warnEl = null; }
+              } }, [ el('span', { html: svg('check') }), el('span', { text:'Es correcto' }) ]) : null,
+            ].filter(Boolean)),
+          ]);
+          listRef.parentNode.insertBefore(warnEl, listRef);
+        } else if (!shouldWarn && warnEl) {
+          warnEl.remove(); warnEl = null;
+        } else if (shouldWarn && warnEl) {
+          warnEl.querySelector('.dfw-msg').textContent = msg;
+        }
+      },
+      finalize(dayArr, list, waypoints, token) {
+        ready = true; dayArrRef = dayArr; listRef = list;
+        list.insertBefore(summaryEl, list.firstChild);
+        self.recompute();
+        if (waypoints.length >= 2 && legs.some(l => !l.online)) {
+          legs.forEach(l => { if (!l.online) l.setPending(true); });
+          enqueueDayRoute({ pts: waypoints, token, done: () => {
+            legs.forEach(l => { l.setPending(false); l.applyFromCache(); });
+            self.recompute();
+          } });
+        }
+      },
+    };
+    return self;
+  },
+
   // Chip de tiempo/distancia entre dos paradas. Muestra primero la estimación
-  // offline (punto naranja) y, si hay caché o se puede recalcular online, la
-  // distancia/tiempo REAL por carretera (punto verde, persistente).
-  _legChip(a, b) {
+  // offline (punto naranja) y, cuando hay caché o se recalcula online, la
+  // distancia/tiempo REAL por carretera (punto verde, persistente). Los tramos
+  // largos se muestran como "Trayecto" (informativo, sin alarma).
+  _legChip(a, b, route) {
     const off = legBetween(a, b);
     const key = routeKey(a, b);
     const cached = _routeCache[key];
@@ -5737,17 +5826,22 @@ const TripDetail = {
     const dot = el('span', { class:'leg-src' });
     const chip = el('a', { class:'leg-chip', target:'_blank', rel:'noopener', title:'Cómo llegar', onclick: (e) => e.stopPropagation() }, [ info, dot ]);
     const travel = (m) => m === 'walk' ? 'walking' : (m === 'bike' ? 'bicycling' : 'driving');
-    const set = (km, min, mode, online) => {
-      info.textContent = `${MODE_EMOJI[mode] || MODE_EMOJI.car} ~${min} min · ${fmtKm(km)}`;
+    const leg = { key, val: null, online: false };
+    const render = (km, min, mode, online) => {
+      const long = km >= 30 || min >= 50;
+      chip.classList.toggle('leg-long', long);
+      const head = MODE_EMOJI[mode] || MODE_EMOJI.car;
+      info.textContent = long ? `${head} Trayecto · ~${fmtDur(min)} · ${fmtKm(km)}` : `${head} ~${fmtDur(min)} · ${fmtKm(km)}`;
       dot.className = 'leg-src ' + (online ? 'online' : 'offline');
       dot.title = online ? 'Distancia real por carretera (en línea)' : 'Estimación aproximada en línea recta';
       chip.href = `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${b.lat},${b.lng}&travelmode=${travel(mode)}`;
+      leg.val = { km, min, mode }; leg.online = online;
     };
-    if (cached) set(cached.km, cached.min, cached.mode || off.mode, true);
-    else {
-      set(off.km, off.min, off.mode, false);
-      enqueueRoute({ key, a, b, el: chip, apply: (r) => set(r.km, r.min, r.mode, true) });
-    }
+    leg.setPending = (on) => dot.classList.toggle('pending', on && !leg.online);
+    leg.applyFromCache = () => { const c = _routeCache[key]; if (c) render(c.km, c.min, c.mode || off.mode, true); };
+    if (cached) render(cached.km, cached.min, cached.mode || off.mode, true);
+    else render(off.km, off.min, off.mode, false);
+    if (route) route.addLeg(leg);
     return chip;
   },
 
@@ -5922,6 +6016,8 @@ const TripDetail = {
       root.appendChild(el('div', { class:'past-days-bar' }, [ pastBtn ]));
     }
 
+    // Token de render: invalida los recálculos de rutas en vuelo de renders anteriores.
+    const renderToken = (TripDetail._planRenderToken = {});
     for (const k of keys) {
       const collapsed = TripDetail._collapsedDays.has(k);
       const isPast = pastKeys.includes(k);
@@ -5984,20 +6080,24 @@ const TripDetail = {
 
       const list = el('div', { class:'list timeline-list', data:{ day:k } });
       const dayArr = byDay[k];
+      const route = this._dayRoute(t, k);
+      const waypoints = [];          // paradas con coords (sin "noches"), en orden
       for (let di = 0; di < dayArr.length; di++) {
         const it = dayArr[di];
         list.appendChild(this._planningItem(it, t));
+        if (it.lat != null && it.lng != null && it._virtual !== 'night') waypoints.push({ lat: it.lat, lng: it.lng });
         // Conector con tiempo/distancia hasta la siguiente parada (si ambas tienen
         // coordenadas y ninguna es una "noche" de hotel).
         const nx = dayArr[di + 1];
         if (nx && it.lat != null && it.lng != null && nx.lat != null && nx.lng != null
             && it._virtual !== 'night' && nx._virtual !== 'night') {
           const a = { lat: it.lat, lng: it.lng }, b = { lat: nx.lat, lng: nx.lng };
-          if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b));
+          if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route));
         }
       }
       g.appendChild(list);
       root.appendChild(g);
+      route.finalize(dayArr, list, waypoints, renderToken);
     }
 
     setTimeout(() => TripDetail._wirePlanningDnD(root, t), 0);
@@ -6030,6 +6130,37 @@ const TripDetail = {
     // cae fuera del horario de apertura. Cacheado y limitado para no saturar Overpass.
     const _byId = {}; items.forEach(i => { if (!i._virtual) _byId[i.id] = i; });
     TripDetail._checkVisibleOpeningHours(root, _byId);
+
+    // Rellena coordenadas que falten (paradas con dirección pero sin lat/lng), para
+    // que aparezcan distancias, mapa y clima. En segundo plano y re-renderiza al añadir.
+    TripDetail._backfillCoords(t, items);
+  },
+
+  // Geocodifica en segundo plano las paradas con dirección pero sin coordenadas y
+  // guarda el lat/lng en la parada. Throttled (1/seg, vía geocodeText) y abortable.
+  async _backfillCoords(t, items) {
+    if (!canEdit() || !navigator.onLine) return;
+    const token = {}; TripDetail._geoToken = token;
+    const targets = items.filter(i => !i._virtual && (i.lat == null || i.lng == null) && (i.address || i.place_name));
+    if (!targets.length) return;
+    let changed = 0;
+    for (const it of targets) {
+      if (TripDetail._geoToken !== token) return;          // re-render: abortar
+      const c = await geocodeText(it.address || it.place_name);
+      if (TripDetail._geoToken !== token) return;
+      if (c) {
+        const fresh = await DB.get('planning_items', it.id); // por si cambió mientras tanto
+        if (fresh && (fresh.lat == null || fresh.lng == null)) {
+          fresh.lat = c.lat; fresh.lng = c.lng;
+          if (!fresh.gmaps_url) fresh.gmaps_url = gmapsUrl(c.lat, c.lng, fresh.place_name);
+          try { await DB.put('planning_items', fresh); changed++; } catch (_) {}
+          if (changed === 1) UI.toast('Añadiendo ubicaciones que faltaban…');
+        }
+      }
+      // Re-pintar por lotes para que las distancias vayan apareciendo progresivamente.
+      if (changed > 0 && changed % 6 === 0 && TripDetail._geoToken === token) { Router.render(); return; }
+    }
+    if (changed && TripDetail._geoToken === token) Router.render();
   },
 
   // Comprueba horarios de apertura de las paradas visibles (con coords + hora) y
@@ -10696,11 +10827,30 @@ const MODE_EMOJI = { walk:'🚶', car:'🚗', bike:'🚴' };
 function legBetween(a, b) {
   const km = haversineKm(a, b) * 1.35;
   const mode = km < 1.3 ? 'walk' : 'car';
-  const speed = mode === 'walk' ? 4.8 : 32; // km/h
+  // Velocidad por tramos para que la estimación offline sea creíble (evita avisos
+  // falsos en traslados largos): ciudad < nacional < autovía.
+  const speed = mode === 'walk' ? 4.8 : (km < 25 ? 32 : km < 120 ? 70 : 95); // km/h
   const min = Math.max(1, Math.round(km / speed * 60));
   return { km, min, mode };
 }
 function fmtKm(km) { return km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1).replace('.', ',') + ' km'; }
+function fmtDur(min) {
+  min = Math.max(0, Math.round(min));
+  if (min < 60) return min + ' min';
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+// Minutos de visita estimados por tipo de parada (para saber si el día "cabe").
+const VISIT_MIN = { comida:75, playa:150, actividad:90, personas:90, lugar:60, compras:45, otro:45 };
+function visitMinutes(it) {
+  if (it._virtual || it.type === 'hotel') return 0;
+  return VISIT_MIN[it.type] != null ? VISIT_MIN[it.type] : 60;
+}
+// Firma del plan del día (lo relevante para tiempos): si cambia, se reevalúa el aviso.
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+function daySig(dayArr) {
+  return hashStr(dayArr.filter(i => !i._virtual).map(i => `${i.id}|${i.lat || ''}|${i.lng || ''}|${i.time || ''}|${i.type}`).join(';'));
+}
 
 // Color estable por número de día (día 1, 2, 3…) para el mapa por días.
 const MAP_DAY_COLORS = ['#2563eb','#16a34a','#f97316','#a855f7','#ec4899','#0891b2','#ca8a04','#dc2626','#0d9488','#7c3aed'];
@@ -10764,6 +10914,42 @@ function ohIsOpen(oh, dateStr, hhmm) {
   return sawToday ? openNow : null;
 }
 
+// ---- Geocodificación (Nominatim) con caché persistente ----
+// Rellena coordenadas de paradas que tienen dirección pero no lat/lng, para que
+// funcionen distancias, mapa y clima. Respeta el límite de 1 consulta/seg.
+const _geoCache = (() => { try { return JSON.parse(localStorage.getItem('viajes_geocache') || '{}'); } catch (_) { return {}; } })();
+let _geoCacheSaveT = null;
+function saveGeoCache() {
+  clearTimeout(_geoCacheSaveT);
+  _geoCacheSaveT = setTimeout(() => {
+    try {
+      const keys = Object.keys(_geoCache);
+      if (keys.length > 1500) keys.slice(0, keys.length - 1500).forEach(k => delete _geoCache[k]);
+      localStorage.setItem('viajes_geocache', JSON.stringify(_geoCache));
+    } catch (_) {}
+  }, 500);
+}
+let _geoLast = 0;
+async function geocodeText(text) {
+  const key = String(text || '').trim().toLowerCase();
+  if (!key) return null;
+  if (key in _geoCache) return _geoCache[key];   // cachea también "no encontrado" (null)
+  if (!navigator.onLine) return null;
+  const wait = 1100 - (Date.now() - _geoLast);   // 1 req/seg (política de Nominatim)
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _geoLast = Date.now();
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url, { headers: { 'Accept-Language':'es', 'User-Agent': CFG.appName } });
+    if (!res.ok) return null;                     // error temporal: reintentar luego (no cachear)
+    const data = await res.json();
+    const p = data && data[0];
+    const c = p ? { lat: parseFloat(p.lat), lng: parseFloat(p.lon) } : null;
+    _geoCache[key] = c; saveGeoCache();           // cachea resultado o ausencia
+    return c;
+  } catch (_) { return null; }
+}
+
 // ---- Rutas reales (OSRM) con caché persistente ----
 // La estimación offline (línea recta) se sustituye por la distancia/tiempo REAL por
 // carretera cuando hay red, y se guarda en localStorage para que persista offline.
@@ -10781,39 +10967,53 @@ function saveRouteCache() {
   }, 500);
 }
 function routeKey(a, b) { return `${(+a.lat).toFixed(5)},${(+a.lng).toFixed(5)};${(+b.lat).toFixed(5)},${(+b.lng).toFixed(5)}`; }
-// Usa SIEMPRE el perfil de coche de OSRM para la distancia REAL por carretera (el
-// servidor demo solo es fiable con 'driving'). Re-decide el modo por esa distancia
-// real; el tiempo a pie se estima de la distancia real, el de coche es el de OSRM.
-async function fetchRoute(a, b) {
+// Convierte un tramo de OSRM (siempre perfil coche, lo único fiable en el servidor
+// demo) en { km, min, mode }. Re-decide el modo por la distancia REAL por carretera;
+// el tiempo a pie se estima de esa distancia, el de coche es el de OSRM.
+function legFromOsrm(distM, durS) {
+  const km = distM / 1000;
+  const mode = km < 1.6 ? 'walk' : 'car';
+  const min = mode === 'walk' ? Math.max(1, Math.round(km / 4.8 * 60)) : Math.max(1, Math.round(durS / 60));
+  return { km, min, mode };
+}
+// Pide el día ENTERO en una sola llamada (varios waypoints) → menos peticiones y
+// menos riesgo de que el servidor público nos limite. Devuelve un tramo por cada
+// par de waypoints consecutivos, o null si falla.
+async function fetchDayRoute(pts) {
+  if (pts.length < 2) return [];
   try {
-    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 8000);
-    const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
+    const coords = pts.map(p => `${p.lng},${p.lat}`).join(';');
+    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 10000);
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`;
     const res = await fetch(url, { signal: ctrl.signal }); clearTimeout(to);
     if (!res.ok) return null;
     const data = await res.json();
     const r = data.routes && data.routes[0];
-    if (!r) return null;
-    const km = r.distance / 1000;
-    const mode = km < 1.6 ? 'walk' : 'car';
-    const min = mode === 'walk' ? Math.max(1, Math.round(km / 4.8 * 60)) : Math.max(1, Math.round(r.duration / 60));
-    return { km, min, mode };
+    if (!r || !r.legs) return null;
+    return r.legs.map(lg => legFromOsrm(lg.distance, lg.duration));
   } catch (_) { return null; }
 }
-// Cola que procesa los recálculos online de uno en uno (no satura OSRM). Se drena
-// con un pequeño retardo para que los chips ya estén montados en el DOM.
-let _routeQueue = [], _routeBusy = false, _routeDrainT = null;
-function enqueueRoute(job) { _routeQueue.push(job); clearTimeout(_routeDrainT); _routeDrainT = setTimeout(drainRouteQueue, 80); }
-async function drainRouteQueue() {
-  if (_routeBusy) return; _routeBusy = true;
-  while (_routeQueue.length) {
-    const job = _routeQueue.shift();
-    if (!job.el.isConnected) continue; // el chip ya no está en la página
-    if (_routeCache[job.key]) { job.apply(_routeCache[job.key]); continue; }
-    const r = await fetchRoute(job.a, job.b);
-    if (r) { _routeCache[job.key] = { km: r.km, min: r.min, mode: r.mode }; saveRouteCache(); job.apply(r); }
-    await new Promise(res => setTimeout(res, 350));
+// Cola de recálculo online: un día (lote) cada vez, con un retardo para no saturar
+// OSRM y para que los chips ya estén montados en el DOM.
+let _dayRouteQueue = [], _dayRouteBusy = false, _dayRouteDrainT = null;
+function enqueueDayRoute(job) { _dayRouteQueue.push(job); clearTimeout(_dayRouteDrainT); _dayRouteDrainT = setTimeout(drainDayRouteQueue, 120); }
+async function drainDayRouteQueue() {
+  if (_dayRouteBusy) return; _dayRouteBusy = true;
+  while (_dayRouteQueue.length) {
+    const job = _dayRouteQueue.shift();
+    const stale = job.token && TripDetail._planRenderToken && job.token !== TripDetail._planRenderToken;
+    const missing = job.pts.some((p, i) => i < job.pts.length - 1 && !_routeCache[routeKey(job.pts[i], job.pts[i + 1])]);
+    if (!stale && missing) {
+      const legs = await fetchDayRoute(job.pts);
+      if (legs) {
+        for (let i = 0; i < legs.length; i++) _routeCache[routeKey(job.pts[i], job.pts[i + 1])] = legs[i];
+        saveRouteCache();
+      }
+      await new Promise(res => setTimeout(res, 300));
+    }
+    try { job.done(); } catch (_) {}
   }
-  _routeBusy = false;
+  _dayRouteBusy = false;
 }
 
 /* ============================================================
