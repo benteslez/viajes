@@ -1128,6 +1128,10 @@ h2.section-title {
 .pending-text { font-weight:600; font-size:14px; word-break:break-word; }
 .pending-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
 .pending-divider { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin:18px 0 8px; }
+.pending-auto-list { margin-bottom:26px; }
+/* Texto un poco más grande en las pastillas de pendientes (manual y del planning). */
+.pack-item.pending-item .pack-name { font-size:16px; }
+.pending-item .pending-text { font-size:15px; }
 /* Pendientes — modo checklist (reutiliza estilos .pack-*) */
 .pending-warn { flex-shrink:0; font-size:15px; line-height:1; }
 .pending-date-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
@@ -8836,7 +8840,7 @@ const TripDetail = {
     // --- Eventos del planning (en consulta / por iniciar) — solo lectura ---
     if (auto.length) {
       root.appendChild(el('div', { class:'pending-divider', text:'Del planning' }));
-      const list = el('div', { class:'list pending-list' });
+      const list = el('div', { class:'list pending-list pending-auto-list' });
       auto.forEach(a => {
         const it = a.item; const td = typeDef(it.type); const st = itemStatus(it); const stDef = STATUS_PLANNING.find(s => s.id === st);
         const overdue = a.date && a.date < today;
@@ -8910,11 +8914,12 @@ const TripDetail = {
       const makeRow = (m) => {
         const draggable = editMode && sort === 'custom' && canEdit();
         const row = el('div', { class:'pack-item pending-item' + (isOverdue(m) ? ' overdue' : ''), data:{ id:m.id, cat:c.id }, draggable: draggable ? 'true' : 'false' });
-        const check = el('button', { class:'pack-check', 'aria-pressed':'false', title:'Marcar hecho', html:'',
-          onclick:(e)=>{ e.stopPropagation(); if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; } completeWithAnim(m, row); } });
+        // Marcar hecho: vale tanto la casilla como el texto de la pastilla.
+        const doToggle = (e) => { if (e) e.stopPropagation(); if (row._justDragged) { row._justDragged = false; return; } if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; } completeWithAnim(m, row); };
+        const check = el('button', { class:'pack-check', 'aria-pressed':'false', title:'Marcar hecho', html:'', onclick: doToggle });
         row.appendChild(check);
         if (isOverdue(m)) row.appendChild(el('span', { class:'pending-warn', title:'Fecha pasada', text:'⚠️' }));
-        row.appendChild(el('div', { class:'pack-name', onclick:()=>{ if (canEdit()) TripDetail._openPendingEditor(t, m); } }, [
+        row.appendChild(el('div', { class:'pack-name', onclick: doToggle }, [
           el('div', { text: m.text || '(sin texto)' }),
           (m.date || m.time) ? el('div', { class:'pending-date-sub', text: [ m.date ? fmtDateShort(m.date) : '', m.time || '' ].filter(Boolean).join(' · ') }) : null,
         ].filter(Boolean)));
@@ -8927,7 +8932,7 @@ const TripDetail = {
           let lpTimer=null, lpDrag=false, lpStartY=0;
           row.addEventListener('touchstart', (e)=>{ if (e.target.closest('button')) return; lpStartY=e.touches[0].clientY; lpTimer=setTimeout(()=>{ lpDrag=true; row.classList.add('dragging'); document.body.classList.add('pack-dragging'); if (navigator.vibrate) { try{navigator.vibrate(12);}catch(_){} } }, 320); }, { passive:true });
           row.addEventListener('touchmove', (e)=>{ if (!lpDrag) { if (lpTimer && Math.abs(e.touches[0].clientY-lpStartY)>8) { clearTimeout(lpTimer); lpTimer=null; } return; } e.preventDefault(); reorderTo(e.touches[0].clientY, row); }, { passive:false });
-          const endTouch=()=>{ clearTimeout(lpTimer); lpTimer=null; if (lpDrag) { lpDrag=false; row.classList.remove('dragging'); document.body.classList.remove('pack-dragging'); persistGroupOrder(); } };
+          const endTouch=()=>{ clearTimeout(lpTimer); lpTimer=null; if (lpDrag) { lpDrag=false; row.classList.remove('dragging'); document.body.classList.remove('pack-dragging'); row._justDragged = true; persistGroupOrder(); } };
           row.addEventListener('touchend', endTouch);
           row.addEventListener('touchcancel', endTouch);
         }
@@ -8957,10 +8962,10 @@ const TripDetail = {
       if (open) {
         const list = el('div', { class:'pack-list' });
         doneItems.forEach(m => {
+          const undo = () => { if (!canEdit()) return; m.done=false; m.done_at=null; saveManual().then(()=>{ const sy=window.scrollY; Router.render().then(()=>window.scrollTo(0,sy)); }); };
           list.appendChild(el('div', { class:'pack-item pending-item done' }, [
-            el('button', { class:'pack-check on', title:'Marcar pendiente', html: svg('check'),
-              onclick:()=>{ if (!canEdit()) return; m.done=false; m.done_at=null; saveManual().then(()=>{ const sy=window.scrollY; Router.render().then(()=>window.scrollTo(0,sy)); }); } }),
-            el('div', { class:'pack-name', onclick:()=>{ if (canEdit()) TripDetail._openPendingEditor(t, m); } }, [
+            el('button', { class:'pack-check on', title:'Marcar pendiente', html: svg('check'), onclick: undo }),
+            el('div', { class:'pack-name', onclick: undo }, [
               el('div', { text: m.text || '(sin texto)' }),
               (m.date || m.time) ? el('div', { class:'pending-date-sub', text: [ m.date ? fmtDateShort(m.date) : '', m.time || '' ].filter(Boolean).join(' · ') }) : null,
             ].filter(Boolean)),
