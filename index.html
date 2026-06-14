@@ -2678,6 +2678,11 @@ const TYPES_PLANNING = [
 ];
 const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[0];
 
+// Tipos "rango" (con fechas inicio/fin propias vía consultation_*). El resto son
+// "puntuales" y admiten día de inicio + día de fin (evento de varios días).
+const RANGE_TYPES = ['hotel', 'vuelo', 'transporte', 'coche'];
+const isSpanType = (ty) => !RANGE_TYPES.includes(ty);
+
 // Categoría de presupuesto a partir del tipo de evento (fuente única de verdad
 // para que un gasto vinculado siempre caiga en la categoría correcta).
 const budgetCategoryForType = (type) => (
@@ -5726,7 +5731,7 @@ const TripDetail = {
         // una "llegada" virtual el día de llegada con su hora.
         items.push(it);
         items.push({ ...it, _virtual:'arrival', day_date:d2, time: it.consultation_planned_t2 || null });
-      } else if ((it.type === 'lugar' || it.type === 'playa') && it.metadata && it.metadata.end_date && it.day_date && it.metadata.end_date > it.day_date) {
+      } else if (isSpanType(it.type) && it.metadata && it.metadata.end_date && it.day_date && it.metadata.end_date > it.day_date) {
         // Evento de varios días: el día de inicio es el real (editable) y los días
         // siguientes hasta el fin son copias virtuales 'span' (el mismo evento repetido).
         const ds = it.day_date, de = it.metadata.end_date;
@@ -6396,7 +6401,7 @@ const TripDetail = {
     if (it.address) subParts.push(it.address);
     // Evento de varios días (lugar/playa con día de fin): en el día de inicio mostramos
     // "Hasta DD/MM"; en las copias de continuación, "Continúa · día N de M".
-    if ((it.type === 'lugar' || it.type === 'playa') && it.metadata && it.metadata.end_date) {
+    if (isSpanType(it.type) && it.metadata && it.metadata.end_date) {
       const sStart = it._spanStart || it.day_date;
       if (it.metadata.end_date > sStart) {
         if (it._virtual === 'span') {
@@ -6506,7 +6511,7 @@ const TripDetail = {
     const timeRangeText = (() => {
       if (!showTime) return null;
       const start = it.time;
-      let end = (it.type === 'lugar' || it.type === 'playa') ? it.end_time : null;
+      let end = isSpanType(it.type) ? it.end_time : null;
       // Transporte/vuelo: si hay hora de llegada el mismo día, mostramos
       // "salida – llegada" en la misma pill (la llegada no es obligatoria).
       if (!end && !isVirtual && (it.type === 'transporte' || it.type === 'vuelo')) {
@@ -6743,11 +6748,13 @@ const TripDetail = {
 
     // Datos por día: alojamiento (fondo) y categorías (anillo). Recargable, para
     // reflejar cambios al volver de la tarjeta (añadir/editar un lugar, etc.).
-    let accom = {}, catsByDay = {}, tripStart = t.start_date, tripEnd = t.end_date;
+    // spanStartDays/spanEndDays: días que son inicio/fin de un evento multi-día (para
+    // colocar el transporte a la izquierda el día de inicio y a la derecha el de fin).
+    let accom = {}, catsByDay = {}, spanStartDays = new Set(), spanEndDays = new Set(), tripStart = t.start_date, tripEnd = t.end_date;
     const loadData = async () => {
       const rawItems = await DB.listByTrip('planning_items', t.id);
       const items = this._expandHotels(rawItems);
-      accom = {}; catsByDay = {};
+      accom = {}; catsByDay = {}; spanStartDays = new Set(); spanEndDays = new Set();
       for (const it of items) {
         const k = it.day_date; if (!k) continue;
         if (it.type === 'hotel') {
@@ -6756,6 +6763,8 @@ const TripDetail = {
         }
         const c = catOfType(it.type);
         if (c) (catsByDay[k] = catsByDay[k] || new Set()).add(c);
+        // El evento real multi-día marca su día de inicio y su día de fin.
+        if (it._spanStart && it._spanEnd && !it._virtual) { spanStartDays.add(it._spanStart); spanEndDays.add(it._spanEnd); }
       }
       // Rango del viaje (para qué días son "navegables"); si no hay fechas, usa los eventos.
       tripStart = t.start_date; tripEnd = t.end_date;
@@ -6767,12 +6776,26 @@ const TripDetail = {
     await loadData();
 
     const fmtKey = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
-    const ringFor = (set, bg) => {
-      const cats = CAL_ORDER.filter(c => set && set.has(c));
+    // Construye el anillo a partir de una lista YA ORDENADA de categorías. El conic-gradient
+    // empieza arriba (0°) y va en sentido horario: el 1er color ocupa la mitad DERECHA y el
+    // último la mitad IZQUIERDA (con 2 categorías). Por eso el orden controla izquierda/derecha.
+    const ringFromCats = (cats, bg) => {
       if (!cats.length) return bg;
       if (cats.length === 1) return CAL_COLOR[cats[0]];
       const seg = 360 / cats.length;
       return `conic-gradient(${cats.map((c,i)=>`${CAL_COLOR[c]} ${(i*seg).toFixed(2)}deg ${((i+1)*seg).toFixed(2)}deg`).join(', ')})`;
+    };
+    // Orden de categorías de un día: por defecto CAL_ORDER, pero si el día es inicio/fin de
+    // un evento multi-día y hay transporte, lo colocamos a la izquierda (inicio) o a la
+    // derecha (fin) para que "abra" y "cierre" el bloque.
+    const orderedCats = (set, key) => {
+      const cats = CAL_ORDER.filter(c => set && set.has(c) && !hidden.has(c));
+      if (cats.length > 1 && cats.includes('transporte')) {
+        const rest = cats.filter(c => c !== 'transporte');
+        if (spanStartDays.has(key)) return [...rest, 'transporte'];      // transporte → izquierda
+        if (spanEndDays.has(key))   return ['transporte', ...rest];      // transporte → derecha
+      }
+      return cats;
     };
 
     const today = todayIso();
@@ -6811,14 +6834,14 @@ const TripDetail = {
         const isToday = key === today;
         if (inTrip) {
           const set = catsByDay[key];
-          const visibleCats = CAL_ORDER.filter(c => set && set.has(c) && !hidden.has(c));
-          const hasRing = visibleCats.length > 0;
+          const ordered = orderedCats(set, key);   // respeta izquierda/derecha del transporte
+          const hasRing = ordered.length > 0;
           const bg = (accom[key] && showAccom) ? '#D4EDDA' : '#fff';
           const ring = el('span', { class:'tcal-ring' }, [
             el('span', { class:'tcal-num', text: String(dt.getDate()) }),
           ]);
           // Custom properties: hay que usar setProperty (Object.assign no las aplica).
-          ring.style.setProperty('--ring', ringFor(new Set(visibleCats), bg));
+          ring.style.setProperty('--ring', ringFromCats(ordered, bg));
           ring.style.setProperty('--cell-bg', bg);
           grid.appendChild(el('button', {
             class:'tcal-cell clickable' + (hasRing ? ' has-ring' : '') + (isToday ? ' today' : '') + (inMonth ? '' : ' out'),
@@ -7355,7 +7378,7 @@ const TripDetail = {
         });
         if (R.hint) datesBlock.appendChild(el('div', { class:'field-hint', text:R.hint }));
       } else {
-        const showEnd = (type === 'lugar' || type === 'playa');
+        const showEnd = true;   // todos los tipos puntuales admiten día y hora de fin
         const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
         datesBlock.appendChild(el('label', { text:'Fecha y hora' }));
         // Día y Hora de inicio, uno al lado del otro (2 columnas).
@@ -7984,7 +8007,7 @@ const TripDetail = {
       } else {
         it.day_date = $('#f-day')?.value || null;
         it.time = td.hideTime ? null : ($('#f-time')?.value || null);
-        it.end_time = (it.type === 'lugar' || it.type === 'playa') ? (($('#f-end-time')?.value || '').trim() || null) : null;
+        it.end_time = isSpanType(it.type) ? (($('#f-end-time')?.value || '').trim() || null) : null;
       }
       // place_name / address: solo si el tipo los expone
       const TYPES_WITH_PLACE_LOCAL = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
@@ -8032,10 +8055,10 @@ const TripDetail = {
         const am = $('#f-arrive-mode')?.value || 'auto';
         if (am && am !== 'auto') it.metadata.arrive_mode = am; else delete it.metadata.arrive_mode;
       }
-      // Día de fin (solo lugar/playa): por si el evento acaba otro día. En metadata jsonb.
-      if (it.type === 'lugar' || it.type === 'playa') {
+      // Día de fin (cualquier tipo puntual): por si el evento dura varios días. En metadata jsonb.
+      if (isSpanType(it.type)) {
         const ed = ($('#f-end-day')?.value || '').trim();
-        if (ed && ed !== it.day_date) it.metadata.end_date = ed; else delete it.metadata.end_date;
+        if (ed && ed > it.day_date) it.metadata.end_date = ed; else delete it.metadata.end_date;
       }
       // Zonas horarias (vuelos / transporte intercontinental)
       if (it.type === 'vuelo' || it.type === 'transporte') {
