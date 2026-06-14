@@ -6717,25 +6717,30 @@ const TripDetail = {
       : (ty === 'gestion' || ty === 'otro') ? 'gestion'
       : null; // hotel → null (solo fondo)
 
-    // Datos por día: alojamiento (fondo) y categorías (anillo).
-    const rawItems = await DB.listByTrip('planning_items', t.id);
-    const items = this._expandHotels(rawItems);
-    const accom = {}, catsByDay = {};
-    for (const it of items) {
-      const k = it.day_date; if (!k) continue;
-      if (it.type === 'hotel') {
-        if (it._virtual === 'night' || !it._virtual) accom[k] = true; // noche donde se duerme
-        continue;
+    // Datos por día: alojamiento (fondo) y categorías (anillo). Recargable, para
+    // reflejar cambios al volver de la tarjeta (añadir/editar un lugar, etc.).
+    let accom = {}, catsByDay = {}, tripStart = t.start_date, tripEnd = t.end_date;
+    const loadData = async () => {
+      const rawItems = await DB.listByTrip('planning_items', t.id);
+      const items = this._expandHotels(rawItems);
+      accom = {}; catsByDay = {};
+      for (const it of items) {
+        const k = it.day_date; if (!k) continue;
+        if (it.type === 'hotel') {
+          if (it._virtual === 'night' || !it._virtual) accom[k] = true; // noche donde se duerme
+          continue;
+        }
+        const c = catOfType(it.type);
+        if (c) (catsByDay[k] = catsByDay[k] || new Set()).add(c);
       }
-      const c = catOfType(it.type);
-      if (c) (catsByDay[k] = catsByDay[k] || new Set()).add(c);
-    }
-    // Rango del viaje (para qué días son "navegables"); si no hay fechas, usa los eventos.
-    let tripStart = t.start_date, tripEnd = t.end_date;
-    if (!tripStart || !tripEnd) {
-      const ds = Object.keys({ ...accom, ...catsByDay }).sort();
-      if (ds.length) { tripStart = tripStart || ds[0]; tripEnd = tripEnd || ds[ds.length - 1]; }
-    }
+      // Rango del viaje (para qué días son "navegables"); si no hay fechas, usa los eventos.
+      tripStart = t.start_date; tripEnd = t.end_date;
+      if (!tripStart || !tripEnd) {
+        const ds = Object.keys({ ...accom, ...catsByDay }).sort();
+        if (ds.length) { tripStart = tripStart || ds[0]; tripEnd = tripEnd || ds[ds.length - 1]; }
+      }
+    };
+    await loadData();
 
     const fmtKey = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
     const ringFor = (set, bg) => {
@@ -6797,7 +6802,9 @@ const TripDetail = {
               document.removeEventListener('keydown', onKey);
               overlay.style.display = 'none';
               TripDetail.openPlanningFlashcards(t, key, {
-                onBack: () => { overlay.style.display = 'flex'; document.addEventListener('keydown', onKey); },
+                // Al volver, recargamos datos por si se añadió/editó algo (que el círculo
+                // del color aparezca al momento).
+                onBack: async () => { overlay.style.display = 'flex'; document.addEventListener('keydown', onKey); await loadData(); renderMonth(); },
                 onClose: () => overlay.remove(),
               });
             },
