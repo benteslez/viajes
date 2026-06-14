@@ -2673,6 +2673,7 @@ const TYPES_PLANNING = [
   { id:'actividad',  label:'Actividad',                   requiresBooking:true,  icon:'ticket', emoji:'🎫' },
   { id:'comida',     label:'Comida',                      requiresBooking:false, supportsStatus:true, icon:'food', emoji:'🍽️' },
   { id:'compras',    label:'Compras',                     requiresBooking:false, supportsStatus:true, icon:'pin',  emoji:'🛍️' },
+  { id:'gestion',    label:'Gestión',                     requiresBooking:false, supportsStatus:true, icon:'doc',  emoji:'📋' },
   { id:'otro',       label:'Otro',                        requiresBooking:false, icon:'pin',    emoji:'📌' },
 ];
 const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[0];
@@ -2681,7 +2682,7 @@ const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[
 // para que un gasto vinculado siempre caiga en la categoría correcta).
 const budgetCategoryForType = (type) => (
   { hotel:'alojamiento', vuelo:'transporte', coche:'transporte', transporte:'transporte',
-    comida:'comida', compras:'compras' }[type] || 'actividades'
+    comida:'comida', compras:'compras', gestion:'otros' }[type] || 'actividades'
 );
 
 // Preferencias de interfaz por viaje, guardadas TODAS en una sola columna `settings`
@@ -5826,7 +5827,7 @@ const TripDetail = {
   // reasigna sus horas en secuencia (visita 60 min + tiempo de viaje estimado).
   async _optimizeDay(t, dayKey, items) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-    const MOV = ['lugar','playa','comida','actividad','personas','compras','otro'];
+    const MOV = ['lugar','playa','comida','actividad','personas','compras','otro','gestion'];
     const movable = items.filter(i => i.lat != null && i.lng != null && !i._virtual && MOV.includes(i.type));
     if (movable.length < 3) { UI.toast('Necesitas al menos 3 paradas con ubicación'); return; }
     const dist = (arr) => { let d = 0; for (let i = 1; i < arr.length; i++) d += haversineKm(arr[i-1], arr[i]); return d; };
@@ -6311,7 +6312,7 @@ const TripDetail = {
   async _backfillCoords(t, rawItems) {
     if (!canEdit() || !navigator.onLine) return;
     const token = {}; TripDetail._geoToken = token;
-    const GEO_TYPES = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
+    const GEO_TYPES = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
     const targets = rawItems.filter(i => !i._virtual && GEO_TYPES.includes(i.type) && (i.lat == null || i.lng == null) && (i.address || i.place_name));
     if (!targets.length) return;
     let changed = 0;
@@ -6703,16 +6704,17 @@ const TripDetail = {
   // alojamiento) con un anillo conic-gradient repartido por categorías activas.
   // Tocar un día abre la vista de tarjeta de ese día.
   async openPlanningCalendar(t) {
-    const CAL_ORDER = ['transporte','lugar','actividad','restaurante','personas','gestion'];
-    const CAL_COLOR = { transporte:'#2196F3', lugar:'#F4B400', actividad:'#9B59B6', restaurante:'#E67E22', personas:'#E91E8C', gestion:'#8D6E63' };
-    const CAL_LABEL = { transporte:'Transporte', lugar:'Lugar', actividad:'Actividad', restaurante:'Restaurante', personas:'Personas', gestion:'Gestión' };
+    const CAL_ORDER = ['transporte','lugar','actividad','restaurante','personas','compras','gestion'];
+    const CAL_COLOR = { transporte:'#2196F3', lugar:'#F4B400', actividad:'#9B59B6', restaurante:'#E67E22', personas:'#E91E8C', compras:'#CE93D8', gestion:'#8D6E63' };
+    const CAL_LABEL = { transporte:'Transporte', lugar:'Lugar', actividad:'Actividad', restaurante:'Restaurante', personas:'Personas', compras:'Compras', gestion:'Gestión' };
     const catOfType = (ty) =>
       (ty === 'vuelo' || ty === 'transporte' || ty === 'coche') ? 'transporte'
       : (ty === 'lugar') ? 'lugar'
       : (ty === 'actividad' || ty === 'playa') ? 'actividad'
       : (ty === 'comida') ? 'restaurante'
       : (ty === 'personas') ? 'personas'
-      : (ty === 'compras' || ty === 'otro') ? 'gestion'
+      : (ty === 'compras') ? 'compras'
+      : (ty === 'gestion' || ty === 'otro') ? 'gestion'
       : null; // hotel → null (solo fondo)
 
     // Datos por día: alojamiento (fondo) y categorías (anillo).
@@ -7542,7 +7544,7 @@ const TripDetail = {
 
     // Bloque "Lugar + dirección + buscador" — útil solo para tipos con localización física
     // (lugar, comida, hotel, actividad). Vuelo/coche/transporte usan sus propios campos.
-    const TYPES_WITH_PLACE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
+    const TYPES_WITH_PLACE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
 
     // Confirmación visual del lugar seleccionado — se refresca cuando el usuario
     // pulsa un resultado de Nominatim o cuando reabre un item con coords.
@@ -7592,7 +7594,7 @@ const TripDetail = {
 
     // Bloque "visita": duración estimada (ajusta el aviso de "no da tiempo") y modo
     // de transporte para llegar a esta parada (afecta al tiempo del tramo previo).
-    const VISIT_TYPES_LOCAL = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro'];
+    const VISIT_TYPES_LOCAL = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro', 'gestion'];
     const arriveSel = el('select', { id:'f-arrive-mode' }, [
       el('option', { value:'auto',    text:'Automático' }),
       el('option', { value:'walk',    text:'🚶 A pie' }),
@@ -7946,7 +7948,7 @@ const TripDetail = {
         it.end_time = (it.type === 'lugar' || it.type === 'playa') ? (($('#f-end-time')?.value || '').trim() || null) : null;
       }
       // place_name / address: solo si el tipo los expone
-      const TYPES_WITH_PLACE_LOCAL = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
+      const TYPES_WITH_PLACE_LOCAL = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
       if (TYPES_WITH_PLACE_LOCAL.includes(it.type)) {
         it.place_name = $('#f-place')?.value.trim() || null;
         it.address = $('#f-address')?.value.trim() || null;
@@ -7983,7 +7985,7 @@ const TripDetail = {
       }
       // Duración de visita + modo de llegada (se guardan en metadata jsonb, que sí
       // sincroniza). Solo para tipos que son "visitas".
-      const VISIT_TYPES_SAVE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro'];
+      const VISIT_TYPES_SAVE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro', 'gestion'];
       if (VISIT_TYPES_SAVE.includes(it.type)) {
         const durRaw = ($('#f-duration')?.value || '').trim();
         const dur = durRaw === '' ? null : Math.max(0, parseInt(durRaw, 10));
@@ -8745,7 +8747,7 @@ const TripDetail = {
         // Crear evento en el planning asociado (opcional; solo si se marca y no hay ya uno).
         let createdEvent = false;
         if ($('#fb-makeevt')?.checked && !b.planning_item_id) {
-          const evType = ({ transporte:'transporte', alojamiento:'hotel', comida:'comida', actividades:'actividad', compras:'compras', otros:'otro' })[b.category] || 'otro';
+          const evType = ({ transporte:'transporte', alojamiento:'hotel', comida:'comida', actividades:'actividad', compras:'compras', otros:'gestion' })[b.category] || 'gestion';
           const ev = {
             id: uuid(), trip_id: t.id, leg_id: null, type: evType, title: concept,
             day_date: b.date || null, time: null, end_time: null,
