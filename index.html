@@ -1512,6 +1512,11 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
   color:var(--accent); background:color-mix(in srgb, var(--accent) 9%, var(--bg-soft));
   border-color:color-mix(in srgb, var(--accent) 22%, var(--line-soft));
 }
+/* Tramo "desde el alojamiento" hasta la primera parada del día. */
+.timeline-list .leg-chip.leg-hotel .leg-info {
+  color:var(--accent-2); background:color-mix(in srgb, var(--accent-2) 10%, var(--bg-soft));
+  border-color:color-mix(in srgb, var(--accent-2) 24%, var(--line-soft));
+}
 /* Resumen de ruta del día. */
 .day-route-summary {
   margin:2px 0 8px 20px; font-size:11.5px; font-weight:600; color:var(--text-muted);
@@ -4220,6 +4225,16 @@ const Router = {
     }
   },
 
+  // Re-render conservando la posición de scroll (para ediciones in situ, p. ej. el
+  // título/color de un día, donde saltar arriba del todo es molesto).
+  async renderKeepScroll() {
+    const sc = document.scrollingElement || document.documentElement;
+    const y = sc ? sc.scrollTop : 0;
+    await this.render();
+    const s = document.scrollingElement || document.documentElement;
+    if (s) { s.scrollTop = y; requestAnimationFrame(() => { s.scrollTop = y; }); }
+  },
+
   async render() {
     const root = $('#view-root');
     const back = $('#btn-back');
@@ -5818,29 +5833,58 @@ const TripDetail = {
   // offline (punto naranja) y, cuando hay caché o se recalcula online, la
   // distancia/tiempo REAL por carretera (punto verde, persistente). Los tramos
   // largos se muestran como "Trayecto" (informativo, sin alarma).
-  _legChip(a, b, route) {
+  _legChip(a, b, route, opts) {
+    opts = opts || {};
+    const hotelSide = opts.hotel || null;               // 'from' | 'to' | null
+    const forceMode = (opts.forceMode && opts.forceMode !== 'auto') ? opts.forceMode : null;
+    const isHotel = !!hotelSide;
     const off = legBetween(a, b);
     const key = routeKey(a, b);
-    const cached = _routeCache[key];
+    // Compatibilidad con caché antigua ({km,min,mode}); ahora guardamos {km,drivingMin}.
+    const drivingOf = (c) => c.drivingMin != null ? c.drivingMin : (c.mode === 'car' ? c.min : Math.round((c.km || 0) / carSpeedKmh(c.km || 0) * 60));
     const info = el('span', { class:'leg-info' });
     const dot = el('span', { class:'leg-src' });
-    const chip = el('a', { class:'leg-chip', target:'_blank', rel:'noopener', title:'Cómo llegar', onclick: (e) => e.stopPropagation() }, [ info, dot ]);
-    const travel = (m) => m === 'walk' ? 'walking' : (m === 'bike' ? 'bicycling' : 'driving');
-    const leg = { key, val: null, online: false };
-    const render = (km, min, mode, online) => {
-      const long = km >= 30 || min >= 50;
+    const chip = el('a', { class:'leg-chip' + (isHotel ? ' leg-hotel' : ''), target:'_blank', rel:'noopener', title: isHotel ? 'Alojamiento' : 'Cómo llegar', onclick: (e) => e.stopPropagation() }, [ info, dot ]);
+    const travel = (m) => m === 'walk' ? 'walking' : (m === 'bike' ? 'bicycling' : (m === 'transit' ? 'transit' : 'driving'));
+    const leg = { key, val: null, online: false, _last: null };
+    // Pide la ruta peatonal real si el tramo se muestra a pie y aún no la tenemos.
+    const maybeFetchFoot = () => {
+      if (!leg.val || leg.val.mode !== 'walk') return;
+      const c = _routeCache[key];
+      if (c && c.walkKm != null) return;
+      leg.setPending(true);
+      enqueueFoot({ a, b, key, apply: () => { if (leg._last) render(leg._last.km, leg._last.drivingMin); if (route) route.recompute(); } });
+    };
+    const render = (km, drivingMin) => {
+      leg._last = { km, drivingMin };
+      const c = _routeCache[key];
+      const walk = (c && c.walkKm != null) ? { km: c.walkKm, min: c.walkMin } : null;
+      // "auto" decide a pie/coche por la distancia EN LÍNEA RECTA (off), no por el
+      // rodeo en coche (que infla trayectos urbanos cortos donde sí se va andando).
+      const mode0 = forceMode || off.mode;
+      // A pie: distancia/tiempo de la ruta peatonal real (o estimación por línea recta).
+      // Resto: distancia por carretera. Se calcula sobre la km adecuada en cada caso.
+      const v = (mode0 === 'walk') ? legView(off.km, drivingMin, 'walk', walk) : legView(km, drivingMin, mode0);
+      const mode = v.mode, min = v.min, dispKm = v.km;
+      // "Real" (verde) según el modo: a pie ⇒ ruta de pie; resto ⇒ ruta de coche.
+      const online = (mode === 'walk') ? !!walk : !!(c && c.km != null);
+      const long = dispKm >= 30 || min >= 50;
       chip.classList.toggle('leg-long', long);
-      const head = MODE_EMOJI[mode] || MODE_EMOJI.car;
-      info.textContent = long ? `${head} Trayecto · ~${fmtDur(min)} · ${fmtKm(km)}` : `${head} ~${fmtDur(min)} · ${fmtKm(km)}`;
+      let txt = (long ? `${MODE_EMOJI[mode] || MODE_EMOJI.car} Trayecto · ~${fmtDur(min)} · ${fmtKm(dispKm)}` : `${MODE_EMOJI[mode] || MODE_EMOJI.car} ~${fmtDur(min)} · ${fmtKm(dispKm)}`);
+      if (hotelSide === 'from') txt = '🏨 ' + txt;
+      else if (hotelSide === 'to') txt = txt + ' 🏨';
+      info.textContent = txt;
       dot.className = 'leg-src ' + (online ? 'online' : 'offline');
-      dot.title = online ? 'Distancia real por carretera (en línea)' : 'Estimación aproximada en línea recta';
+      dot.title = online ? (mode === 'walk' ? 'Ruta a pie real (en línea)' : 'Distancia real por carretera (en línea)') : 'Estimación aproximada';
       chip.href = `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${b.lat},${b.lng}&travelmode=${travel(mode)}`;
-      leg.val = { km, min, mode }; leg.online = online;
+      leg.val = { km: dispKm, min, mode }; leg.online = online;
     };
     leg.setPending = (on) => dot.classList.toggle('pending', on && !leg.online);
-    leg.applyFromCache = () => { const c = _routeCache[key]; if (c) render(c.km, c.min, c.mode || off.mode, true); };
-    if (cached) render(cached.km, cached.min, cached.mode || off.mode, true);
-    else render(off.km, off.min, off.mode, false);
+    leg.applyFromCache = () => { const c = _routeCache[key]; if (c && c.km != null) render(c.km, drivingOf(c)); maybeFetchFoot(); };
+    const cached = _routeCache[key];
+    if (cached && cached.km != null) render(cached.km, drivingOf(cached));
+    else render(off.km, off.drivingMin);
+    maybeFetchFoot();
     if (route) route.addLeg(leg);
     return chip;
   },
@@ -6018,6 +6062,15 @@ const TripDetail = {
 
     // Token de render: invalida los recálculos de rutas en vuelo de renders anteriores.
     const renderToken = (TripDetail._planRenderToken = {});
+    // Coordenadas del alojamiento de cada mañana = donde se durmió la noche anterior
+    // (o, si no hay, el hotel de esa misma noche). Para el tramo "desde el hotel".
+    const nightMap = nightCoordsMap(rawItems);
+    const morningHotel = (k) => {
+      if (k === 'sin-fecha') return null;
+      const d = parseDate(k); d.setDate(d.getDate() - 1);
+      const prev = d.toISOString().slice(0, 10);
+      return nightMap[prev] || nightMap[k] || null;
+    };
     for (const k of keys) {
       const collapsed = TripDetail._collapsedDays.has(k);
       const isPast = pastKeys.includes(k);
@@ -6082,18 +6135,40 @@ const TripDetail = {
       const dayArr = byDay[k];
       const route = this._dayRoute(t, k);
       const waypoints = [];          // paradas con coords (sin "noches"), en orden
+      let firstStopCard = null, firstStopCoords = null, firstStopItem = null;
+      let lastStopCoords = null, nightCard = null;
       for (let di = 0; di < dayArr.length; di++) {
         const it = dayArr[di];
-        list.appendChild(this._planningItem(it, t));
-        if (it.lat != null && it.lng != null && it._virtual !== 'night') waypoints.push({ lat: it.lat, lng: it.lng });
+        const card = this._planningItem(it, t);
+        list.appendChild(card);
+        if (it._virtual === 'night' && !nightCard) nightCard = card;
+        if (it.lat != null && it.lng != null && it._virtual !== 'night') {
+          waypoints.push({ lat: it.lat, lng: it.lng });
+          lastStopCoords = { lat: it.lat, lng: it.lng };
+          if (!firstStopCard) { firstStopCard = card; firstStopCoords = lastStopCoords; firstStopItem = it; }
+        }
         // Conector con tiempo/distancia hasta la siguiente parada (si ambas tienen
-        // coordenadas y ninguna es una "noche" de hotel).
+        // coordenadas y ninguna es una "noche" de hotel). El modo lo marca la parada
+        // de destino (cómo llegas a ella).
         const nx = dayArr[di + 1];
         if (nx && it.lat != null && it.lng != null && nx.lat != null && nx.lng != null
             && it._virtual !== 'night' && nx._virtual !== 'night') {
           const a = { lat: it.lat, lng: it.lng }, b = { lat: nx.lat, lng: nx.lng };
-          if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route));
+          if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route, { forceMode: arriveMode(nx) }));
         }
+      }
+      // Tramo "desde el alojamiento" hasta la primera parada del día (si hay hotel).
+      const hotelC = morningHotel(k);
+      if (hotelC && firstStopCoords && firstStopCard && legBetween(hotelC, firstStopCoords).km > 0.03) {
+        list.insertBefore(this._legChip(hotelC, firstStopCoords, route, { hotel:'from', forceMode: arriveMode(firstStopItem) }), firstStopCard);
+        waypoints.unshift(hotelC);
+      }
+      // Tramo "de vuelta al alojamiento" desde la última parada (hotel donde se duerme).
+      const nightC = nightMap[k];
+      if (nightC && lastStopCoords && legBetween(lastStopCoords, nightC).km > 0.03) {
+        const back = this._legChip(lastStopCoords, nightC, route, { hotel:'to' });
+        if (nightCard) list.insertBefore(back, nightCard); else list.appendChild(back);
+        waypoints.push(nightC);
       }
       g.appendChild(list);
       root.appendChild(g);
@@ -6105,7 +6180,7 @@ const TripDetail = {
     // Clima por día (async): cada día usa las coords de DONDE SE DUERME esa noche
     // (hotel cuyo rango cubre la noche); si no hay, la primera parada del día con
     // coords; y por último, las del viaje. Agrupamos por coords para minimizar fetches.
-    const nightMap = nightCoordsMap(rawItems);
+    // (nightMap ya está calculado arriba.)
     const tripC = tripCoords(rawItems);
     const wxGroups = {};
     for (const k of keys) {
@@ -6131,17 +6206,19 @@ const TripDetail = {
     const _byId = {}; items.forEach(i => { if (!i._virtual) _byId[i.id] = i; });
     TripDetail._checkVisibleOpeningHours(root, _byId);
 
-    // Rellena coordenadas que falten (paradas con dirección pero sin lat/lng), para
-    // que aparezcan distancias, mapa y clima. En segundo plano y re-renderiza al añadir.
-    TripDetail._backfillCoords(t, items);
+    // Rellena coordenadas que falten (paradas Y alojamientos con dirección pero sin
+    // lat/lng), para que aparezcan distancias, mapa y clima. Usa rawItems (incluye el
+    // hotel real, que en `items` solo aparece como noches virtuales).
+    TripDetail._backfillCoords(t, rawItems);
   },
 
-  // Geocodifica en segundo plano las paradas con dirección pero sin coordenadas y
-  // guarda el lat/lng en la parada. Throttled (1/seg, vía geocodeText) y abortable.
-  async _backfillCoords(t, items) {
+  // Geocodifica en segundo plano las paradas/alojamientos con dirección pero sin
+  // coordenadas y guarda el lat/lng. Throttled (1/seg, vía geocodeText) y abortable.
+  async _backfillCoords(t, rawItems) {
     if (!canEdit() || !navigator.onLine) return;
     const token = {}; TripDetail._geoToken = token;
-    const targets = items.filter(i => !i._virtual && (i.lat == null || i.lng == null) && (i.address || i.place_name));
+    const GEO_TYPES = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro'];
+    const targets = rawItems.filter(i => !i._virtual && GEO_TYPES.includes(i.type) && (i.lat == null || i.lng == null) && (i.address || i.place_name));
     if (!targets.length) return;
     let changed = 0;
     for (const it of targets) {
@@ -6793,14 +6870,14 @@ const TripDetail = {
         }
         UI.toast('Guardado');
       } catch (e) { console.error(e); UI.toast('Error'); }
-      finally { UI.closeSheet(); Router.render(); }
+      finally { UI.closeSheet(); Router.renderKeepScroll(); }
     }}, 'Guardar');
 
     const delBtn = (existing && (n.title || n.color)) ? el('button', { class:'btn btn-danger', onclick: async () => {
       n.title = null; n.color = null;
       if (!n.text) await DB.remove('day_notes', n.id);
       else await DB.put('day_notes', n);
-      UI.closeSheet(); Router.render();
+      UI.closeSheet(); Router.renderKeepScroll();
     }}, 'Quitar título') : null;
 
     UI.openSheet({
@@ -6831,11 +6908,11 @@ const TripDetail = {
         }
         UI.toast('Guardado');
       } catch (e) { console.error(e); UI.toast('Error'); }
-      finally { UI.closeSheet(); Router.render(); }
+      finally { UI.closeSheet(); Router.renderKeepScroll(); }
     }}, 'Guardar');
     const delBtn = existing ? el('button', { class:'btn btn-danger', onclick: async () => {
       const ok = await UI.confirm('¿Borrar nota del día?'); if (!ok) return;
-      await DB.remove('day_notes', n.id); UI.closeSheet(); Router.render();
+      await DB.remove('day_notes', n.id); UI.closeSheet(); Router.renderKeepScroll();
     }}, 'Borrar') : null;
     UI.openSheet({ title:'Nota del día', body, footer:[delBtn, el('button',{ class:'btn btn-ghost', onclick:() => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean) });
   },
@@ -7234,6 +7311,37 @@ const TripDetail = {
       placeBlock.style.display = TYPES_WITH_PLACE.includes(type) ? '' : 'none';
     };
 
+    // Bloque "visita": duración estimada (ajusta el aviso de "no da tiempo") y modo
+    // de transporte para llegar a esta parada (afecta al tiempo del tramo previo).
+    const VISIT_TYPES_LOCAL = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro'];
+    const arriveSel = el('select', { id:'f-arrive-mode' }, [
+      el('option', { value:'auto',    text:'Automático' }),
+      el('option', { value:'walk',    text:'🚶 A pie' }),
+      el('option', { value:'car',     text:'🚗 Coche' }),
+      el('option', { value:'transit', text:'🚇 Transporte público' }),
+      el('option', { value:'bike',    text:'🚴 Bici' }),
+    ]);
+    arriveSel.value = (it.metadata && it.metadata.arrive_mode) || 'auto';
+    const travelBlock = el('div', { id:'travel-block' }, [
+      el('div', { class:'form-grid-2' }, [
+        el('div', { class:'form-row' }, [
+          el('label', { text:'Duración de la visita (min)' }),
+          el('input', { id:'f-duration', type:'number', min:'0', step:'5', inputmode:'numeric',
+            value: (it.metadata && it.metadata.duration_min != null ? it.metadata.duration_min : ''),
+            placeholder: String(VISIT_MIN[it.type] != null ? VISIT_MIN[it.type] : 60) }),
+        ]),
+        el('div', { class:'form-row' }, [
+          el('label', { text:'Cómo llegas aquí' }),
+          arriveSel,
+        ]),
+      ]),
+      el('div', { class:'field-hint', text:'La duración ajusta el aviso de “quizá no dé tiempo”. El modo se usa para el tiempo del trayecto hasta esta parada.' }),
+    ]);
+    const refreshTravelVisibility = () => {
+      const type = $('#f-type')?.value || it.type;
+      travelBlock.style.display = VISIT_TYPES_LOCAL.includes(type) ? '' : 'none';
+    };
+
     // Selector de color del borde (solo lugar/playa) — verde/amarillo/rojo o sin color.
     // Marca cuánta certeza tienes sobre incluir esa parada (sin tocar el fondo de la card).
     let currentBorder = it.border_color || null;
@@ -7355,7 +7463,7 @@ const TripDetail = {
       // Re-render de todo lo dependiente del tipo (recrea inputs leyendo de `it`).
       renderConsultationDates(); renderStatusPicker(); refreshTimeVisibility();
       refreshHotelDatesVisibility(); refreshTzVisibility(); renderMetadata();
-      refreshPlaceVisibility(); refreshStandaloneTime(); renderBorderPicker();
+      refreshPlaceVisibility(); refreshTravelVisibility(); refreshStandaloneTime(); renderBorderPicker();
       const setV = (id, v) => { const e = document.getElementById(id); if (e && v != null && v !== '') e.value = v; };
       if (parsed.title)      setV('f-title', parsed.title);
       if (parsed.day_date)   setV('f-day', parsed.day_date);
@@ -7439,6 +7547,7 @@ const TripDetail = {
         refreshTzVisibility();
         renderMetadata();
         refreshPlaceVisibility();
+        refreshTravelVisibility();
         refreshImportVisibility();
         renderBorderPicker();
         renderPeople();
@@ -7459,6 +7568,8 @@ const TripDetail = {
       datesBlock,
       // 4) Lugar + búsqueda + dirección.
       placeBlock,
+      // 4b) Duración de visita + cómo llegas.
+      travelBlock,
       // 5) Personas (con quién).
       peopleBlock,
       // ---- resto de campos ----
@@ -7515,7 +7626,7 @@ const TripDetail = {
     setTimeout(() => {
       renderConsultationDates(); renderStatusPicker();
       refreshTimeVisibility(); refreshHotelDatesVisibility(); refreshTzVisibility();
-      renderMetadata(); refreshPlaceVisibility(); refreshStandaloneTime();
+      renderMetadata(); refreshPlaceVisibility(); refreshTravelVisibility(); refreshStandaloneTime();
       renderBorderPicker(); refreshSelectedPlace(); renderPeople();
       refreshImportVisibility();
     }, 0);
@@ -7590,6 +7701,16 @@ const TripDetail = {
         it.metadata = meta;
       } else {
         it.metadata = {};
+      }
+      // Duración de visita + modo de llegada (se guardan en metadata jsonb, que sí
+      // sincroniza). Solo para tipos que son "visitas".
+      const VISIT_TYPES_SAVE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro'];
+      if (VISIT_TYPES_SAVE.includes(it.type)) {
+        const durRaw = ($('#f-duration')?.value || '').trim();
+        const dur = durRaw === '' ? null : Math.max(0, parseInt(durRaw, 10));
+        if (dur != null && !isNaN(dur)) it.metadata.duration_min = dur; else delete it.metadata.duration_min;
+        const am = $('#f-arrive-mode')?.value || 'auto';
+        if (am && am !== 'auto') it.metadata.arrive_mode = am; else delete it.metadata.arrive_mode;
       }
       // Zonas horarias (vuelos / transporte intercontinental)
       if (it.type === 'vuelo' || it.type === 'transporte') {
@@ -10823,15 +10944,29 @@ function haversineKm(a, b) {
 
 // Estimación de un tramo entre dos puntos SIN red: distancia por carretera ≈ línea
 // recta × 1.35; modo (a pie/coche) y tiempo según la distancia.
-const MODE_EMOJI = { walk:'🚶', car:'🚗', bike:'🚴' };
+const MODE_EMOJI = { walk:'🚶', car:'🚗', bike:'🚴', transit:'🚇' };
+// Velocidad de coche por tramos para que la estimación offline sea creíble (evita
+// avisos falsos en traslados largos): ciudad < nacional < autovía.
+function carSpeedKmh(km) { return km < 25 ? 32 : km < 120 ? 70 : 95; }
 function legBetween(a, b) {
   const km = haversineKm(a, b) * 1.35;
-  const mode = km < 1.3 ? 'walk' : 'car';
-  // Velocidad por tramos para que la estimación offline sea creíble (evita avisos
-  // falsos en traslados largos): ciudad < nacional < autovía.
-  const speed = mode === 'walk' ? 4.8 : (km < 25 ? 32 : km < 120 ? 70 : 95); // km/h
-  const min = Math.max(1, Math.round(km / speed * 60));
-  return { km, min, mode };
+  const drivingMin = Math.max(1, Math.round(km / carSpeedKmh(km) * 60)); // tiempo en coche estimado
+  const mode = km < 1.6 ? 'walk' : 'car';
+  const min = mode === 'walk' ? Math.max(1, Math.round(km / 4.8 * 60)) : drivingMin;
+  return { km, drivingMin, min, mode };
+}
+// Dado km (distancia por carretera) + drivingMin (tiempo en coche), el modo elegido y,
+// opcionalmente, la ruta peatonal real (walk={km,min}), calcula el modo a mostrar, su
+// tiempo y su distancia. 'auto' decide a pie/coche por la distancia.
+function legView(km, drivingMin, mode, walk) {
+  const m = (mode && mode !== 'auto') ? mode : (km < 1.6 ? 'walk' : 'car');
+  if (m === 'walk') {
+    if (walk && walk.km != null) return { mode:'walk', km: walk.km, min: Math.max(1, walk.min) };
+    return { mode:'walk', km, min: Math.max(1, Math.round(km / 4.8 * 60)) };  // estimación
+  }
+  if (m === 'bike')    return { mode:'bike',    km, min: Math.max(1, Math.round(km / 15 * 60)) };
+  if (m === 'transit') return { mode:'transit', km, min: Math.max(1, Math.round(km / 17 * 60) + 5) }; // +5 espera
+  return { mode:'car', km, min: Math.max(1, drivingMin != null ? drivingMin : Math.round(km / carSpeedKmh(km) * 60)) };
 }
 function fmtKm(km) { return km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1).replace('.', ',') + ' km'; }
 function fmtDur(min) {
@@ -10842,14 +10977,20 @@ function fmtDur(min) {
 }
 // Minutos de visita estimados por tipo de parada (para saber si el día "cabe").
 const VISIT_MIN = { comida:75, playa:150, actividad:90, personas:90, lugar:60, compras:45, otro:45 };
+// Minutos de visita: usa la duración indicada por el usuario (metadata.duration_min)
+// si la hay; si no, la estimación por tipo.
 function visitMinutes(it) {
   if (it._virtual || it.type === 'hotel') return 0;
+  const dm = it.metadata && it.metadata.duration_min;
+  if (dm != null && dm !== '' && !isNaN(+dm)) return Math.max(0, +dm);
   return VISIT_MIN[it.type] != null ? VISIT_MIN[it.type] : 60;
 }
+// Modo de llegada elegido para una parada (metadata.arrive_mode) o 'auto'.
+function arriveMode(it) { return (it && it.metadata && it.metadata.arrive_mode) || 'auto'; }
 // Firma del plan del día (lo relevante para tiempos): si cambia, se reevalúa el aviso.
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
 function daySig(dayArr) {
-  return hashStr(dayArr.filter(i => !i._virtual).map(i => `${i.id}|${i.lat || ''}|${i.lng || ''}|${i.time || ''}|${i.type}`).join(';'));
+  return hashStr(dayArr.filter(i => !i._virtual).map(i => `${i.id}|${i.lat || ''}|${i.lng || ''}|${i.time || ''}|${i.type}|${visitMinutes(i)}|${arriveMode(i)}`).join(';'));
 }
 
 // Color estable por número de día (día 1, 2, 3…) para el mapa por días.
@@ -10968,13 +11109,10 @@ function saveRouteCache() {
 }
 function routeKey(a, b) { return `${(+a.lat).toFixed(5)},${(+a.lng).toFixed(5)};${(+b.lat).toFixed(5)},${(+b.lng).toFixed(5)}`; }
 // Convierte un tramo de OSRM (siempre perfil coche, lo único fiable en el servidor
-// demo) en { km, min, mode }. Re-decide el modo por la distancia REAL por carretera;
-// el tiempo a pie se estima de esa distancia, el de coche es el de OSRM.
+// demo) en { km, drivingMin }: la distancia REAL por carretera y el tiempo en coche.
+// El modo/tiempo a mostrar lo decide legView() según el modo elegido por el usuario.
 function legFromOsrm(distM, durS) {
-  const km = distM / 1000;
-  const mode = km < 1.6 ? 'walk' : 'car';
-  const min = mode === 'walk' ? Math.max(1, Math.round(km / 4.8 * 60)) : Math.max(1, Math.round(durS / 60));
-  return { km, min, mode };
+  return { km: distM / 1000, drivingMin: Math.max(1, Math.round(durS / 60)) };
 }
 // Pide el día ENTERO en una sola llamada (varios waypoints) → menos peticiones y
 // menos riesgo de que el servidor público nos limite. Devuelve un tramo por cada
@@ -11002,11 +11140,15 @@ async function drainDayRouteQueue() {
   while (_dayRouteQueue.length) {
     const job = _dayRouteQueue.shift();
     const stale = job.token && TripDetail._planRenderToken && job.token !== TripDetail._planRenderToken;
-    const missing = job.pts.some((p, i) => i < job.pts.length - 1 && !_routeCache[routeKey(job.pts[i], job.pts[i + 1])]);
+    // Falta el coche si no hay entrada o la entrada solo tiene datos de pie (km null).
+    const missing = job.pts.some((p, i) => { if (i >= job.pts.length - 1) return false; const c = _routeCache[routeKey(job.pts[i], job.pts[i + 1])]; return !(c && c.km != null); });
     if (!stale && missing) {
       const legs = await fetchDayRoute(job.pts);
       if (legs) {
-        for (let i = 0; i < legs.length; i++) _routeCache[routeKey(job.pts[i], job.pts[i + 1])] = legs[i];
+        for (let i = 0; i < legs.length; i++) {
+          const k = routeKey(job.pts[i], job.pts[i + 1]);
+          _routeCache[k] = Object.assign({}, _routeCache[k], legs[i]); // conserva datos de pie si los hubiera
+        }
         saveRouteCache();
       }
       await new Promise(res => setTimeout(res, 300));
@@ -11014,6 +11156,39 @@ async function drainDayRouteQueue() {
     try { job.done(); } catch (_) {}
   }
   _dayRouteBusy = false;
+}
+
+// ---- Ruta peatonal REAL (perfil 'foot' de FOSSGIS; el demo de OSRM solo tiene coche).
+// Solo se pide para tramos que se muestran a pie. Se fusiona en la misma caché.
+async function fetchFootRoute(a, b) {
+  try {
+    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 9000);
+    const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
+    const res = await fetch(url, { signal: ctrl.signal }); clearTimeout(to);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const r = data.routes && data.routes[0];
+    if (!r) return null;
+    return { km: r.distance / 1000, min: Math.max(1, Math.round(r.duration / 60)) };
+  } catch (_) { return null; }
+}
+let _footQueue = [], _footBusy = false, _footDrainT = null;
+function enqueueFoot(job) { if (_footQueue.some(j => j.key === job.key)) return; _footQueue.push(job); clearTimeout(_footDrainT); _footDrainT = setTimeout(drainFootQueue, 150); }
+async function drainFootQueue() {
+  if (_footBusy) return; _footBusy = true;
+  while (_footQueue.length) {
+    const job = _footQueue.shift();
+    const c0 = _routeCache[job.key];
+    if (c0 && c0.walkKm != null) { try { job.apply(); } catch (_) {} continue; }
+    const w = await fetchFootRoute(job.a, job.b);
+    if (w) {
+      const e = _routeCache[job.key] = _routeCache[job.key] || {};
+      e.walkKm = w.km; e.walkMin = w.min; saveRouteCache();
+    }
+    try { job.apply(); } catch (_) {}
+    await new Promise(res => setTimeout(res, 300));
+  }
+  _footBusy = false;
 }
 
 /* ============================================================
