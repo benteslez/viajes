@@ -1247,8 +1247,7 @@ h2.section-title {
 .tab-config-label { flex:1; min-width:0; font-weight:600; font-size:14.5px; }
 .tab-config-row .tab-vis { color:var(--text-muted); }
 .tab-config-row .tab-vis.on { color:var(--accent); }
-.day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; overflow:hidden; }
-.day-head-main .day-num, .day-head-main .day-date, .day-head-main .wx-chip { flex-shrink:0; }
+.day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
 .day-group.collapsed .day-collapse { transform:rotate(-90deg); }
@@ -1661,6 +1660,10 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
      para que los iconos de acción queden alineados en columna con los de los eventos. */
   padding:0 11px;
 }
+/* La pill del título del día va en su propia fila a ancho completo, bajo la cabecera,
+   para no competir con los botones de acción ni recortarse. */
+.day-title-row { padding:0 12px; margin:-2px 0 10px; }
+.day-group.collapsed .day-title-row { display:none; }
 .day-head .day-num {
   font-family:var(--font-ui);
   font-feature-settings:"tnum","ss01";
@@ -2057,17 +2060,16 @@ body.dragging-planning .day-head { color: var(--accent); }
 
 /* Pill del título del día */
 .day-title-pill {
-  display:inline-block; vertical-align:middle;
+  display:inline-block; vertical-align:middle; max-width:100%;
   font-family:var(--font-ui);
   font-size:12.5px; font-weight:600; letter-spacing:-.005em;
   padding:4px 12px; border-radius:var(--r-pill);
-  margin-left:10px;
   background: color-mix(in srgb, var(--accent) 18%, var(--bg-elev));
   color: var(--accent);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  /* No debe desbordar sobre los botones de acción: encoge y recorta con elipsis. */
+  /* Va en su propia fila a ancho completo: cabe casi siempre; recorta con elipsis
+     solo si es larguísima. */
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  min-width:0; flex-shrink:1; max-width:100%;
 }
 .day-title-pill.color-azul    { background:color-mix(in srgb, #3b82f6 18%, var(--bg-elev)); color:#1e40af; border-color:color-mix(in srgb, #3b82f6 38%, transparent); }
 .day-title-pill.color-verde   { background:color-mix(in srgb, #10b981 18%, var(--bg-elev)); color:#047857; border-color:color-mix(in srgb, #10b981 38%, transparent); }
@@ -6098,10 +6100,6 @@ const TripDetail = {
                 el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
               ]),
           k !== 'sin-fecha' ? el('span', { class:'wx-chip', id:`wx-${k}` }) : null,
-          (dayMeta && dayMeta.title) ? el('span', {
-            class: 'day-title-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''),
-            text: dayMeta.title,
-          }) : null,
         ].filter(Boolean)),
         el('div', { class:'day-actions' }, [
           // Optimizar el orden de las paradas del día por cercanía (si hay ≥3 con coords).
@@ -6132,6 +6130,13 @@ const TripDetail = {
         ].filter(Boolean)),
       ].filter(Boolean));
       g.appendChild(head);
+
+      // Pill del título del día en su propia fila (a ancho completo), bajo la cabecera.
+      if (dayMeta && dayMeta.title) {
+        g.appendChild(el('div', { class:'day-title-row' }, [
+          el('span', { class: 'day-title-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''), text: dayMeta.title }),
+        ]));
+      }
 
       if (noteMap[k] && noteMap[k].text && TripDetail._planningFilter !== 'consulta') {
         g.appendChild(el('div', { class:'day-note-card', text: noteMap[k].text }));
