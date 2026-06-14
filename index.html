@@ -1247,7 +1247,8 @@ h2.section-title {
 .tab-config-label { flex:1; min-width:0; font-weight:600; font-size:14.5px; }
 .tab-config-row .tab-vis { color:var(--text-muted); }
 .tab-config-row .tab-vis.on { color:var(--accent); }
-.day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; }
+.day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; overflow:hidden; }
+.day-head-main .day-num, .day-head-main .day-date, .day-head-main .wx-chip { flex-shrink:0; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
 .day-group.collapsed .day-collapse { transform:rotate(-90deg); }
@@ -2056,7 +2057,7 @@ body.dragging-planning .day-head { color: var(--accent); }
 
 /* Pill del título del día */
 .day-title-pill {
-  display:inline-flex; align-items:center;
+  display:inline-block; vertical-align:middle;
   font-family:var(--font-ui);
   font-size:12.5px; font-weight:600; letter-spacing:-.005em;
   padding:4px 12px; border-radius:var(--r-pill);
@@ -2064,7 +2065,9 @@ body.dragging-planning .day-head { color: var(--accent); }
   background: color-mix(in srgb, var(--accent) 18%, var(--bg-elev));
   color: var(--accent);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  white-space:nowrap;
+  /* No debe desbordar sobre los botones de acción: encoge y recorta con elipsis. */
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  min-width:0; flex-shrink:1; max-width:100%;
 }
 .day-title-pill.color-azul    { background:color-mix(in srgb, #3b82f6 18%, var(--bg-elev)); color:#1e40af; border-color:color-mix(in srgb, #3b82f6 38%, transparent); }
 .day-title-pill.color-verde   { background:color-mix(in srgb, #10b981 18%, var(--bg-elev)); color:#047857; border-color:color-mix(in srgb, #10b981 38%, transparent); }
@@ -2312,6 +2315,8 @@ body.readonly .timeline-item { cursor:default; }
 }
 .search-result:last-child { border-bottom:none; }
 .search-result:hover { background:var(--bg-soft); }
+.search-result .sr-name { font-weight:600; }
+.search-result .sr-addr { font-size:12px; color:var(--text-muted); margin-top:1px; }
 
 /* Calendario unificado */
 .cal-grid {
@@ -6087,9 +6092,10 @@ const TripDetail = {
           (k === 'sin-fecha')
             ? el('span', { class:'day-date', text:'Sin fecha' })
             : el('span', { class:'day-date' }, [
-                el('span', { class:'day-wd', text: fmtDate(k, { weekday:'long' }) + ',' }),
+                // Formato compacto en una línea: "Jue 14 ago" (deja sitio a la pill).
+                el('span', { class:'day-wd', text: fmtDate(k, { weekday:'short' }).replace(/\.$/, '') }),
                 ' ',
-                el('span', { class:'day-dm', text: fmtDate(k, { day:'numeric', month:'long' }) }),
+                el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
               ]),
           k !== 'sin-fecha' ? el('span', { class:'wx-chip', id:`wx-${k}` }) : null,
           (dayMeta && dayMeta.title) ? el('span', {
@@ -6972,15 +6978,18 @@ const TripDetail = {
         box.innerHTML = '<div class="search-result muted">Sin conexión: introduce manualmente.</div>';
         return;
       }
+      box.innerHTML = '<div class="search-result muted">Buscando…</div>';
       try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`;
-        const r = await fetch(url, { headers: { 'Accept-Language':'es', 'User-Agent': CFG.appName } });
-        const data = await r.json();
-        data.forEach(p => {
-          const node = el('div', { class:'search-result', text: p.display_name, onclick: () => {
-            it.place_name = p.display_name.split(',')[0];
-            it.address = p.display_name;
-            it.lat = parseFloat(p.lat); it.lng = parseFloat(p.lon);
+        // Prioriza resultados cerca de la parada (si ya tiene coords) para afinar negocios.
+        const bias = (it.lat != null && it.lng != null) ? { lat: it.lat, lng: it.lng } : null;
+        const results = await placeSearch(q, bias);
+        box.innerHTML = '';
+        if (!results.length) { box.innerHTML = '<div class="search-result muted">Sin resultados. Escribe los campos manualmente abajo.</div>'; return; }
+        results.forEach(res => {
+          const node = el('div', { class:'search-result', onclick: () => {
+            it.place_name = res.name || res.address;
+            it.address = res.address;
+            it.lat = res.lat; it.lng = res.lng;
             it.gmaps_url = gmapsUrl(it.lat, it.lng);
             // Solo autocompletar el título desde el lugar si el campo está vacío;
             // si el usuario ya escribió algo, respetarlo (no pisarlo con el valor previo).
@@ -6992,10 +7001,13 @@ const TripDetail = {
             box.innerHTML = '';
             // Refrescar la confirmación visual del lugar elegido
             refreshSelectedPlace();
-          }});
+          }}, [
+            el('div', { class:'sr-name', text: res.name || res.address }),
+            (res.address && res.address !== res.name) ? el('div', { class:'sr-addr', text: res.address }) : null,
+          ].filter(Boolean));
           box.appendChild(node);
         });
-      } catch (e) { console.warn(e); }
+      } catch (e) { console.warn(e); box.innerHTML = '<div class="search-result muted">Error de búsqueda. Inténtalo de nuevo.</div>'; }
     };
 
     // === Bloque UNIFICADO de fechas/horas, arriba del editor ===
@@ -11089,6 +11101,39 @@ async function geocodeText(text) {
     _geoCache[key] = c; saveGeoCache();           // cachea resultado o ausencia
     return c;
   } catch (_) { return null; }
+}
+
+// ---- Búsqueda de lugares/negocios por nombre ----
+// Photon (Komoot, OSM) encuentra negocios y POIs por nombre mucho mejor que Nominatim;
+// gratis, sin clave y con CORS. Nominatim queda como respaldo. Devuelve
+// [{ name, address, lat, lng, kind }]. `bias` (opcional) prioriza resultados cercanos.
+function _photonResults(data) {
+  return (data.features || []).map(f => {
+    const p = f.properties || {}, c = (f.geometry && f.geometry.coordinates) || [];
+    const name = p.name || [p.street, p.housenumber].filter(Boolean).join(' ') || p.city || p.country || '';
+    const parts = [
+      [p.street, p.housenumber].filter(Boolean).join(' '),
+      p.district,
+      [p.postcode, p.city].filter(Boolean).join(' '),
+      p.state, p.country,
+    ].filter(Boolean).filter(x => x !== name);
+    return { name, address: [name, ...parts].filter(Boolean).join(', '), lat: c[1], lng: c[0], kind: p.osm_value || p.osm_key || '' };
+  }).filter(r => r.lat != null && r.lng != null);
+}
+async function placeSearch(q, bias) {
+  // 1) Photon — mejor para negocios/sitios por nombre.
+  try {
+    let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6`;
+    if (bias && bias.lat != null && bias.lng != null) url += `&lat=${bias.lat}&lon=${bias.lng}`;
+    const r = await fetch(url);
+    if (r.ok) { const out = _photonResults(await r.json()); if (out.length) return out; }
+  } catch (_) {}
+  // 2) Nominatim — respaldo.
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`, { headers: { 'Accept-Language':'es', 'User-Agent': CFG.appName } });
+    if (r.ok) return (await r.json() || []).map(p => ({ name: p.display_name.split(',')[0], address: p.display_name, lat: parseFloat(p.lat), lng: parseFloat(p.lon), kind: p.type || '' }));
+  } catch (_) {}
+  return [];
 }
 
 // ---- Rutas reales (OSRM) con caché persistente ----
