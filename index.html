@@ -1246,7 +1246,7 @@ h2.section-title {
 .tcal-cell { min-width:0; min-height:54px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:none; border:none; padding:0; position:relative; font-family:inherit; }
 .tcal-cell.clickable { cursor:pointer; }
 .tcal-cell.clickable:active .tcal-ring { transform:scale(.92); }
-.tcal-num-plain { font-size:13px; font-weight:600; color:var(--text); font-feature-settings:"tnum"; }
+.tcal-num-plain { font-size:13px; font-weight:600; line-height:1; color:var(--text); font-feature-settings:"tnum"; }
 .tcal-cell.out .tcal-num-plain { opacity:.32; }
 /* Anillo con conic-gradient: capa exterior (gradiente) + círculo interior encima. */
 .tcal-ring {
@@ -1260,9 +1260,10 @@ h2.section-title {
   content:''; position:absolute; inset:var(--ring-w, 4.5px); border-radius:50%;
   background:var(--cell-bg, #fff);
 }
-.tcal-num { position:relative; z-index:1; font-size:13px; font-weight:600; color:#1f2937; font-feature-settings:"tnum"; }
-/* Día de hoy: punto sutil en flujo, bajo el anillo (no interfiere con el anillo). */
-.tcal-today-dot { width:5px; height:5px; border-radius:50%; background:var(--accent); flex-shrink:0; }
+.tcal-num { position:relative; z-index:1; font-size:13px; font-weight:600; line-height:1; color:#1f2937; font-feature-settings:"tnum"; }
+/* Día de hoy: punto sutil, posicionado absoluto al pie de la celda para NO descentrar
+   el anillo (todos los anillos quedan centrados igual, haya o no punto). */
+.tcal-today-dot { position:absolute; left:50%; bottom:3px; transform:translateX(-50%); width:5px; height:5px; border-radius:50%; background:var(--accent); }
 /* Leyenda (clicable: activa/desactiva colores). */
 .tcal-legend { display:flex; flex-wrap:wrap; gap:6px; margin-top:18px; padding:8px; border:1px solid var(--line-soft); border-radius:var(--r-lg); background:var(--bg-elev); }
 .tcal-legend-item { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text);
@@ -1274,6 +1275,10 @@ h2.section-title {
 .tcal-legend-dot { width:13px; height:13px; border-radius:50%; flex-shrink:0; }
 .tcal-legend-accom { width:15px; height:15px; border-radius:50%; background:#D4EDDA; border:1px solid color-mix(in srgb,#1e7e34 35%, transparent); flex-shrink:0; }
 .tcal-hint { margin-top:12px; text-align:center; font-size:12px; color:var(--text-muted); }
+/* Opción "crear evento" en el editor de gasto */
+.fb-makeevt { display:flex; align-items:center; gap:10px; margin-top:8px; padding:11px 13px;
+  border:1px solid var(--line-soft); border-radius:var(--r-md); background:var(--bg-soft); cursor:pointer; font-size:13.5px; color:var(--text); }
+.fb-makeevt input { width:18px; height:18px; flex-shrink:0; accent-color:var(--accent); }
 
 /* Indicador del gesto "volver" (deslizar desde el borde izquierdo). */
 #edge-back-ind {
@@ -3601,7 +3606,8 @@ const SYNC = {
   },
 
   async pullAll() {
-    if (!this.enabled || !STATE.profile) return;
+    if (!this.enabled || !STATE.profile) return 0;
+    let changed = 0;
     // Restamos 60s al `since` por seguridad: cubre clock-drift entre cliente y servidor.
     // Si no hay last_sync previo, usamos 1970 para traer todo desde cero.
     const sinceRaw = await DB.meta('last_sync_' + STATE.profile);
@@ -3620,24 +3626,52 @@ const SYNC = {
         }
         const { data, error } = await q;
         if (error) throw error;
-        if (data) for (const r of data) await this._mergeRow(t, r);
+        if (data) for (const r of data) { if (await this._mergeRow(t, r)) changed++; }
       } catch (e) {
         console.warn('pull', t, e);
       }
     }
     await DB.meta('last_sync_' + STATE.profile, nowIso());
+    return changed;
   },
 
   async _mergeRow(table, remote) {
     const local = await DB.db.get(table, remote.id);
     if (!local || (local.updated_at || '') < (remote.updated_at || '')) {
       await DB.db.put(table, remote);
+      return true;
     }
+    return false;
+  },
+
+  // Pull automático: trae cambios de otros dispositivos y re-renderiza si hay novedades
+  // (sin interrumpir si hay una hoja de edición abierta o un campo enfocado).
+  _autoPullBusy: false,
+  async autoPull() {
+    if (this._autoPullBusy || !this.enabled || !navigator.onLine || document.visibilityState !== 'visible') return;
+    this._autoPullBusy = true;
+    try {
+      const changed = await this.pullAll();
+      if (changed > 0 && this._safeToRerender()) { try { Router.render(); } catch (_) {} }
+    } catch (e) { console.warn('autoPull', e); }
+    finally { this._autoPullBusy = false; }
+  },
+  _safeToRerender() {
+    if (document.querySelector('.sheet.show')) return false;        // editando en una hoja
+    const ae = document.activeElement;
+    if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return false;
+    return true;
   },
 };
 
-window.addEventListener('online',  () => { SYNC._setStatus('idle'); SYNC.scheduleFlush(); });
+window.addEventListener('online',  () => { SYNC._setStatus('idle'); SYNC.scheduleFlush(); SYNC.autoPull(); });
 window.addEventListener('offline', () => SYNC._setStatus('offline'));
+// Mantener todo sincronizado "al momento": al volver el foco / hacerse visible la app
+// (p. ej. al coger el otro dispositivo) se traen los cambios; y mientras está visible,
+// un pull periódico ligero. Re-renderiza solo si hay novedades y no estás editando.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') SYNC.autoPull(); });
+window.addEventListener('focus', () => SYNC.autoPull());
+setInterval(() => SYNC.autoPull(), 20000);
 
 /* ============================================================
    MediaCache — cache de object URLs para fotos locales.
@@ -4323,7 +4357,9 @@ const Router = {
     }
 
     root.classList.remove('fade');
-    root.style.animation = 'none'; root.offsetHeight; root.style.animation = '';
+    // (Antes se forzaba un reflow para repetir la animación de entrada en CADA render,
+    //  lo que hacía un "mini-zoom" molesto al guardar. La animación queda solo en la
+    //  carga inicial.)
 
     // Wrap dispatch en try/catch para que un error nunca deje el main vacío silenciosamente.
     try {
@@ -6343,6 +6379,10 @@ const TripDetail = {
     const subParts = [];
     if (it.place_name && it.place_name !== it.title) subParts.push(it.place_name);
     if (it.address) subParts.push(it.address);
+    // Evento que acaba otro día (lugar/playa con día de fin distinto).
+    if ((it.type === 'lugar' || it.type === 'playa') && it.metadata && it.metadata.end_date && it.metadata.end_date !== it.day_date) {
+      subParts.push(`Hasta ${fmtDate(it.metadata.end_date, { weekday:'short', day:'numeric', month:'short' })}`);
+    }
     if (isNight) {
       // Noches: empezamos limpio y solo añadimos algo si hay datos del alojamiento.
       subParts.length = 0;
@@ -6663,12 +6703,13 @@ const TripDetail = {
   // alojamiento) con un anillo conic-gradient repartido por categorías activas.
   // Tocar un día abre la vista de tarjeta de ese día.
   async openPlanningCalendar(t) {
-    const CAL_ORDER = ['transporte','actividad','restaurante','personas','gestion'];
-    const CAL_COLOR = { transporte:'#4A90D9', actividad:'#9B59B6', restaurante:'#E67E22', personas:'#E91E8C', gestion:'#95A5A6' };
-    const CAL_LABEL = { transporte:'Transporte', actividad:'Actividad', restaurante:'Restaurante', personas:'Personas', gestion:'Gestión' };
+    const CAL_ORDER = ['transporte','lugar','actividad','restaurante','personas','gestion'];
+    const CAL_COLOR = { transporte:'#2196F3', lugar:'#F4B400', actividad:'#9B59B6', restaurante:'#E67E22', personas:'#E91E8C', gestion:'#8D6E63' };
+    const CAL_LABEL = { transporte:'Transporte', lugar:'Lugar', actividad:'Actividad', restaurante:'Restaurante', personas:'Personas', gestion:'Gestión' };
     const catOfType = (ty) =>
       (ty === 'vuelo' || ty === 'transporte' || ty === 'coche') ? 'transporte'
-      : (ty === 'actividad' || ty === 'lugar' || ty === 'playa') ? 'actividad'
+      : (ty === 'lugar') ? 'lugar'
+      : (ty === 'actividad' || ty === 'playa') ? 'actividad'
       : (ty === 'comida') ? 'restaurante'
       : (ty === 'personas') ? 'personas'
       : (ty === 'compras' || ty === 'otro') ? 'gestion'
@@ -6767,6 +6808,14 @@ const TripDetail = {
       }
     };
     const step = (n) => { view = new Date(view.getFullYear(), view.getMonth() + n, 1); renderMonth(); };
+
+    // Deslizar el dedo sobre el calendario para cambiar de mes (izq → avanza, der → retrocede).
+    let _tx = 0, _ty = 0;
+    grid.addEventListener('touchstart', (e) => { const tch = e.changedTouches[0]; _tx = tch.clientX; _ty = tch.clientY; }, { passive:true });
+    grid.addEventListener('touchend', (e) => {
+      const tch = e.changedTouches[0]; const dx = tch.clientX - _tx, dy = tch.clientY - _ty;
+      if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) step(dx < 0 ? 1 : -1);
+    }, { passive:true });
 
     // Leyenda clicable: cada item activa/desactiva su color (se guarda en settings).
     const legend = el('div', { class:'tcal-legend' });
@@ -7268,13 +7317,27 @@ const TripDetail = {
         const showEnd = (type === 'lugar' || type === 'playa');
         const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
         datesBlock.appendChild(el('label', { text:'Fecha y hora' }));
-        // Día y Hora siempre uno al lado del otro (2 columnas).
+        // Día y Hora de inicio, uno al lado del otro (2 columnas).
+        const dayInput = el('input', { id:'f-day', type:'date', value: it.day_date || '' });
         datesBlock.appendChild(el('div', { class:'form-grid-2' }, [
-          cell('Día', el('input', { id:'f-day', type:'date', value: it.day_date || '' })),
+          cell('Día', dayInput),
           cell(showEnd ? 'Hora inicio' : 'Hora', timeInput('f-time', it.time)),
         ]));
-        // "Hora fin" (solo lugar/playa) en su propia fila debajo.
-        if (showEnd) datesBlock.appendChild(cell('Hora fin', timeInput('f-end-time', it.end_time)));
+        // "Día fin" + "Hora fin" (solo lugar/playa): por si el evento acaba otro día.
+        if (showEnd) {
+          const endDayInput = el('input', { id:'f-end-day', type:'date',
+            value: (it.metadata && it.metadata.end_date) || it.day_date || '', min: it.day_date || '' });
+          datesBlock.appendChild(el('div', { class:'form-grid-2' }, [
+            cell('Día fin', endDayInput),
+            cell('Hora fin', timeInput('f-end-time', it.end_time)),
+          ]));
+          // Al fijar el día de inicio, el día de fin se rellena con esa misma fecha (mínimo).
+          // La hora de fin se deja vacía: el evento puede ser "a las 11:00" sin fin definido.
+          dayInput.addEventListener('change', () => {
+            endDayInput.min = dayInput.value || '';
+            if (dayInput.value && (!endDayInput.value || endDayInput.value < dayInput.value)) endDayInput.value = dayInput.value;
+          });
+        }
       }
     };
     // Alias: el resto del editor (onchange, applyParsed, init, openConfirmPlanning) llama a
@@ -7927,6 +7990,11 @@ const TripDetail = {
         if (dur != null && !isNaN(dur)) it.metadata.duration_min = dur; else delete it.metadata.duration_min;
         const am = $('#f-arrive-mode')?.value || 'auto';
         if (am && am !== 'auto') it.metadata.arrive_mode = am; else delete it.metadata.arrive_mode;
+      }
+      // Día de fin (solo lugar/playa): por si el evento acaba otro día. En metadata jsonb.
+      if (it.type === 'lugar' || it.type === 'playa') {
+        const ed = ($('#f-end-day')?.value || '').trim();
+        if (ed && ed !== it.day_date) it.metadata.end_date = ed; else delete it.metadata.end_date;
       }
       // Zonas horarias (vuelos / transporte intercontinental)
       if (it.type === 'vuelo' || it.type === 'transporte') {
@@ -8598,7 +8666,7 @@ const TripDetail = {
     root.appendChild(list);
   },
 
-  openBudgetEditor(t, existing = null) {
+  async openBudgetEditor(t, existing = null) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
     const b = existing || {
       id: uuid(), trip_id: t.id, planning_item_id: null,
@@ -8607,6 +8675,13 @@ const TripDetail = {
       rate_to_eur: 1, amount_eur: 0,
       status: 'planeado', date: todayIso(), notes: '',
     };
+    // El "modo" de transporte NO se guarda en el gasto (su tabla no tiene esa columna y
+    // quedaría local-only). Se lee/escribe en el EVENTO enlazado, que sincroniza por su
+    // metadata jsonb. Aquí solo lo precargamos desde ese evento si existe.
+    let initModo = '';
+    if (b.planning_item_id) { try { const lev = await DB.get('planning_items', b.planning_item_id); initModo = (lev && lev.metadata && lev.metadata.modo) || ''; } catch (_) {} }
+    const TRANS_MODES = (((PLANNING_METADATA.transporte || {}).fields || []).find(f => f.id === 'modo') || {}).options || [];
+    const refreshModoVis = () => { const r = $('#fb-modo-row'); if (r) r.style.display = ($('#fb-cat')?.value === 'transporte') ? '' : 'none'; };
     const body = el('div', {}, [
       el('div', { class:'form-row' }, [
         el('label', { text:'Concepto' }),
@@ -8615,12 +8690,18 @@ const TripDetail = {
       el('div', { class:'form-grid-2' }, [
         el('div', { class:'form-row' }, [
           el('label', { text:'Categoría' }),
-          el('select', { id:'fb-cat' }, CATS_BUDGET.map(c => el('option', { value:c.id, selected: b.category === c.id ? true : null }, c.label))),
+          el('select', { id:'fb-cat', onchange: () => refreshModoVis() }, CATS_BUDGET.map(c => el('option', { value:c.id, selected: b.category === c.id ? true : null }, c.label))),
         ]),
         el('div', { class:'form-row' }, [
           el('label', { text:'Estado' }),
           el('select', { id:'fb-status' }, STATUS_BUDGET.map(s => el('option', { value:s.id, selected: b.status === s.id ? true : null }, s.label))),
         ]),
+      ]),
+      // Subtipo de transporte (mismas opciones que un evento de transporte). Solo visible
+      // cuando la categoría es "transporte".
+      el('div', { class:'form-row', id:'fb-modo-row', style: (b.category === 'transporte' ? {} : { display:'none' }) }, [
+        el('label', { text:'Tipo de transporte' }),
+        el('select', { id:'fb-modo' }, TRANS_MODES.map(o => el('option', { value:o.value, selected: initModo === o.value ? true : null }, o.label))),
       ]),
       el('div', { class:'form-grid-2' }, [
         el('div', { class:'form-row num' }, [
@@ -8640,7 +8721,12 @@ const TripDetail = {
         el('label', { text:'Notas' }),
         el('textarea', { id:'fb-notes' }, b.notes || ''),
       ]),
-    ]);
+      // Opcional: crear también un evento en el planning asociado a este gasto.
+      (!b.planning_item_id) ? el('label', { class:'fb-makeevt' }, [
+        el('input', { id:'fb-makeevt', type:'checkbox' }),
+        el('span', { text:'Crear también un evento en el planning con este gasto' }),
+      ]) : null,
+    ].filter(Boolean));
 
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
       try {
@@ -8655,8 +8741,36 @@ const TripDetail = {
         b.amount_eur = +(b.amount * b.rate_to_eur).toFixed(2);
         b.date = $('#fb-date').value || null;
         b.notes = $('#fb-notes').value;
+        const modo = (b.category === 'transporte') ? ($('#fb-modo')?.value || '') : '';
+        // Crear evento en el planning asociado (opcional; solo si se marca y no hay ya uno).
+        let createdEvent = false;
+        if ($('#fb-makeevt')?.checked && !b.planning_item_id) {
+          const evType = ({ transporte:'transporte', alojamiento:'hotel', comida:'comida', actividades:'actividad', compras:'compras', otros:'otro' })[b.category] || 'otro';
+          const ev = {
+            id: uuid(), trip_id: t.id, leg_id: null, type: evType, title: concept,
+            day_date: b.date || null, time: null, end_time: null,
+            place_name: null, lat: null, lng: null, gmaps_url: '', address: null, zona: null,
+            notes: '', people: [], status: 'ninguno', in_consultation: false,
+            metadata: (evType === 'transporte' && modo) ? { modo } : {},
+            order_index: 0, updated_at: nowIso(),
+          };
+          await DB.put('planning_items', ev);
+          b.planning_item_id = ev.id;
+          createdEvent = true;
+        } else if (b.planning_item_id && b.category === 'transporte') {
+          // Si ya hay evento enlazado, guardamos el modo en SU metadata (sincroniza).
+          try {
+            const lev = await DB.get('planning_items', b.planning_item_id);
+            if (lev) {
+              lev.metadata = Object.assign({}, lev.metadata);
+              if (modo) lev.metadata.modo = modo; else delete lev.metadata.modo;
+              lev.updated_at = nowIso();
+              await DB.put('planning_items', lev);
+            }
+          } catch (_) {}
+        }
         await DB.put('budget_items', b);
-        UI.toast('Gasto guardado');
+        UI.toast(createdEvent ? 'Gasto y evento creados' : 'Gasto guardado');
       } catch (err) { console.error(err); UI.toast('Error al guardar'); }
       finally { UI.closeSheet(); Router.render(); }
     }}, 'Guardar');
