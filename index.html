@@ -1661,9 +1661,9 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
   padding:0 11px;
 }
 /* La pill del título del día va en su propia fila a ancho completo, bajo la cabecera,
-   para no competir con los botones de acción ni recortarse. */
+   para no competir con los botones de acción ni recortarse. Se ve también plegado. */
 .day-title-row { padding:0 12px; margin:-2px 0 10px; }
-.day-group.collapsed .day-title-row { display:none; }
+.day-group.collapsed .day-title-row { margin-bottom:0; }
 .day-head .day-num {
   font-family:var(--font-ui);
   font-feature-settings:"tnum","ss01";
