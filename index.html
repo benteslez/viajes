@@ -5726,6 +5726,18 @@ const TripDetail = {
         // una "llegada" virtual el día de llegada con su hora.
         items.push(it);
         items.push({ ...it, _virtual:'arrival', day_date:d2, time: it.consultation_planned_t2 || null });
+      } else if ((it.type === 'lugar' || it.type === 'playa') && it.metadata && it.metadata.end_date && it.day_date && it.metadata.end_date > it.day_date) {
+        // Evento de varios días: el día de inicio es el real (editable) y los días
+        // siguientes hasta el fin son copias virtuales 'span' (el mismo evento repetido).
+        const ds = it.day_date, de = it.metadata.end_date;
+        items.push({ ...it, _spanStart: ds, _spanEnd: de });
+        let d = parseDate(ds); d.setDate(d.getDate() + 1);
+        const end = parseDate(de);
+        while (d <= end) {
+          const k = d.toISOString().slice(0,10);
+          items.push({ ...it, _virtual:'span', day_date:k, time:null, _spanStart: ds, _spanEnd: de, _spanTime: it.time });
+          d.setDate(d.getDate() + 1);
+        }
       } else {
         items.push(it);
       }
@@ -6237,17 +6249,19 @@ const TripDetail = {
         const card = this._planningItem(it, t);
         list.appendChild(card);
         if (it._virtual === 'night' && !nightCard) nightCard = card;
-        if (it.lat != null && it.lng != null && it._virtual !== 'night') {
+        // Las "noches" de hotel y las copias de continuación 'span' no cuentan como
+        // parada para los conectores de ruta.
+        const skipLeg = (x) => x._virtual === 'night' || x._virtual === 'span';
+        if (it.lat != null && it.lng != null && !skipLeg(it)) {
           waypoints.push({ lat: it.lat, lng: it.lng });
           lastStopCoords = { lat: it.lat, lng: it.lng };
           if (!firstStopCard) { firstStopCard = card; firstStopCoords = lastStopCoords; firstStopItem = it; }
         }
         // Conector con tiempo/distancia hasta la siguiente parada (si ambas tienen
-        // coordenadas y ninguna es una "noche" de hotel). El modo lo marca la parada
-        // de destino (cómo llegas a ella).
+        // coordenadas y ninguna es noche/continuación). El modo lo marca la parada destino.
         const nx = dayArr[di + 1];
         if (nx && it.lat != null && it.lng != null && nx.lat != null && nx.lng != null
-            && it._virtual !== 'night' && nx._virtual !== 'night') {
+            && !skipLeg(it) && !skipLeg(nx)) {
           const a = { lat: it.lat, lng: it.lng }, b = { lat: nx.lat, lng: nx.lng };
           if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route, { forceMode: arriveMode(nx) }));
         }
@@ -6380,9 +6394,19 @@ const TripDetail = {
     const subParts = [];
     if (it.place_name && it.place_name !== it.title) subParts.push(it.place_name);
     if (it.address) subParts.push(it.address);
-    // Evento que acaba otro día (lugar/playa con día de fin distinto).
-    if ((it.type === 'lugar' || it.type === 'playa') && it.metadata && it.metadata.end_date && it.metadata.end_date !== it.day_date) {
-      subParts.push(`Hasta ${fmtDate(it.metadata.end_date, { weekday:'short', day:'numeric', month:'short' })}`);
+    // Evento de varios días (lugar/playa con día de fin): en el día de inicio mostramos
+    // "Hasta DD/MM"; en las copias de continuación, "Continúa · día N de M".
+    if ((it.type === 'lugar' || it.type === 'playa') && it.metadata && it.metadata.end_date) {
+      const sStart = it._spanStart || it.day_date;
+      if (it.metadata.end_date > sStart) {
+        if (it._virtual === 'span') {
+          const total = daysBetween(it._spanStart, it._spanEnd) + 1;
+          const nth = daysBetween(it._spanStart, it.day_date) + 1;
+          subParts.push(`Continúa · día ${nth} de ${total}`);
+        } else {
+          subParts.push(`Hasta ${fmtDate(it.metadata.end_date, { weekday:'short', day:'numeric', month:'short' })}`);
+        }
+      }
     }
     if (isNight) {
       // Noches: empezamos limpio y solo añadimos algo si hay datos del alojamiento.
@@ -7187,13 +7211,21 @@ const TripDetail = {
 
   async openPlanningEditor(t, existing=null, opts=null) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-    // Si llega un item VIRTUAL (noche/check-out/llegada), editamos el item BASE:
-    // quitamos las marcas y restauramos día/hora de salida/entrada.
-    if (existing && existing._virtual) {
+    // Si llega un item VIRTUAL (noche/check-out/llegada/span) o una copia de día de un
+    // evento multi-día, editamos el item BASE: restauramos día/hora de inicio y quitamos
+    // los marcadores para no persistirlos.
+    if (existing && (existing._virtual || existing._spanStart)) {
+      const v = existing._virtual;
       existing = { ...existing };
       delete existing._virtual; delete existing._isFirstNight;
-      existing.day_date = existing.consultation_planned_d1 || existing.day_date;
-      existing.time = typeDef(existing.type).hideTime ? null : (existing.consultation_planned_t1 || existing.time || '');
+      if (v === 'span') {
+        existing.day_date = existing._spanStart || existing.day_date;
+        existing.time = existing._spanTime || '';
+      } else if (v) {
+        existing.day_date = existing.consultation_planned_d1 || existing.day_date;
+        existing.time = typeDef(existing.type).hideTime ? null : (existing.consultation_planned_t1 || existing.time || '');
+      }
+      delete existing._spanStart; delete existing._spanEnd; delete existing._spanTime;
     }
     // Busca un budget_item vinculado a este planning_item (lo hubo o no).
     // Sirve para precargar el importe en el editor y para no duplicar al guardar.
@@ -11809,8 +11841,20 @@ async function boot() {
           }
         });
       });
-      // Comprueba updates al volver online
-      window.addEventListener('online', () => { reg.update().catch(()=>{}); });
+      // Comprueba si hay una versión nueva: al volver online y, sobre todo, al volver
+      // el foco / hacerse visible la app (así una PWA abierta mucho tiempo se actualiza
+      // sola). Como el HTML es network-first, al recargar siempre carga la última versión.
+      let _lastSwCheck = 0;
+      const checkUpdate = () => {
+        if (document.visibilityState === 'hidden') return;
+        const now = Date.now();
+        if (now - _lastSwCheck < 60000) return;   // como mucho 1 vez/minuto
+        _lastSwCheck = now;
+        reg.update().catch(() => {});
+      };
+      window.addEventListener('online', checkUpdate);
+      window.addEventListener('focus', checkUpdate);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
     } catch (e) { console.warn('SW register', e); }
   }
 
