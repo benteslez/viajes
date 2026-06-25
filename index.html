@@ -1417,6 +1417,17 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .pack-group.collapsed .pack-group-chevron { transform:rotate(-90deg); }
 .pack-group.collapsed .pack-list { display:none; }
 .pack-group-title { font-weight:700; font-size:15px; letter-spacing:-.01em; }
+/* Pill de color en el título según el progreso del grupo. */
+.pack-pill {
+  display:inline-flex; align-items:center; padding:3px 12px;
+  border-radius:var(--r-pill); border:1px solid transparent;
+  transition:background .2s var(--ease), color .2s var(--ease), border-color .2s var(--ease);
+}
+.pack-pill-none     { background:color-mix(in srgb, var(--danger) 15%, var(--bg-elev));       color:var(--danger);        border-color:color-mix(in srgb, var(--danger) 38%, transparent); }
+.pack-pill-progress { background:color-mix(in srgb, var(--status-prep) 16%, var(--bg-elev));  color:var(--status-prep);   border-color:color-mix(in srgb, var(--status-prep) 40%, transparent); }
+.pack-pill-near     { background:color-mix(in srgb, var(--status-prox) 15%, var(--bg-elev));  color:var(--status-prox);   border-color:color-mix(in srgb, var(--status-prox) 40%, transparent); }
+.pack-pill-done     { background:color-mix(in srgb, var(--status-curso) 16%, var(--bg-elev)); color:var(--status-curso);  border-color:color-mix(in srgb, var(--status-curso) 42%, transparent); }
+.pack-pill-empty    { background:var(--bg-soft); color:var(--text-muted); border-color:var(--line); }
 .pack-group-count {
   font-size:12px; font-weight:600; color:var(--text-muted);
   background:var(--bg-soft); border:1px solid var(--line);
@@ -6182,8 +6193,9 @@ const TripDetail = {
   _resumenDayView: 'hoy',  // 'hoy' | 'manana' — toggle del planning del día en el resumen
   _collapsedDays: new Set(),  // días plegados en el planning (por clave de fecha)
   _packingPerson: 'ruben',    // persona activa en la maleta (ruben | sergio | pablo)
-  _packingSort: 'custom',     // 'custom' (arrastrar) | 'abc' (alfabético)
+  _packingSort: 'auto',       // 'auto' (sin marcar primero, completados al final) | 'custom' (arrastrar) | 'abc' (alfabético)
   _packingCollapsedCats: new Set(),  // grupos plegados en la maleta
+  _packingCollapseInit: new Set(),   // viajes cuyo plegado inicial (todo plegado) ya se aplicó
   _packingEditMode: false,    // modo edición: muestra reordenar/borrar/renombrar grupos
   _pendingCollapsedCats: new Set(),  // grupos plegados en pendientes
   _pendingEditMode: false,    // modo edición de pendientes (reordenar/borrar/renombrar grupos)
@@ -9061,7 +9073,7 @@ const TripDetail = {
   /* ----- Maleta ----- */
   async tabMaleta(root, t) {
     const items = await DB.listByTrip('packing_items', t.id);
-    const sort = TripDetail._packingSort || 'custom';
+    const sort = TripDetail._packingSort || 'auto';
     const editMode = TripDetail._packingEditMode;
     const customCats = Array.isArray(t.packing_categories) ? t.packing_categories : [];
 
@@ -9101,6 +9113,7 @@ const TripDetail = {
       ]),
       el('div', { class:'pack-controls' }, [
         el('div', { class:'segmented packing-sort' }, [
+          el('button', { class: sort === 'auto' ? 'active' : '', title:'Auto: grupos sin completar primero, completados al final', onclick: () => { TripDetail._packingSort = 'auto'; Router.render(); } }, 'Auto'),
           el('button', { class: sort === 'custom' ? 'active' : '', title:'Orden personalizado (arrastrar)', onclick: () => { TripDetail._packingSort = 'custom'; Router.render(); } }, 'Manual'),
           el('button', { class: sort === 'abc' ? 'active' : '', title:'Orden alfabético', onclick: () => { TripDetail._packingSort = 'abc'; Router.render(); } }, 'A-Z'),
         ]),
@@ -9129,6 +9142,36 @@ const TripDetail = {
     // Agrupar por categoría y construir el orden de grupos (respetando el orden guardado).
     const { cats, byCat } = TripDetail._packingCats(t, items);
 
+    // Progreso por grupo: total, marcados y "completado" (todos marcados).
+    const catStats = (cid) => {
+      const arr = byCat[cid] || [];
+      const total = arr.length;
+      const done = arr.filter(i => i.checked).length;
+      return { total, done, complete: total > 0 && done === total };
+    };
+    // Estado/color de la pill del título según lo marcado.
+    //   sin elementos marcados → rojo · en proceso → ámbar · quedan <3 → azul · completado → verde.
+    const catState = (s) => s.total === 0 ? 'empty'
+      : s.done === 0 ? 'none'
+      : s.complete ? 'done'
+      : (s.total - s.done) < 3 ? 'near'
+      : 'progress';
+
+    // Orden de grupos según el modo: "auto" hunde los completados al final;
+    // "abc" alfabético; "custom" conserva el orden guardado (de _packingCats).
+    if (sort === 'abc') {
+      cats.sort((a, b) => (a.label || '').localeCompare(b.label || '', 'es'));
+    } else if (sort === 'auto') {
+      // Estable: dentro de "sin completar" y "completados" se respeta el orden base.
+      cats.sort((a, b) => (catStats(a.id).complete ? 1 : 0) - (catStats(b.id).complete ? 1 : 0));
+    }
+
+    // Por defecto, todos los grupos plegados la primera vez que se abre la maleta de este viaje.
+    if (!TripDetail._packingCollapseInit.has(t.id)) {
+      cats.forEach(c => TripDetail._packingCollapsedCats.add(c.id));
+      TripDetail._packingCollapseInit.add(t.id);
+    }
+
     // Estado inicial del botón "plegar/desplegar todo".
     const allCollapsedInit = cats.length > 0 && cats.every(c => TripDetail._packingCollapsedCats.has(c.id));
     collapseAllBtn.classList.toggle('all-collapsed', allCollapsedInit);
@@ -9148,13 +9191,21 @@ const TripDetail = {
     for (const c of cats) {
       const collapsed = TripDetail._packingCollapsedCats.has(c.id);
       const grp = el('div', { class:'pack-group' + (collapsed ? ' collapsed' : ''), data:{ cat:c.id } });
-      const grp_list = byCat[c.id] || [];
-      // En modo edición el título es editable (renombra el grupo).
-      const titleEl = (editMode && canEdit())
-        ? el('input', { class:'pack-group-title-input', value: c.label, 'aria-label':'Nombre del grupo',
+      const isPill = !(editMode && canEdit());
+      // En modo edición el título es editable (renombra el grupo); si no, es una pill de color.
+      const titleEl = isPill
+        ? el('span', { class:'pack-group-title pack-pill pack-pill-' + catState(catStats(c.id)), text: c.label })
+        : el('input', { class:'pack-group-title-input', value: c.label, 'aria-label':'Nombre del grupo',
             onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
-            onblur: (e) => TripDetail._renamePackingGroup(t, c.id, e.target.value) })
-        : el('span', { class:'pack-group-title', text: c.label });
+            onblur: (e) => TripDetail._renamePackingGroup(t, c.id, e.target.value) });
+      const countEl = el('span', { class:'pack-group-count', text: `${catStats(c.id).done}/${catStats(c.id).total}` });
+      // Refresca pill + contador en vivo al marcar/desmarcar (sin re-render completo).
+      const updateHead = () => {
+        const s = catStats(c.id);
+        countEl.textContent = `${s.done}/${s.total}`;
+        if (isPill) titleEl.className = 'pack-group-title pack-pill pack-pill-' + catState(s);
+        return s.complete;
+      };
       const head = el('div', { class:'pack-group-head', onclick: (e) => {
         if (e.target.closest('.pack-group-act') || e.target.closest('.pack-group-title-input')) return;
         const willCollapse = !grp.classList.contains('collapsed');
@@ -9163,7 +9214,7 @@ const TripDetail = {
       } }, [
         el('span', { class:'pack-group-chevron', html: svg('chevron') }),
         titleEl,
-        el('span', { class:'pack-group-count', text: String(grp_list.length) }),
+        countEl,
         el('div', { class:'gap' }),
         // Reordenar/borrar grupos: solo en modo edición.
         (editMode && canEdit() && cats.length > 1) ? el('button', { class:'icon-btn pack-group-act', title:'Subir grupo', html: svg('arrup'),
@@ -9190,6 +9241,7 @@ const TripDetail = {
           if (row._justDragged) { row._justDragged = false; return; }  // venía de arrastrar
           if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
           if (toggling) return; toggling = true;
+          const wasComplete = catStats(c.id).complete;
           i.checked = !i.checked;
           // Feedback inmediato: tic verde + apagado + breve destello verde.
           row.classList.toggle('done', i.checked);
@@ -9198,9 +9250,14 @@ const TripDetail = {
           check.setAttribute('aria-pressed', i.checked ? 'true' : 'false');
           if (i.checked) { row.classList.add('just-checked'); }
           refreshProgress();
+          updateHead();
           try { await DB.put('packing_items', i); } catch (e) { console.error(e); }
           // Tras unos ms (se ve el verde), reordena deslizando el elemento.
           setTimeout(() => { reorderWithFlip(); }, 300);
+          // En modo "Auto", si el grupo pasó a (in)completo, recoloca los grupos al terminar la animación.
+          if (sort === 'auto' && wasComplete !== catStats(c.id).complete) {
+            setTimeout(() => Router.render(), 700);
+          }
         };
         const check = el('button', {
           class:'pack-check' + (i.checked ? ' on' : ''), 'aria-pressed': i.checked ? 'true' : 'false',
