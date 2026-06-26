@@ -1417,17 +1417,22 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .pack-group.collapsed .pack-group-chevron { transform:rotate(-90deg); }
 .pack-group.collapsed .pack-list { display:none; }
 .pack-group-title { font-weight:700; font-size:15px; letter-spacing:-.01em; }
-/* Pill de color en el título según el progreso del grupo. */
+/* Pill de color en el título: degradado continuo rojo→ámbar→verde según el % completado.
+   El tono (--pill-h) lo fija JS (0 = rojo … 120 = verde); el CSS adapta la luminosidad al tema. */
 .pack-pill {
+  --pill-s:68%; --pill-l:42%;   /* tema claro */
+  --pill-c:hsl(var(--pill-h, 0) var(--pill-s) var(--pill-l));
   display:inline-flex; align-items:center; padding:3px 12px;
-  border-radius:var(--r-pill); border:1px solid transparent;
-  transition:background .2s var(--ease), color .2s var(--ease), border-color .2s var(--ease);
+  border-radius:var(--r-pill);
+  background:color-mix(in srgb, var(--pill-c) 15%, var(--bg-elev));
+  color:var(--pill-c);
+  border:1px solid color-mix(in srgb, var(--pill-c) 40%, transparent);
+  transition:background .25s var(--ease), color .25s var(--ease), border-color .25s var(--ease);
 }
-.pack-pill-none     { background:color-mix(in srgb, var(--danger) 15%, var(--bg-elev));       color:var(--danger);        border-color:color-mix(in srgb, var(--danger) 38%, transparent); }
-.pack-pill-progress { background:color-mix(in srgb, var(--status-prep) 16%, var(--bg-elev));  color:var(--status-prep);   border-color:color-mix(in srgb, var(--status-prep) 40%, transparent); }
-.pack-pill-near     { background:color-mix(in srgb, var(--status-prox) 15%, var(--bg-elev));  color:var(--status-prox);   border-color:color-mix(in srgb, var(--status-prox) 40%, transparent); }
-.pack-pill-done     { background:color-mix(in srgb, var(--status-curso) 16%, var(--bg-elev)); color:var(--status-curso);  border-color:color-mix(in srgb, var(--status-curso) 42%, transparent); }
-.pack-pill-empty    { background:var(--bg-soft); color:var(--text-muted); border-color:var(--line); }
+/* Grupo vacío (sin elementos): neutro. */
+.pack-pill-empty { --pill-c:var(--text-muted); background:var(--bg-soft); border-color:var(--line); }
+:root[data-tema="oscuro"] .pack-pill { --pill-s:72%; --pill-l:62%; }
+@media (prefers-color-scheme: dark) { :root:not([data-tema]) .pack-pill { --pill-s:72%; --pill-l:62%; } }
 .pack-group-count {
   font-size:12px; font-weight:600; color:var(--text-muted);
   background:var(--bg-soft); border:1px solid var(--line);
@@ -9149,13 +9154,15 @@ const TripDetail = {
       const done = arr.filter(i => i.checked).length;
       return { total, done, complete: total > 0 && done === total };
     };
-    // Estado/color de la pill del título según lo marcado.
-    //   sin elementos marcados → rojo · en proceso → ámbar · quedan <3 → azul · completado → verde.
-    const catState = (s) => s.total === 0 ? 'empty'
-      : s.done === 0 ? 'none'
-      : s.complete ? 'done'
-      : (s.total - s.done) < 3 ? 'near'
-      : 'progress';
+    // Color de la pill del título: degradado continuo según el % completado
+    //   (0% rojo → ámbar → 100% verde). Grupo vacío → neutro.
+    const applyPill = (node, s) => {
+      const empty = s.total === 0;
+      node.classList.toggle('pack-pill-empty', empty);
+      if (!empty) node.style.setProperty('--pill-h', String(Math.round((s.done / s.total) * 120)));
+      // Pista textual (accesibilidad / colorblind): "5 de 11 preparados".
+      node.title = empty ? 'Grupo vacío' : `${s.done} de ${s.total} preparados`;
+    };
 
     // Orden de grupos según el modo: "auto" hunde los completados al final;
     // "abc" alfabético; "custom" conserva el orden guardado (de _packingCats).
@@ -9194,16 +9201,17 @@ const TripDetail = {
       const isPill = !(editMode && canEdit());
       // En modo edición el título es editable (renombra el grupo); si no, es una pill de color.
       const titleEl = isPill
-        ? el('span', { class:'pack-group-title pack-pill pack-pill-' + catState(catStats(c.id)), text: c.label })
+        ? el('span', { class:'pack-group-title pack-pill', text: c.label })
         : el('input', { class:'pack-group-title-input', value: c.label, 'aria-label':'Nombre del grupo',
             onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
             onblur: (e) => TripDetail._renamePackingGroup(t, c.id, e.target.value) });
+      if (isPill) applyPill(titleEl, catStats(c.id));
       const countEl = el('span', { class:'pack-group-count', text: `${catStats(c.id).done}/${catStats(c.id).total}` });
       // Refresca pill + contador en vivo al marcar/desmarcar (sin re-render completo).
       const updateHead = () => {
         const s = catStats(c.id);
         countEl.textContent = `${s.done}/${s.total}`;
-        if (isPill) titleEl.className = 'pack-group-title pack-pill pack-pill-' + catState(s);
+        if (isPill) applyPill(titleEl, s);
         return s.complete;
       };
       const head = el('div', { class:'pack-group-head', onclick: (e) => {
@@ -9254,9 +9262,10 @@ const TripDetail = {
           try { await DB.put('packing_items', i); } catch (e) { console.error(e); }
           // Tras unos ms (se ve el verde), reordena deslizando el elemento.
           setTimeout(() => { reorderWithFlip(); }, 300);
-          // En modo "Auto", si el grupo pasó a (in)completo, recoloca los grupos al terminar la animación.
+          // En modo "Auto", si el grupo pasó a (in)completo, recoloca los grupos al terminar
+          // la animación — conservando el scroll para no saltar arriba del todo.
           if (sort === 'auto' && wasComplete !== catStats(c.id).complete) {
-            setTimeout(() => Router.render(), 700);
+            setTimeout(() => Router.renderKeepScroll(), 700);
           }
         };
         const check = el('button', {
