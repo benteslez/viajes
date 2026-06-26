@@ -5514,6 +5514,10 @@ const TripDetail = {
         icon: svg('external'), label: 'Compartir viaje',
         onclick: () => { UI.closeSheet(); Exporter.openShareSheet(t); }
       });
+      items.push({
+        icon: svg('copy'), label: 'Duplicar viaje',
+        onclick: () => { UI.closeSheet(); TripDetail._duplicateTrip(t); }
+      });
     }
     const list = el('div', { class:'action-menu' });
     items.forEach(item => {
@@ -5527,6 +5531,61 @@ const TripDetail = {
       body: list,
       footer: [el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar')],
     });
+  },
+
+  // Duplica el viaje completo: clona el registro del viaje y todos sus hijos
+  // (planning, presupuesto, maleta, etc.) con ids nuevos, remapeando las referencias
+  // internas (leg_id, planning_item_id). La copia es independiente del original.
+  async _duplicateTrip(t) {
+    if (!canEdit()) { UI.toast('Modo lector: no puedes duplicar'); return; }
+    const childTables = ['trip_legs','planning_items','budget_items','bookings','inquiries',
+      'wishlist_items','day_notes','packing_items','addresses','destination_info',
+      'emergency_contacts','phrases','shared_expenses','diary'];
+    try {
+      UI.toast('Duplicando viaje…');
+      // 1) Cargar todos los hijos (sin papelera) y mapear ids viejos → nuevos.
+      const childData = {};
+      const idMap = {};
+      for (const tbl of childTables) {
+        const rows = await DB.listByTrip(tbl, t.id).catch(() => []);
+        childData[tbl] = rows;
+        rows.forEach(r => { idMap[r.id] = uuid(); });
+      }
+      // 2) Nuevo viaje (copia no compartida; portada como blob independiente).
+      const newTrip = { ...t, id: uuid(), name: `${t.name} Copia`, is_shared: false };
+      delete newTrip.updated_at; delete newTrip.deleted_at;
+      // La copia arranca "a cero": se conserva la plantilla de pendientes pero todo sin marcar.
+      // (map crea un array nuevo: no muta los pendientes del viaje original.)
+      if (Array.isArray(newTrip.pending_items)) {
+        newTrip.pending_items = newTrip.pending_items.map(p => ({ ...p, done: false }));
+      }
+      if (t.cover_blob_id) {
+        try {
+          const media = await DB.getMedia(t.cover_blob_id);
+          if (media && media.blob) newTrip.cover_blob_id = await DB.saveMedia(media.blob, media.mime);
+        } catch (_) {}
+      }
+      await DB.put('trips', newTrip);
+      // 3) Clonar los hijos con ids remapeados y referencias internas reapuntadas.
+      let n = 0;
+      for (const tbl of childTables) {
+        for (const r of childData[tbl]) {
+          const clone = { ...r, id: idMap[r.id], trip_id: newTrip.id };
+          delete clone.updated_at; delete clone.deleted_at;
+          if (clone.leg_id && idMap[clone.leg_id]) clone.leg_id = idMap[clone.leg_id];
+          if (clone.planning_item_id && idMap[clone.planning_item_id]) clone.planning_item_id = idMap[clone.planning_item_id];
+          // La maleta se copia entera pero "a cero": todo sin marcar.
+          if (tbl === 'packing_items') clone.checked = false;
+          await DB.put(tbl, clone);
+          n++;
+        }
+      }
+      UI.toast(`Viaje duplicado (${n} elemento${n === 1 ? '' : 's'})`);
+      Router.go('trip', { tripId: newTrip.id, tab: 'resumen' });
+    } catch (e) {
+      console.error(e);
+      UI.toast('No se pudo duplicar el viaje');
+    }
   },
 
   async render(root, title, fab) {
@@ -9127,6 +9186,9 @@ const TripDetail = {
           onclick: () => TripDetail.openPackingEditor(t), html: svg('plus') }) : null,
         canEdit() ? el('button', { class:'icon-btn', title:'Nuevo grupo', 'aria-label':'Nuevo grupo',
           onclick: () => TripDetail._openNewPackingGroup(t), html: svg('folderplus') }) : null,
+        // Restaurar lista (desmarcar todo): solo visible en modo edición.
+        (canEdit() && editMode) ? el('button', { class:'icon-btn pack-reset', title:'Restaurar lista (desmarcar todo)', 'aria-label':'Restaurar lista',
+          onclick: () => TripDetail._resetPackingList(t), html: svg('refresh') }) : null,
         // Toggle de modo edición: muestra reordenar/borrar/renombrar grupos.
         canEdit() ? el('button', { class:'icon-btn' + (editMode ? ' edit-on' : ''), title: editMode ? 'Listo' : 'Editar grupos',
           'aria-pressed': editMode ? 'true' : 'false', 'aria-label':'Editar',
@@ -9400,6 +9462,22 @@ const TripDetail = {
       });
     }
     return { cats, byCat };
+  },
+
+  // Restaura la lista: desmarca todos los elementos (deja la maleta "a cero").
+  async _resetPackingList(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const items = await DB.listByTrip('packing_items', t.id);
+    const marked = items.filter(i => i.checked);
+    if (!marked.length) { UI.toast('Ya está todo sin marcar'); return; }
+    // Doble confirmación para evitar restaurar por error con un toque accidental.
+    const ok1 = await UI.confirm(`¿Restaurar la lista? Se desmarcarán los ${marked.length} elementos preparados.`, 'Sí, restaurar');
+    if (!ok1) return;
+    const ok2 = await UI.confirm('Esto deja toda la maleta a cero y no se puede deshacer. ¿Confirmas?', 'Sí, dejar a cero');
+    if (!ok2) return;
+    for (const i of marked) { i.checked = false; try { await DB.put('packing_items', i); } catch (e) { console.error(e); } }
+    UI.toast('Lista restaurada');
+    Router.render();
   },
 
   // Renombra un grupo (fijo o personalizado) guardando un override de etiqueta.
