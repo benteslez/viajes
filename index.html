@@ -1420,7 +1420,7 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 /* Pill de color en el título: degradado continuo rojo→ámbar→verde según el % completado.
    El tono (--pill-h) lo fija JS (0 = rojo … 120 = verde); el CSS adapta la luminosidad al tema. */
 .pack-pill {
-  --pill-s:68%; --pill-l:42%;   /* tema claro */
+  --pill-s:80%; --pill-l:40%;   /* tema claro */
   --pill-c:hsl(var(--pill-h, 0) var(--pill-s) var(--pill-l));
   display:inline-flex; align-items:center; padding:3px 12px;
   border-radius:var(--r-pill);
@@ -1431,8 +1431,8 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 }
 /* Grupo vacío (sin elementos): neutro. */
 .pack-pill-empty { --pill-c:var(--text-muted); background:var(--bg-soft); border-color:var(--line); }
-:root[data-tema="oscuro"] .pack-pill { --pill-s:72%; --pill-l:62%; }
-@media (prefers-color-scheme: dark) { :root:not([data-tema]) .pack-pill { --pill-s:72%; --pill-l:62%; } }
+:root[data-tema="oscuro"] .pack-pill { --pill-s:78%; --pill-l:62%; }
+@media (prefers-color-scheme: dark) { :root:not([data-tema]) .pack-pill { --pill-s:78%; --pill-l:62%; } }
 .pack-group-count {
   font-size:12px; font-weight:600; color:var(--text-muted);
   background:var(--bg-soft); border:1px solid var(--line);
@@ -9154,12 +9154,22 @@ const TripDetail = {
       const done = arr.filter(i => i.checked).length;
       return { total, done, complete: total > 0 && done === total };
     };
-    // Color de la pill del título: degradado continuo según el % completado
-    //   (0% rojo → ámbar → 100% verde). Grupo vacío → neutro.
+    // Color de la pill del título por tramos, con saltos claros entre niveles.
+    // El verde se reserva al 100%; los parciales se reparten en cálidos (rojo→ámbar→amarillo→lima),
+    // que es donde el ojo distingue mejor. Evita que todo lo "casi hecho" se vea igual de verde.
+    // El verde (140) es EXCLUSIVO del 100%; todo lo parcial queda en cálidos (≤58),
+    // con un salto grande hasta el verde para que "completado" se distinga a la vista.
+    const pillHue = (pct) =>
+      pct >= 1    ? 140 :   // verde — solo completo
+      pct >= 0.8  ? 58  :   // amarillo
+      pct >= 0.6  ? 45  :   // ámbar
+      pct >= 0.4  ? 32  :   // naranja
+      pct >= 0.2  ? 18  :   // rojo-naranja
+                    4;      // rojo
     const applyPill = (node, s) => {
       const empty = s.total === 0;
       node.classList.toggle('pack-pill-empty', empty);
-      if (!empty) node.style.setProperty('--pill-h', String(Math.round((s.done / s.total) * 120)));
+      if (!empty) node.style.setProperty('--pill-h', String(pillHue(s.done / s.total)));
       // Pista textual (accesibilidad / colorblind): "5 de 11 preparados".
       node.title = empty ? 'Grupo vacío' : `${s.done} de ${s.total} preparados`;
     };
