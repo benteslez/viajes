@@ -328,6 +328,33 @@ create table if not exists visited_countries (
 );
 create index if not exists visited_countries_profile_idx on visited_countries(profile);
 
+-- Armario del bebé "Pablo" — pestaña exclusiva del viaje España.
+-- Inventario de prendas (una fila por combinación prenda/tipo/talla).
+create table if not exists wardrobe_items (
+  id uuid primary key default gen_random_uuid(),
+  trip_id uuid not null references trips(id) on delete cascade,
+  prenda text not null,
+  tipo text not null,
+  talla text not null,
+  qty int not null default 1,
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+create index if not exists wardrobe_items_trip_idx on wardrobe_items(trip_id);
+
+-- Catálogo de opciones personalizadas (prendas/tipos/tallas) — una fila por viaje.
+-- `id` = trip_id para garantizar una sola fila por viaje.
+create table if not exists wardrobe_catalog (
+  id uuid primary key default gen_random_uuid(),
+  trip_id uuid not null references trips(id) on delete cascade,
+  prendas jsonb not null default '[]'::jsonb,
+  tipos jsonb not null default '{}'::jsonb,
+  tallas jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+create index if not exists wardrobe_catalog_trip_idx on wardrobe_catalog(trip_id);
+
 -- ============================================================
 -- updated_at automático
 -- ============================================================
@@ -348,7 +375,8 @@ begin
     'wishlist_items','day_notes',
     'packing_items','packing_templates','addresses','destination_info',
     'emergency_contacts','phrases','shared_expenses','diary',
-    'travel_docs','visited_countries'
+    'travel_docs','visited_countries',
+    'wardrobe_items','wardrobe_catalog'
   ]) loop
     execute format(
       'drop trigger if exists trg_touch_%I on %I;
@@ -434,7 +462,8 @@ begin
     'trip_legs','planning_items','budget_items','bookings','inquiries',
     'wishlist_items','day_notes','packing_items',
     'addresses','destination_info','emergency_contacts','phrases',
-    'shared_expenses','diary'
+    'shared_expenses','diary',
+    'wardrobe_items','wardrobe_catalog'
   ]) loop
     execute format('alter table %I enable row level security;', t);
     execute format('drop policy if exists p_%I on %I;', t, t);

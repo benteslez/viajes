@@ -102,6 +102,29 @@ Desde el icono de perfil arriba a la derecha:
 Si tienes un HTML aparte con tu listado de opciones futuras, pon su ruta en `CFG.externalPlannerUrl`.
 Aparecerá un botón en la pantalla principal que lo abre en pestaña nueva.
 
+## Pablo · armario del bebé (solo viaje "España")
+
+El viaje cuyo `name` o `country` contenga **España** muestra una pestaña extra **"Pablo"**: un
+inventario de ropa del bebé (prenda → tipo → talla → cantidad). Es **nativo**, no un iframe: usa el
+mismo sistema de datos, diseño, offline y **sincronización Supabase** que el resto de la app.
+
+- **Activación:** la pestaña solo aparece si `name`/`country` del viaje matchean `/espa[ñn]a/i`
+  (ver `tabCandidates` en `index.html`). Se puede ocultar/reordenar como cualquier otra desde
+  *Editar viaje → Pestañas del menú*.
+- **UI:** `TripDetail.tabPablo(panel, t)` pinta la lista; `openWardrobeEditor(t, item?)` abre un
+  *sheet* con el flujo prenda → tipo → talla → cantidad (divulgación progresiva) para añadir/editar.
+- **Datos (sincronizados):** dos stores de IndexedDB que entran en la cola `_pending` → Supabase
+  como cualquier otra tabla:
+  - `wardrobe_items` — una fila por entrada (`trip_id`, `prenda`, `tipo`, `talla`, `qty`).
+  - `wardrobe_catalog` — una fila por viaje (`id = trip_id`) con las opciones personalizadas
+    (`prendas`, `tipos`, `tallas`) que añadas con el "＋".
+  Al ser per-trip, entran también en el **Exportar/Importar JSON** del perfil.
+- **Sincroniza en todos los dispositivos:** como vive en IndexedDB+cola, se replica vía Supabase
+  con el mismo last-write-wins por `updated_at`. ⚠️ Requiere haber ejecutado el `schema.sql`
+  actualizado (crea las tablas `wardrobe_items` y `wardrobe_catalog` con su RLS). Si ya tenías
+  Supabase configurado de antes, **vuelve a ejecutar `schema.sql`** (es idempotente) para crearlas.
+- **Offline:** funciona sin red como el resto (los datos van primero a IndexedDB).
+
 ## Atajos de teclado
 
 - `⌘+K` / `Ctrl+K` → búsqueda global (trips, paradas, gastos, reservas).
@@ -122,7 +145,7 @@ Aparecerá un botón en la pantalla principal que lo abre en pestaña nueva.
 ## Notas técnicas
 
 - Sin build step. Edita `index.html` y recarga.
-- El service worker tiene un único `CACHE` con versión (`viajes-shell-v15` actualmente). Sube el
+- El service worker tiene un único `CACHE` con versión (`viajes-shell-v67` actualmente). Sube el
   número cuando cambies recursos cacheados (CDNs nuevas, iconos) para forzar invalidación.
 - Aplicación de tema **antes del primer paint** mediante script inline en `<head>` que lee
   `localStorage` — evita el flash de tema claro al cargar en modo oscuro.

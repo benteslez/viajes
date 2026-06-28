@@ -3302,6 +3302,7 @@ const DB = {
     'packing_items', 'packing_templates', 'addresses', 'destination_info',
     'emergency_contacts', 'phrases', 'shared_expenses', 'diary',
     'travel_docs', 'visited_countries',
+    'wardrobe_items', 'wardrobe_catalog',
     'media',
   ],
 
@@ -3410,7 +3411,7 @@ const DB = {
     // Versión 5: añade store 'media' para fotos locales (cover, etc.).
     // Race contra timeout: si openDB tarda más de 10s (otra pestaña bloqueando, migración colgada…),
     // rechazamos para no dejar el spinner para siempre.
-    const openPromise = window.idb.openDB('viajes', 5, {
+    const openPromise = window.idb.openDB('viajes', 6, {
       upgrade(db, oldVersion) {
         for (const name of STORES) {
           if (!db.objectStoreNames.contains(name)) {
@@ -5082,6 +5083,7 @@ const Trips = {
       { id:'gastos', label:'Compartir gastos' },
       { id:'diario', label:'Diario' },
       { id:'estadisticas', label:'Estadísticas' },
+      ...((/espa[ñn]a/i.test(t.country||'') || /espa[ñn]a/i.test(t.name||'')) ? [{ id:'pablo', label:'Pablo' }] : []),
     ];
     const body = el('div', { class:'tabs-config' });
     const render = () => {
@@ -5686,6 +5688,8 @@ const TripDetail = {
       (t.is_shared && canSeeMoney()) ? { id:'gastos', label:'Compartir gastos' } : null,
       { id:'diario', label:'Diario' },
       { id:'estadisticas', label:'Estadísticas' },
+      // Pestaña exclusiva del viaje "España": armario del bebé (app embebida).
+      (/espa[ñn]a/i.test(t.country||'') || /espa[ñn]a/i.test(t.name||'')) ? { id:'pablo', label:'Pablo' } : null,
     ].filter(Boolean);
     // Aplicar ocultas (nunca se oculta 'resumen') y el orden personalizado.
     const _ts = tripSettings(t);
@@ -5746,6 +5750,268 @@ const TripDetail = {
     else if (tab === 'destino') await TripDetail.tabDestino(panel, t);
     else if (tab === 'gastos')  await TripDetail.tabGastos(panel, t, fab);
     else if (tab === 'diario')  await TripDetail.tabDiario(panel, t, fab);
+    else if (tab === 'pablo')   await TripDetail.tabPablo(panel, t);
+  },
+
+  /* ----- Pablo · Armario del bebé (nativo + sincronizado por Supabase) -----
+     Datos en los stores 'wardrobe_items' (una fila por entrada) y
+     'wardrobe_catalog' (una fila por viaje con las opciones personalizadas).
+     Ambos pasan por DB.put/remove → cola _pending → sync, como el resto. */
+  WARDROBE_DEFAULTS: {
+    prendas: ['Pantalón','Body','Camiseta','Pelele','Pijama','Jersey','Chaqueta','Vestido','Calcetines','Gorro'],
+    tipos: {
+      'Pantalón':['Largo','Corto','Legging'],
+      'Body':['Manga larga','Manga corta','Sin mangas'],
+      'Camiseta':['Manga larga','Manga corta'],
+      'Pelele':['Manga larga','Manga corta','Sin mangas'],
+      'Pijama':['Entero','Dos piezas'],
+      'Jersey':['Normal','Con cremallera','Con capucha'],
+      'Chaqueta':['Fina','Acolchada','Polar'],
+      'Vestido':['Manga larga','Manga corta','Sin mangas'],
+      'Calcetines':['Cortos','Largos','Antideslizantes'],
+      'Gorro':['Verano','Invierno'],
+    },
+    tallas: ['0-3m','3-6m','6-9m','9-12m','12-18m','18-24m'],
+  },
+  WARDROBE_ICONS: {
+    'Pantalón':'👖','Body':'🩱','Camiseta':'👕','Pelele':'🧸','Pijama':'🌙',
+    'Jersey':'🧶','Chaqueta':'🧥','Vestido':'👗','Calcetines':'🧦','Gorro':'🧢',
+  },
+  _wardrobeSort: 'prenda',
+  _wardrobeIcon(p) { return TripDetail.WARDROBE_ICONS[p] || '👶'; },
+
+  async _wardrobeCatalog(t) {
+    const d = TripDetail.WARDROBE_DEFAULTS;
+    let row = null;
+    try { row = await DB.get('wardrobe_catalog', t.id); } catch (_) {}
+    if (!row || row.deleted_at) {
+      return { trip_id: t.id, prendas: [...d.prendas], tipos: JSON.parse(JSON.stringify(d.tipos)), tallas: [...d.tallas] };
+    }
+    return {
+      trip_id: t.id,
+      prendas: Array.isArray(row.prendas) && row.prendas.length ? row.prendas : [...d.prendas],
+      tipos:   (row.tipos && typeof row.tipos === 'object' && !Array.isArray(row.tipos)) ? row.tipos : JSON.parse(JSON.stringify(d.tipos)),
+      tallas:  Array.isArray(row.tallas) && row.tallas.length ? row.tallas : [...d.tallas],
+    };
+  },
+  async _wardrobeSaveCatalog(cat) {
+    await DB.put('wardrobe_catalog', { id: cat.trip_id, trip_id: cat.trip_id, prendas: cat.prendas, tipos: cat.tipos, tallas: cat.tallas });
+  },
+
+  _wardrobeInjectStyles() {
+    if (document.getElementById('wr-styles')) return;
+    document.head.appendChild(el('style', { id:'wr-styles', html: `
+      .wr-head{display:flex;align-items:center;justify-content:space-between;gap:var(--gap-3);margin:18px 0 14px;}
+      .wr-sum{display:flex;align-items:baseline;gap:6px;font-size:.9rem;}
+      .wr-sum-n{font-size:1.5rem;font-weight:800;color:var(--text);letter-spacing:-.02em;}
+      .wr-dot{color:var(--text-muted);}
+      .wr-sort{margin-bottom:14px;}
+      .wr-list{display:flex;flex-direction:column;gap:9px;}
+      .wr-item{display:flex;align-items:center;gap:12px;background:var(--bg-elev);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;box-shadow:var(--sh-1);}
+      .wr-qty{flex-shrink:0;min-width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-sm);background:var(--accent-bg);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);font-weight:700;font-size:1rem;}
+      .wr-ico{font-size:1.35rem;flex-shrink:0;line-height:1;}
+      .wr-info{flex:1;min-width:0;}
+      .wr-name{font-weight:700;font-size:.96rem;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .wr-sub{font-size:.79rem;margin-top:1px;}
+      .wr-foot{margin-top:18px;display:flex;justify-content:center;}
+      .wr-edit{display:flex;flex-direction:column;gap:18px;}
+      .wr-sec-label{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:9px;}
+      .wr-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+      .wr-chip{font-family:var(--font-ui);font-size:.88rem;font-weight:600;padding:9px 14px;border-radius:var(--r-pill);border:1.5px solid var(--line);background:var(--bg-elev);color:var(--text);cursor:pointer;transition:all .15s var(--ease);display:inline-flex;align-items:center;gap:6px;}
+      .wr-chip:hover{border-color:var(--accent);}
+      .wr-chip.sel{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
+      .wr-chip.mono{font-variant-numeric:tabular-nums;}
+      .wr-chip-ico{font-size:1.05rem;}
+      .wr-chip-add{border-style:dashed;color:var(--text-muted);font-weight:700;}
+      .wr-chip-ok{border-color:var(--accent);background:var(--accent);color:var(--text-inv);}
+      .wr-add-row{display:inline-flex;align-items:center;gap:6px;}
+      .wr-add-input{font-family:var(--font-ui);font-size:.88rem;font-weight:600;padding:8px 12px;border-radius:var(--r-pill);border:1.5px solid var(--accent);background:var(--bg-input);color:var(--text);outline:none;width:130px;}
+      .wr-qsec{display:flex;flex-direction:column;align-items:flex-start;gap:9px;}
+      .wr-qlabel{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);}
+      .wr-stepper{display:inline-flex;align-items:center;gap:16px;background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-pill);padding:5px;}
+      .wr-stepper .icon-btn{width:42px;height:42px;font-size:1.4rem;background:var(--bg-elev);}
+      .wr-qval{font-size:1.5rem;font-weight:700;min-width:40px;text-align:center;font-variant-numeric:tabular-nums;}
+      .btn.is-disabled{opacity:.45;pointer-events:none;}
+    ` }));
+  },
+
+  async tabPablo(root, t) {
+    TripDetail._wardrobeInjectStyles();
+    const items = await DB.listByTrip('wardrobe_items', t.id);
+    const total = items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
+    const sort = TripDetail._wardrobeSort || 'prenda';
+
+    root.appendChild(el('div', { class:'wr-head' }, [
+      el('div', { class:'wr-sum' }, [
+        el('span', { class:'wr-sum-n mono', text: String(total) }),
+        el('span', { class:'muted', text: total === 1 ? 'prenda' : 'prendas' }),
+        items.length ? el('span', { class:'wr-dot', text:'·' }) : null,
+        items.length ? el('span', { class:'muted', text: `${items.length} ${items.length === 1 ? 'entrada' : 'entradas'}` }) : null,
+      ].filter(Boolean)),
+      canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir prenda', 'aria-label':'Añadir prenda',
+        html: svg('plus'), onclick: () => TripDetail.openWardrobeEditor(t) }) : null,
+    ].filter(Boolean)));
+
+    if (!items.length) {
+      root.appendChild(el('div', { class:'empty' }, [
+        el('div', { class:'icon', html: svg('suit') }),
+        el('h3', { text:'Armario vacío' }),
+        el('p', { text: canEdit() ? 'Añade la primera prenda del bebé con el “+”.' : 'Todavía no hay prendas registradas.' }),
+      ]));
+      return;
+    }
+
+    root.appendChild(el('div', { class:'segmented wr-sort' }, [
+      ['prenda','A–Z'], ['qty','Cantidad'], ['talla','Talla'],
+    ].map(([k, lbl]) => el('button', { class: sort === k ? 'active' : '',
+      onclick: () => { TripDetail._wardrobeSort = k; Router.render(); } }, lbl))));
+
+    const tOrder = TripDetail.WARDROBE_DEFAULTS.tallas;
+    const sorted = [...items];
+    if (sort === 'prenda') sorted.sort((a, b) => a.prenda.localeCompare(b.prenda, 'es') || a.talla.localeCompare(b.talla, 'es'));
+    else if (sort === 'qty') sorted.sort((a, b) => (b.qty - a.qty) || a.prenda.localeCompare(b.prenda, 'es'));
+    else if (sort === 'talla') sorted.sort((a, b) => { const ai = tOrder.indexOf(a.talla), bi = tOrder.indexOf(b.talla); return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.prenda.localeCompare(b.prenda, 'es'); });
+
+    const list = el('div', { class:'wr-list' });
+    sorted.forEach(it => {
+      list.appendChild(el('div', { class:'wr-item' }, [
+        el('div', { class:'wr-qty mono', text: String(it.qty) }),
+        el('div', { class:'wr-ico', text: TripDetail._wardrobeIcon(it.prenda) }),
+        el('div', { class:'wr-info' }, [
+          el('div', { class:'wr-name', text: it.prenda }),
+          el('div', { class:'wr-sub muted', text: `${it.tipo} · ${it.talla}` }),
+        ]),
+        canEdit() ? el('button', { class:'icon-btn', title:'Editar', 'aria-label':'Editar prenda',
+          html: svg('edit'), onclick: () => TripDetail.openWardrobeEditor(t, it) }) : null,
+      ].filter(Boolean)));
+    });
+    root.appendChild(list);
+
+    root.appendChild(el('div', { class:'wr-foot' }, [
+      el('button', { class:'btn btn-ghost btn-sm', onclick: () => TripDetail._wardrobeExportCSV(sorted) }, [
+        el('span', { html: svg('download') }), 'Exportar CSV',
+      ]),
+    ]));
+  },
+
+  _wrChipSection(label, options, selected, onSelect, onAddCustom, iconFn, mono) {
+    const chips = el('div', { class:'wr-chips' });
+    (options || []).forEach(opt => {
+      chips.appendChild(el('button', { type:'button',
+        class:'wr-chip' + (selected === opt ? ' sel' : '') + (mono ? ' mono' : ''),
+        onclick: () => onSelect(opt) },
+        iconFn ? [ el('span', { class:'wr-chip-ico', text: iconFn(opt) }), opt ] : opt));
+    });
+    if (onAddCustom) {
+      const addChip = el('button', { type:'button', class:'wr-chip wr-chip-add', title:'Añadir opción' }, '＋');
+      addChip.onclick = () => {
+        const input = el('input', { type:'text', class:'wr-add-input', placeholder:'Nuevo…', maxlength:'30' });
+        const commit = () => { const v = input.value.trim(); if (v) onAddCustom(v); };
+        const ok = el('button', { type:'button', class:'wr-chip wr-chip-ok', onclick: commit }, 'OK');
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+        addChip.replaceWith(el('span', { class:'wr-add-row' }, [ input, ok ]));
+        setTimeout(() => input.focus(), 30);
+      };
+      chips.appendChild(addChip);
+    }
+    return el('div', { class:'wr-sec' }, [ el('div', { class:'wr-sec-label', text: label }), chips ]);
+  },
+
+  async openWardrobeEditor(t, existing = null) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const cat = await TripDetail._wardrobeCatalog(t);
+    const sel = existing
+      ? { prenda: existing.prenda, tipo: existing.tipo, talla: existing.talla }
+      : { prenda: null, tipo: null, talla: null };
+    let qty = existing ? (Number(existing.qty) || 1) : 1;
+
+    const body = el('div', { class:'wr-edit' });
+    const saveBtn = el('button', { class:'btn btn-primary' }, existing ? 'Guardar' : 'Añadir');
+    const updateFoot = () => {
+      const ready = !!(sel.prenda && sel.tipo && sel.talla);
+      saveBtn.disabled = !ready;
+      saveBtn.classList.toggle('is-disabled', !ready);
+    };
+
+    const rerender = () => {
+      body.innerHTML = '';
+      body.appendChild(TripDetail._wrChipSection('Prenda', cat.prendas, sel.prenda,
+        (val) => { sel.prenda = val; if (!(cat.tipos[val] || []).includes(sel.tipo)) sel.tipo = null; sel.talla = sel.talla; rerender(); updateFoot(); },
+        async (v) => { if (cat.prendas.includes(v)) { UI.toast('Esa prenda ya existe'); return; } cat.prendas.push(v); if (!cat.tipos[v]) cat.tipos[v] = []; await TripDetail._wardrobeSaveCatalog(cat); sel.prenda = v; sel.tipo = null; rerender(); updateFoot(); },
+        TripDetail._wardrobeIcon));
+
+      if (sel.prenda) {
+        body.appendChild(TripDetail._wrChipSection('Tipo', cat.tipos[sel.prenda] || [], sel.tipo,
+          (val) => { sel.tipo = val; rerender(); updateFoot(); },
+          async (v) => { const l = cat.tipos[sel.prenda] || (cat.tipos[sel.prenda] = []); if (l.includes(v)) { UI.toast('Ese tipo ya existe'); return; } l.push(v); await TripDetail._wardrobeSaveCatalog(cat); sel.tipo = v; rerender(); updateFoot(); }));
+      }
+
+      if (sel.prenda && sel.tipo) {
+        body.appendChild(TripDetail._wrChipSection('Talla', cat.tallas, sel.talla,
+          (val) => { sel.talla = val; rerender(); updateFoot(); },
+          async (v) => { if (cat.tallas.includes(v)) { UI.toast('Esa talla ya existe'); return; } cat.tallas.push(v); await TripDetail._wardrobeSaveCatalog(cat); sel.talla = v; rerender(); updateFoot(); },
+          null, true));
+      }
+
+      if (sel.prenda && sel.tipo && sel.talla) {
+        const qval = el('span', { class:'wr-qval', text: String(qty) });
+        body.appendChild(el('div', { class:'wr-qsec' }, [
+          el('div', { class:'wr-qlabel', text: existing ? 'Cantidad' : 'Cantidad a añadir' }),
+          el('div', { class:'wr-stepper' }, [
+            el('button', { type:'button', class:'icon-btn', 'aria-label':'Restar', onclick: () => { qty = Math.max(1, qty - 1); qval.textContent = String(qty); } }, '−'),
+            qval,
+            el('button', { type:'button', class:'icon-btn', 'aria-label':'Sumar', onclick: () => { qty = Math.min(99, qty + 1); qval.textContent = String(qty); } }, '+'),
+          ]),
+        ]));
+      }
+    };
+
+    saveBtn.onclick = async () => {
+      if (!(sel.prenda && sel.tipo && sel.talla)) return;
+      await TripDetail._wardrobeCommit(t, existing, sel, qty);
+      UI.closeSheet(); Router.render();
+    };
+    const footer = [];
+    if (existing) footer.push(el('button', { class:'btn btn-danger', onclick: async () => {
+      if (!await UI.confirm(`¿Eliminar ${existing.prenda} · ${existing.tipo} · ${existing.talla}?`)) return;
+      await DB.remove('wardrobe_items', existing.id); UI.closeSheet(); Router.render(); UI.toast('Prenda eliminada');
+    } }, 'Eliminar'));
+    footer.push(el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'));
+    footer.push(saveBtn);
+
+    rerender(); updateFoot();
+    UI.openSheet({ title: existing ? 'Editar prenda' : 'Añadir prenda', body, footer });
+  },
+
+  async _wardrobeCommit(t, existing, sel, qty) {
+    const items = await DB.listByTrip('wardrobe_items', t.id);
+    if (existing) {
+      const dup = items.find(i => i.id !== existing.id && i.prenda === sel.prenda && i.tipo === sel.tipo && i.talla === sel.talla);
+      if (dup) {
+        dup.qty = (Number(dup.qty) || 0) + (Number(qty) || 1);
+        await DB.put('wardrobe_items', dup);
+        await DB.remove('wardrobe_items', existing.id);
+        UI.toast(`Combinado (${dup.qty} uds.)`);
+      } else {
+        existing.prenda = sel.prenda; existing.tipo = sel.tipo; existing.talla = sel.talla; existing.qty = Number(qty) || 1;
+        await DB.put('wardrobe_items', existing);
+        UI.toast('Cambios guardados');
+      }
+    } else {
+      const dup = items.find(i => i.prenda === sel.prenda && i.tipo === sel.tipo && i.talla === sel.talla);
+      if (dup) { dup.qty = (Number(dup.qty) || 0) + (Number(qty) || 1); await DB.put('wardrobe_items', dup); }
+      else { await DB.put('wardrobe_items', { id: uuid(), trip_id: t.id, prenda: sel.prenda, tipo: sel.tipo, talla: sel.talla, qty: Number(qty) || 1 }); }
+      UI.toast(`${qty} · ${sel.prenda} añadido`);
+    }
+  },
+
+  _wardrobeExportCSV(items) {
+    if (!items.length) { UI.toast('El armario está vacío'); return; }
+    const rows = [['Prenda','Tipo','Talla','Cantidad'], ...items.map(i => [i.prenda, i.tipo, i.talla, i.qty])];
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = el('a', { href: 'data:text/csv;charset=utf-8,' + encodeURIComponent('﻿' + csv), download: `armario-pablo-${nowIso().slice(0,10)}.csv` });
+    document.body.appendChild(a); a.click(); a.remove();
+    UI.toast('CSV descargado');
   },
 
   /* ----- Resumen ----- */
