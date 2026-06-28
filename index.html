@@ -5820,6 +5820,7 @@ const TripDetail = {
       .wr-foot{margin-top:18px;display:flex;justify-content:center;}
       /* ----- Asistente "Añadir prenda" a pantalla completa ----- */
       .wrf-overlay{position:fixed;inset:0;z-index:95;background:var(--bg);overflow:hidden;}
+      .wrf-overlay button{touch-action:manipulation;-webkit-user-select:none;user-select:none;}
       .wrf-screen{position:absolute;inset:0;display:flex;flex-direction:column;overflow-y:auto;background:var(--bg);-webkit-overflow-scrolling:touch;}
       .wrf-screen.in-right{animation:wrfInR .3s var(--ease);}
       .wrf-screen.in-left{animation:wrfInL .3s var(--ease);}
@@ -5903,7 +5904,7 @@ const TripDetail = {
     root.appendChild(el('div', { class:'segmented wr-sort' }, [
       ['prenda','A–Z'], ['qty','Cantidad'], ['talla','Talla'],
     ].map(([k, lbl]) => el('button', { class: sort === k ? 'active' : '',
-      onclick: () => { TripDetail._wardrobeSort = k; Router.render(); } }, lbl))));
+      onclick: () => { TripDetail._wardrobeSort = k; Router.renderKeepScroll(); } }, lbl))));
 
     const tOrder = TripDetail.WARDROBE_DEFAULTS.tallas;
     const sorted = [...items];
@@ -5944,12 +5945,22 @@ const TripDetail = {
       : { prenda: null, tipo: null, talla: null };
     let qty = existing ? (Number(existing.qty) || 1) : 1;
     const save = () => TripDetail._wardrobeSaveCatalog(cat);
+    // Guardar el scroll de la pestaña ANTES de bloquear el body, para restaurarlo
+    // al cerrar y evitar el salto al inicio de la pantalla del viaje.
+    const returnScroll = (document.scrollingElement || document.documentElement).scrollTop || 0;
 
     const overlay = el('div', { class:'wrf-overlay', role:'dialog', 'aria-modal':'true', 'aria-label':'Añadir prenda' });
     document.body.appendChild(overlay);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const close = () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow; overlay.remove(); };
+    // Cierra, re-renderiza la pestaña y restaura el scroll donde estaba.
+    const finishAndClose = async () => {
+      close();
+      await Router.render();
+      const s = document.scrollingElement || document.documentElement;
+      if (s) { s.scrollTop = returnScroll; requestAnimationFrame(() => { s.scrollTop = returnScroll; }); }
+    };
     const onKey = (e) => { if (e.key === 'Escape') back(); };
     document.addEventListener('keydown', onKey);
 
@@ -6074,11 +6085,11 @@ const TripDetail = {
         ]),
         el('button', { class:'wrf-confirm-btn', onclick: async () => {
           await TripDetail._wardrobeCommit(t, existing, sel, qty);
-          close(); Router.render();
+          await finishAndClose();
         } }, existing ? '✓ Guardar cambios' : '✓ Confirmar y añadir'),
         existing ? el('button', { class:'wrf-c-del', onclick: async () => {
           if (!confirm(`¿Eliminar ${existing.prenda} · ${existing.tipo} · ${existing.talla}?`)) return;
-          await DB.remove('wardrobe_items', existing.id); close(); Router.render(); UI.toast('Prenda eliminada');
+          await DB.remove('wardrobe_items', existing.id); await finishAndClose(); UI.toast('Prenda eliminada');
         } }, 'Eliminar prenda') : null,
       ].filter(Boolean));
       return el('section', { class:'wrf-screen confirm' }, [ topBar(3), body ]);
