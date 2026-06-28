@@ -2964,10 +2964,14 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() :
     const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8); return v.toString(16);
   }));
 const nowIso = () => new Date().toISOString();
-const todayIso = () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
+const todayIso = () => isoLocal(new Date());
 
 // Fechas
 const parseDate = (iso) => iso ? new Date(iso + 'T00:00:00') : null;
+// Fecha local → 'YYYY-MM-DD' SIN pasar por UTC. Usar SIEMPRE esto en lugar de
+// `date.toISOString().slice(0,10)`: en zonas con offset positivo (España UTC+1/+2)
+// la medianoche local cae el día ANTERIOR en UTC, lo que desplazaba los días un día atrás.
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const fmtDate = (iso, opts={}) => {
   if (!iso) return '';
   const d = new Date(iso + 'T00:00:00');
@@ -3095,7 +3099,7 @@ const nightCoordsMap = (planningItems) => {
       let d = parseDate(it.consultation_planned_d1);
       const end = parseDate(it.consultation_planned_d2);
       while (d < end) {
-        map[d.toISOString().slice(0,10)] = { lat: it.lat, lng: it.lng };
+        map[isoLocal(d)] = { lat: it.lat, lng: it.lng };
         d.setDate(d.getDate() + 1);
       }
     }
@@ -5814,24 +5818,59 @@ const TripDetail = {
       .wr-name{font-weight:700;font-size:.96rem;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
       .wr-sub{font-size:.79rem;margin-top:1px;}
       .wr-foot{margin-top:18px;display:flex;justify-content:center;}
-      .wr-edit{display:flex;flex-direction:column;gap:18px;}
-      .wr-sec-label{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:9px;}
-      .wr-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
-      .wr-chip{font-family:var(--font-ui);font-size:.88rem;font-weight:600;padding:9px 14px;border-radius:var(--r-pill);border:1.5px solid var(--line);background:var(--bg-elev);color:var(--text);cursor:pointer;transition:all .15s var(--ease);display:inline-flex;align-items:center;gap:6px;}
-      .wr-chip:hover{border-color:var(--accent);}
-      .wr-chip.sel{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
-      .wr-chip.mono{font-variant-numeric:tabular-nums;}
-      .wr-chip-ico{font-size:1.05rem;}
-      .wr-chip-add{border-style:dashed;color:var(--text-muted);font-weight:700;}
-      .wr-chip-ok{border-color:var(--accent);background:var(--accent);color:var(--text-inv);}
-      .wr-add-row{display:inline-flex;align-items:center;gap:6px;}
-      .wr-add-input{font-family:var(--font-ui);font-size:.88rem;font-weight:600;padding:8px 12px;border-radius:var(--r-pill);border:1.5px solid var(--accent);background:var(--bg-input);color:var(--text);outline:none;width:130px;}
-      .wr-qsec{display:flex;flex-direction:column;align-items:flex-start;gap:9px;}
-      .wr-qlabel{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);}
-      .wr-stepper{display:inline-flex;align-items:center;gap:16px;background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-pill);padding:5px;}
-      .wr-stepper .icon-btn{width:42px;height:42px;font-size:1.4rem;background:var(--bg-elev);}
-      .wr-qval{font-size:1.5rem;font-weight:700;min-width:40px;text-align:center;font-variant-numeric:tabular-nums;}
-      .btn.is-disabled{opacity:.45;pointer-events:none;}
+      /* ----- Asistente "Añadir prenda" a pantalla completa ----- */
+      .wrf-overlay{position:fixed;inset:0;z-index:95;background:var(--bg);overflow:hidden;}
+      .wrf-screen{position:absolute;inset:0;display:flex;flex-direction:column;overflow-y:auto;background:var(--bg);-webkit-overflow-scrolling:touch;}
+      .wrf-screen.in-right{animation:wrfInR .3s var(--ease);}
+      .wrf-screen.in-left{animation:wrfInL .3s var(--ease);}
+      @keyframes wrfInR{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
+      @keyframes wrfInL{from{opacity:0;transform:translateX(-30px);}to{opacity:1;transform:translateX(0);}}
+      .wrf-top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));background:var(--bg);}
+      .wrf-top .spacer{flex:1;}
+      .wrf-prog{display:flex;align-items:center;gap:6px;}
+      .wrf-pdot{width:22px;height:5px;border-radius:999px;background:var(--line);transition:background .3s;}
+      .wrf-pdot.on{background:var(--accent);}
+      .wrf-body{flex:1;width:100%;max-width:560px;margin:0 auto;padding:6px 20px 36px;}
+      .wrf-q{font-size:1.7rem;font-weight:800;letter-spacing:-.02em;margin:6px 0 4px;}
+      .wrf-hint{color:var(--text-muted);font-size:.92rem;margin-bottom:20px;}
+      .wrf-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:16px;}
+      .wrf-crumb{font-size:.8rem;font-weight:700;padding:4px 11px;border-radius:999px;background:var(--accent-bg);color:var(--accent);}
+      .wrf-crumb-sep{color:var(--text-muted);}
+      .wrf-list{display:flex;flex-direction:column;gap:10px;}
+      .wrf-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--bg-elev);border:1px solid var(--line);border-radius:var(--r-md);padding:16px;cursor:pointer;font-family:var(--font-ui);color:var(--text);box-shadow:var(--sh-1);transition:transform .1s var(--ease),border-color .15s,background .15s;}
+      .wrf-row:hover{border-color:var(--accent);background:var(--accent-bg);}
+      .wrf-row:active{transform:scale(.99);}
+      .wrf-row-ico{font-size:1.5rem;line-height:1;}
+      .wrf-row-label{font-size:1.02rem;font-weight:700;flex:1;}
+      .wrf-row-chev{color:var(--text-muted);font-size:1.3rem;font-weight:700;}
+      .wrf-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+      .wrf-opt{display:flex;align-items:center;justify-content:center;text-align:center;min-height:62px;background:var(--bg-elev);border:1px solid var(--line);border-radius:var(--r-md);padding:14px;cursor:pointer;font-family:var(--font-ui);font-weight:700;font-size:1rem;color:var(--text);box-shadow:var(--sh-1);transition:transform .1s var(--ease),border-color .15s,background .15s;}
+      .wrf-opt:hover{border-color:var(--accent);background:var(--accent-bg);}
+      .wrf-opt:active{transform:scale(.97);}
+      .wrf-opt.mono{font-variant-numeric:tabular-nums;}
+      .wrf-add{margin-top:14px;}
+      .wrf-add-btn{width:100%;border:1.5px dashed var(--line);background:transparent;border-radius:var(--r-md);padding:14px;color:var(--text-muted);font-weight:700;font-family:var(--font-ui);font-size:.92rem;cursor:pointer;transition:all .15s;}
+      .wrf-add-btn:hover{border-color:var(--accent);color:var(--accent);}
+      .wrf-add-form{display:flex;gap:8px;margin-top:10px;}
+      .wrf-add-form input{flex:1;min-width:0;font-family:var(--font-ui);font-size:.95rem;font-weight:600;padding:12px 14px;border-radius:var(--r-md);border:1.5px solid var(--accent);background:var(--bg-input);color:var(--text);outline:none;}
+      .wrf-screen.confirm{background:linear-gradient(160deg,#16a34a,#15803d);color:#fff;}
+      .wrf-screen.confirm .wrf-top{background:transparent;}
+      .wrf-screen.confirm .wrf-top .icon-btn{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.5);color:#fff;}
+      .wrf-confirm{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:16px;min-height:62vh;}
+      .wrf-c-ico{font-size:3.6rem;line-height:1;}
+      .wrf-c-prenda{font-size:1.9rem;font-weight:800;letter-spacing:-.02em;}
+      .wrf-c-pills{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;}
+      .wrf-c-pill{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:999px;padding:6px 15px;font-weight:700;font-size:.88rem;}
+      .wrf-c-pill.mono{font-variant-numeric:tabular-nums;}
+      .wrf-c-qlabel{margin-top:8px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.85);}
+      .wrf-cstepper{display:inline-flex;align-items:center;gap:18px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:6px;}
+      .wrf-cstep{width:46px;height:46px;border-radius:999px;border:none;background:rgba(255,255,255,.92);color:#15803d;font-size:1.5rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);}
+      .wrf-cstep:active{transform:scale(.92);}
+      .wrf-cqval{font-size:1.9rem;font-weight:800;min-width:46px;text-align:center;font-variant-numeric:tabular-nums;}
+      .wrf-confirm-btn{margin-top:10px;width:100%;max-width:360px;border:none;border-radius:var(--r-md);background:#fff;color:#15803d;font-family:var(--font-ui);font-weight:800;font-size:1.08rem;padding:17px;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.22);transition:transform .1s var(--ease);}
+      .wrf-confirm-btn:active{transform:scale(.98);}
+      .wrf-c-del{margin-top:2px;background:none;border:none;color:rgba(255,255,255,.85);font-family:var(--font-ui);font-weight:700;font-size:.9rem;text-decoration:underline;cursor:pointer;}
+      @media (prefers-reduced-motion: reduce){.wrf-screen.in-right,.wrf-screen.in-left{animation:none;}}
     ` }));
   },
 
@@ -5849,7 +5888,7 @@ const TripDetail = {
         items.length ? el('span', { class:'muted', text: `${items.length} ${items.length === 1 ? 'entrada' : 'entradas'}` }) : null,
       ].filter(Boolean)),
       canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir prenda', 'aria-label':'Añadir prenda',
-        html: svg('plus'), onclick: () => TripDetail.openWardrobeEditor(t) }) : null,
+        html: svg('plus'), onclick: () => TripDetail.openWardrobeFlow(t) }) : null,
     ].filter(Boolean)));
 
     if (!items.length) {
@@ -5882,7 +5921,7 @@ const TripDetail = {
           el('div', { class:'wr-sub muted', text: `${it.tipo} · ${it.talla}` }),
         ]),
         canEdit() ? el('button', { class:'icon-btn', title:'Editar', 'aria-label':'Editar prenda',
-          html: svg('edit'), onclick: () => TripDetail.openWardrobeEditor(t, it) }) : null,
+          html: svg('edit'), onclick: () => TripDetail.openWardrobeFlow(t, it) }) : null,
       ].filter(Boolean)));
     });
     root.appendChild(list);
@@ -5894,93 +5933,158 @@ const TripDetail = {
     ]));
   },
 
-  _wrChipSection(label, options, selected, onSelect, onAddCustom, iconFn, mono) {
-    const chips = el('div', { class:'wr-chips' });
-    (options || []).forEach(opt => {
-      chips.appendChild(el('button', { type:'button',
-        class:'wr-chip' + (selected === opt ? ' sel' : '') + (mono ? ' mono' : ''),
-        onclick: () => onSelect(opt) },
-        iconFn ? [ el('span', { class:'wr-chip-ico', text: iconFn(opt) }), opt ] : opt));
-    });
-    if (onAddCustom) {
-      const addChip = el('button', { type:'button', class:'wr-chip wr-chip-add', title:'Añadir opción' }, '＋');
-      addChip.onclick = () => {
-        const input = el('input', { type:'text', class:'wr-add-input', placeholder:'Nuevo…', maxlength:'30' });
-        const commit = () => { const v = input.value.trim(); if (v) onAddCustom(v); };
-        const ok = el('button', { type:'button', class:'wr-chip wr-chip-ok', onclick: commit }, 'OK');
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
-        addChip.replaceWith(el('span', { class:'wr-add-row' }, [ input, ok ]));
-        setTimeout(() => input.focus(), 30);
-      };
-      chips.appendChild(addChip);
-    }
-    return el('div', { class:'wr-sec' }, [ el('div', { class:'wr-sec-label', text: label }), chips ]);
-  },
-
-  async openWardrobeEditor(t, existing = null) {
+  // Asistente a pantalla completa: prenda → tipo → talla → confirmar (verde).
+  // Cada paso es una pantalla con transición de deslizamiento y botón de volver/descartar.
+  async openWardrobeFlow(t, existing = null) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    TripDetail._wardrobeInjectStyles();
     const cat = await TripDetail._wardrobeCatalog(t);
     const sel = existing
       ? { prenda: existing.prenda, tipo: existing.tipo, talla: existing.talla }
       : { prenda: null, tipo: null, talla: null };
     let qty = existing ? (Number(existing.qty) || 1) : 1;
+    const save = () => TripDetail._wardrobeSaveCatalog(cat);
 
-    const body = el('div', { class:'wr-edit' });
-    const saveBtn = el('button', { class:'btn btn-primary' }, existing ? 'Guardar' : 'Añadir');
-    const updateFoot = () => {
-      const ready = !!(sel.prenda && sel.tipo && sel.talla);
-      saveBtn.disabled = !ready;
-      saveBtn.classList.toggle('is-disabled', !ready);
+    const overlay = el('div', { class:'wrf-overlay', role:'dialog', 'aria-modal':'true', 'aria-label':'Añadir prenda' });
+    document.body.appendChild(overlay);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const close = () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow; overlay.remove(); };
+    const onKey = (e) => { if (e.key === 'Escape') back(); };
+    document.addEventListener('keydown', onKey);
+
+    let stack = existing ? ['prenda', 'tipo', 'talla', 'confirm'] : ['prenda'];
+    const show = (name, dir) => {
+      overlay.innerHTML = '';
+      const scr = buildScreen(name);
+      scr.classList.add(dir === 'back' ? 'in-left' : 'in-right');
+      overlay.appendChild(scr);
+    };
+    const go = (name) => { stack.push(name); show(name, 'fwd'); };
+    const back = () => { stack.pop(); if (!stack.length) { close(); return; } show(stack[stack.length - 1], 'back'); };
+
+    const topBar = (stepIdx) => {
+      const hasBack = stack.length > 1;
+      const left = el('button', { class:'icon-btn', title: hasBack ? 'Volver' : 'Descartar',
+        'aria-label': hasBack ? 'Volver' : 'Descartar', html: svg(hasBack ? 'back' : 'close'), onclick: back });
+      const kids = [left, el('div', { class:'spacer' })];
+      if (stepIdx < 3) {
+        kids.push(el('div', { class:'wrf-prog' }, [0,1,2].map(i => el('span', { class:'wrf-pdot' + (i <= stepIdx ? ' on' : '') }))));
+        kids.push(el('div', { class:'spacer' }));
+      }
+      // Descartar siempre accesible cuando hay historial (en el 1er paso, "volver" ya descarta).
+      kids.push(hasBack ? el('button', { class:'icon-btn', title:'Descartar', 'aria-label':'Descartar', html: svg('close'), onclick: close }) : el('div', { class:'spacer' }));
+      return el('div', { class:'wrf-top' }, kids);
     };
 
-    const rerender = () => {
-      body.innerHTML = '';
-      body.appendChild(TripDetail._wrChipSection('Prenda', cat.prendas, sel.prenda,
-        (val) => { sel.prenda = val; if (!(cat.tipos[val] || []).includes(sel.tipo)) sel.tipo = null; sel.talla = sel.talla; rerender(); updateFoot(); },
-        async (v) => { if (cat.prendas.includes(v)) { UI.toast('Esa prenda ya existe'); return; } cat.prendas.push(v); if (!cat.tipos[v]) cat.tipos[v] = []; await TripDetail._wardrobeSaveCatalog(cat); sel.prenda = v; sel.tipo = null; rerender(); updateFoot(); },
-        TripDetail._wardrobeIcon));
+    const crumbs = (keys) => el('div', { class:'wrf-crumbs' }, keys.flatMap((k, i) => {
+      const txt = k === 'prenda' ? `${TripDetail._wardrobeIcon(sel.prenda)} ${sel.prenda}` : (k === 'tipo' ? sel.tipo : sel.talla);
+      const chip = el('span', { class:'wrf-crumb', text: txt });
+      return i < keys.length - 1 ? [chip, el('span', { class:'wrf-crumb-sep', text:'›' })] : [chip];
+    }));
 
-      if (sel.prenda) {
-        body.appendChild(TripDetail._wrChipSection('Tipo', cat.tipos[sel.prenda] || [], sel.tipo,
-          (val) => { sel.tipo = val; rerender(); updateFoot(); },
-          async (v) => { const l = cat.tipos[sel.prenda] || (cat.tipos[sel.prenda] = []); if (l.includes(v)) { UI.toast('Ese tipo ya existe'); return; } l.push(v); await TripDetail._wardrobeSaveCatalog(cat); sel.tipo = v; rerender(); updateFoot(); }));
-      }
-
-      if (sel.prenda && sel.tipo) {
-        body.appendChild(TripDetail._wrChipSection('Talla', cat.tallas, sel.talla,
-          (val) => { sel.talla = val; rerender(); updateFoot(); },
-          async (v) => { if (cat.tallas.includes(v)) { UI.toast('Esa talla ya existe'); return; } cat.tallas.push(v); await TripDetail._wardrobeSaveCatalog(cat); sel.talla = v; rerender(); updateFoot(); },
-          null, true));
-      }
-
-      if (sel.prenda && sel.tipo && sel.talla) {
-        const qval = el('span', { class:'wr-qval', text: String(qty) });
-        body.appendChild(el('div', { class:'wr-qsec' }, [
-          el('div', { class:'wr-qlabel', text: existing ? 'Cantidad' : 'Cantidad a añadir' }),
-          el('div', { class:'wr-stepper' }, [
-            el('button', { type:'button', class:'icon-btn', 'aria-label':'Restar', onclick: () => { qty = Math.max(1, qty - 1); qval.textContent = String(qty); } }, '−'),
-            qval,
-            el('button', { type:'button', class:'icon-btn', 'aria-label':'Sumar', onclick: () => { qty = Math.min(99, qty + 1); qval.textContent = String(qty); } }, '+'),
-          ]),
-        ]));
-      }
+    const addZone = (kind) => {
+      const labels = { prenda:'Añadir prenda nueva', tipo:'Añadir tipo nuevo', talla:'Añadir talla nueva' };
+      const wrap = el('div', { class:'wrf-add' });
+      const btn = el('button', { class:'wrf-add-btn', text: '＋ ' + labels[kind] });
+      btn.onclick = () => {
+        const input = el('input', { type:'text', placeholder:'Nuevo…', maxlength:'30' });
+        const commit = async () => {
+          const v = input.value.trim(); if (!v) return;
+          if (kind === 'prenda') {
+            if (cat.prendas.includes(v)) { UI.toast('Esa prenda ya existe'); return; }
+            cat.prendas.push(v); if (!cat.tipos[v]) cat.tipos[v] = []; await save();
+            sel.prenda = v; sel.tipo = null; sel.talla = null; go('tipo');
+          } else if (kind === 'tipo') {
+            const l = cat.tipos[sel.prenda] || (cat.tipos[sel.prenda] = []);
+            if (l.includes(v)) { UI.toast('Ese tipo ya existe'); return; }
+            l.push(v); await save(); sel.tipo = v; sel.talla = null; go('talla');
+          } else {
+            if (cat.tallas.includes(v)) { UI.toast('Esa talla ya existe'); return; }
+            cat.tallas.push(v); await save(); sel.talla = v; go('confirm');
+          }
+        };
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+        btn.replaceWith(el('div', { class:'wrf-add-form' }, [ input, el('button', { class:'btn btn-primary', onclick: commit }, 'Añadir') ]));
+        setTimeout(() => input.focus(), 30);
+      };
+      wrap.appendChild(btn);
+      return wrap;
     };
 
-    saveBtn.onclick = async () => {
-      if (!(sel.prenda && sel.tipo && sel.talla)) return;
-      await TripDetail._wardrobeCommit(t, existing, sel, qty);
-      UI.closeSheet(); Router.render();
-    };
-    const footer = [];
-    if (existing) footer.push(el('button', { class:'btn btn-danger', onclick: async () => {
-      if (!await UI.confirm(`¿Eliminar ${existing.prenda} · ${existing.tipo} · ${existing.talla}?`)) return;
-      await DB.remove('wardrobe_items', existing.id); UI.closeSheet(); Router.render(); UI.toast('Prenda eliminada');
-    } }, 'Eliminar'));
-    footer.push(el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'));
-    footer.push(saveBtn);
+    function buildScreen(name) {
+      if (name === 'prenda') {
+        const body = el('div', { class:'wrf-body' }, [
+          el('h2', { class:'wrf-q', text:'¿Qué prenda?' }),
+          el('p', { class:'wrf-hint', text:'Elige una para registrarla' }),
+        ]);
+        const list = el('div', { class:'wrf-list' });
+        cat.prendas.forEach(p => list.appendChild(el('button', { class:'wrf-row', onclick: () => {
+          if (sel.prenda !== p) { sel.prenda = p; if (!(cat.tipos[p] || []).includes(sel.tipo)) sel.tipo = null; sel.talla = null; }
+          go('tipo');
+        } }, [
+          el('span', { class:'wrf-row-ico', text: TripDetail._wardrobeIcon(p) }),
+          el('span', { class:'wrf-row-label', text: p }),
+          el('span', { class:'wrf-row-chev', text:'›' }),
+        ])));
+        body.appendChild(list);
+        body.appendChild(addZone('prenda'));
+        return el('section', { class:'wrf-screen' }, [ topBar(0), body ]);
+      }
+      if (name === 'tipo') {
+        const body = el('div', { class:'wrf-body' }, [
+          crumbs(['prenda']),
+          el('h2', { class:'wrf-q', text:'¿Qué tipo?' }),
+          el('p', { class:'wrf-hint', text:'Variante de la prenda' }),
+        ]);
+        const grid = el('div', { class:'wrf-grid' });
+        (cat.tipos[sel.prenda] || []).forEach(ti => grid.appendChild(
+          el('button', { class:'wrf-opt', onclick: () => { sel.tipo = ti; sel.talla = null; go('talla'); } }, ti)));
+        body.appendChild(grid);
+        body.appendChild(addZone('tipo'));
+        return el('section', { class:'wrf-screen' }, [ topBar(1), body ]);
+      }
+      if (name === 'talla') {
+        const body = el('div', { class:'wrf-body' }, [
+          crumbs(['prenda','tipo']),
+          el('h2', { class:'wrf-q', text:'¿Qué talla?' }),
+          el('p', { class:'wrf-hint', text:'Tamaño según la edad del bebé' }),
+        ]);
+        const grid = el('div', { class:'wrf-grid' });
+        cat.tallas.forEach(ta => grid.appendChild(
+          el('button', { class:'wrf-opt mono', onclick: () => { sel.talla = ta; go('confirm'); } }, ta)));
+        body.appendChild(grid);
+        body.appendChild(addZone('talla'));
+        return el('section', { class:'wrf-screen' }, [ topBar(2), body ]);
+      }
+      // confirm (verde)
+      const qval = el('span', { class:'wrf-cqval', text: String(qty) });
+      const body = el('div', { class:'wrf-body wrf-confirm' }, [
+        el('div', { class:'wrf-c-ico', text: TripDetail._wardrobeIcon(sel.prenda) }),
+        el('div', { class:'wrf-c-prenda', text: sel.prenda }),
+        el('div', { class:'wrf-c-pills' }, [
+          el('span', { class:'wrf-c-pill', text: sel.tipo }),
+          el('span', { class:'wrf-c-pill mono', text: sel.talla }),
+        ]),
+        el('div', { class:'wrf-c-qlabel', text: existing ? 'Cantidad' : 'Cantidad a añadir' }),
+        el('div', { class:'wrf-cstepper' }, [
+          el('button', { class:'wrf-cstep', 'aria-label':'Restar', onclick: () => { qty = Math.max(1, qty - 1); qval.textContent = String(qty); } }, '−'),
+          qval,
+          el('button', { class:'wrf-cstep', 'aria-label':'Sumar', onclick: () => { qty = Math.min(99, qty + 1); qval.textContent = String(qty); } }, '+'),
+        ]),
+        el('button', { class:'wrf-confirm-btn', onclick: async () => {
+          await TripDetail._wardrobeCommit(t, existing, sel, qty);
+          close(); Router.render();
+        } }, existing ? '✓ Guardar cambios' : '✓ Confirmar y añadir'),
+        existing ? el('button', { class:'wrf-c-del', onclick: async () => {
+          if (!confirm(`¿Eliminar ${existing.prenda} · ${existing.tipo} · ${existing.talla}?`)) return;
+          await DB.remove('wardrobe_items', existing.id); close(); Router.render(); UI.toast('Prenda eliminada');
+        } }, 'Eliminar prenda') : null,
+      ].filter(Boolean));
+      return el('section', { class:'wrf-screen confirm' }, [ topBar(3), body ]);
+    }
 
-    rerender(); updateFoot();
-    UI.openSheet({ title: existing ? 'Editar prenda' : 'Añadir prenda', body, footer });
+    show(stack[stack.length - 1], 'fwd');
   },
 
   async _wardrobeCommit(t, existing, sel, qty) {
@@ -6151,7 +6255,7 @@ const TripDetail = {
 
     // Planning de Hoy / Mañana — solo si el viaje está EN CURSO (hoy dentro del rango).
     if (inProgress) {
-      const tomorrow = (() => { const d = parseDate(today); d.setDate(d.getDate() + 1); return d.toISOString().slice(0,10); })();
+      const tomorrow = (() => { const d = parseDate(today); d.setDate(d.getDate() + 1); return isoLocal(d); })();
       const view = TripDetail._resumenDayView === 'manana' ? 'manana' : 'hoy';
       const targetDate = view === 'manana' ? tomorrow : today;
 
@@ -6235,7 +6339,7 @@ const TripDetail = {
         let d = parseDate(d1);
         const end = parseDate(d2);
         while (d < end) {
-          const k = d.toISOString().slice(0,10);
+          const k = isoLocal(d);
           items.push({ ...it, _virtual:'night', _isFirstNight:(k === d1), day_date:k, time:null });
           d.setDate(d.getDate() + 1);
         }
@@ -6253,7 +6357,7 @@ const TripDetail = {
         let d = parseDate(ds); d.setDate(d.getDate() + 1);
         const end = parseDate(de);
         while (d <= end) {
-          const k = d.toISOString().slice(0,10);
+          const k = isoLocal(d);
           items.push({ ...it, _virtual:'span', day_date:k, time:null, _spanStart: ds, _spanEnd: de, _spanTime: it.time });
           d.setDate(d.getDate() + 1);
         }
@@ -6625,7 +6729,7 @@ const TripDetail = {
         let d = parseDate(t.start_date);
         const end = parseDate(t.end_date);
         while (d <= end) {
-          const k = d.toISOString().slice(0,10);
+          const k = isoLocal(d);
           if (!byDay[k]) byDay[k] = [];
           d.setDate(d.getDate() + 1);
         }
@@ -6691,7 +6795,7 @@ const TripDetail = {
     const morningHotel = (k) => {
       if (k === 'sin-fecha') return null;
       const d = parseDate(k); d.setDate(d.getDate() - 1);
-      const prev = d.toISOString().slice(0, 10);
+      const prev = isoLocal(d);
       return nightMap[prev] || nightMap[k] || null;
     };
     for (const k of keys) {
@@ -7176,7 +7280,7 @@ const TripDetail = {
       Object.keys(noteMap).forEach(k => { if (!byDay[k]) byDay[k] = []; });
       if (t.start_date && t.end_date) {
         let d = parseDate(t.start_date); const end = parseDate(t.end_date);
-        while (d <= end) { const k = d.toISOString().slice(0, 10); if (!byDay[k]) byDay[k] = []; d.setDate(d.getDate() + 1); }
+        while (d <= end) { const k = isoLocal(d); if (!byDay[k]) byDay[k] = []; d.setDate(d.getDate() + 1); }
       }
       keys = Object.keys(byDay).filter(k => k !== 'sin-fecha').sort();
       if (byDay['sin-fecha'] && byDay['sin-fecha'].length) keys.push('sin-fecha');
@@ -11688,7 +11792,7 @@ ${viewerScript}
     lines.push("  Object.keys(noteMap).forEach(k => { if (!byDay[k]) byDay[k] = []; });");
     lines.push("  if (trip.start_date && trip.end_date) {");
     lines.push("    let d = new Date(trip.start_date+'T00:00:00'); const end = new Date(trip.end_date+'T00:00:00');");
-    lines.push("    while (d <= end) { const k = d.toISOString().slice(0,10); if (!byDay[k]) byDay[k]=[]; d.setDate(d.getDate()+1); }");
+    lines.push("    while (d <= end) { const k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); if (!byDay[k]) byDay[k]=[]; d.setDate(d.getDate()+1); }");
     lines.push("  }");
     lines.push("  Object.keys(byDay).sort().forEach(k => {");
     lines.push("    const items = byDay[k];");
@@ -11938,7 +12042,7 @@ const PendingImport = {
         const date = new Date(start);
         date.setDate(date.getDate() + d - 1);
         items.push({
-          day_date: date.toISOString().slice(0, 10),
+          day_date: date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0'),
           title: dayStart === dayEnd ? desc : `${desc} (día ${d - dayStart + 1}/${dayEnd - dayStart + 1})`,
           order_index: order++,
         });
