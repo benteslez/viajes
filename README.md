@@ -124,19 +124,21 @@ Supabase** que el resto de la app.
   cálidos) cubriendo el curso **sep 2026 – jul 2027**. Pablo (nac. 5-mar-2026) pasa por **6-9m**
   (sep–nov) → **9-12m** (dic–feb) → **12-18m** (mar–jul). ~124 prendas en total. Cada talla tiene
   fechas (`desde`/`hasta`) para calcular la talla actual y el próximo cambio.
-  - **Cobertura:** por línea `talla|prenda`, `covered = (archivada || marcada) ? need : min(have, need)`.
-  - **Checklist clicable** (toca el progreso): marca manual que cuenta para el progreso aunque no
-    esté en el inventario; lo que ya cubre el armario sale auto-marcado.
+  - **Cobertura:** por línea `talla|prenda`, `covered = archivada ? need : min(have, need)`.
+  - **Lista del plan** (`_wardrobeOpenChecklist`, toca el progreso): cada línea tiene **+/−** que
+    ajustan el inventario real (`_wardrobeAdjust` crea/incrementa o decrementa/elimina en
+    `wardrobe_items`; el `+` usa el primer `tipo` del catálogo). Una sola fuente de verdad: el
+    contador, las barras y el gráfico se mueven a la vez.
   - **Editar plan** (`_wardrobeEditPlan`): ajusta las cantidades objetivo por talla/prenda.
-  - **Comprar en España** (`_wardrobeOpenShopping`): lista solo lo que falta, agrupado, con cantidad
-    a comprar; marcar = conseguido. También hay export CSV de la lista de compra.
+  - **Comprar en España** (`_wardrobeOpenShopping`): lista solo lo que falta; el `+` registra lo
+    comprado (suma al inventario) y la línea desaparece al completarse. También hay export CSV.
   - **Guardar talla** (archivar): cuando se le queda pequeña, márcala como guardada; deja de contar
     como pendiente (100 %) y se atenúa, para centrar el progreso en lo que viene.
 - **Datos (sincronizados):** stores de IndexedDB que entran en la cola `_pending` → Supabase:
   - `wardrobe_items` — una fila por entrada (`trip_id`, `prenda`, `tipo`, `talla`, `qty`).
   - `wardrobe_catalog` — una fila por viaje (`id = trip_id`): opciones personalizadas
-    (`prendas`, `tipos`, `tallas`), `checklist` (marcas del plan) y `prefs` (cantidades editadas +
-    tallas archivadas).
+    (`prendas`, `tipos`, `tallas`), `prefs` (cantidades editadas del plan + tallas archivadas) y
+    `checklist` (reservado/compatibilidad).
   Al ser per-trip, entran también en el **Exportar/Importar JSON** del perfil.
 - **Sincroniza en todos los dispositivos** vía Supabase (last-write-wins por `updated_at`).
   ⚠️ Requiere el `schema.sql` actualizado (tablas `wardrobe_items`/`wardrobe_catalog` con las

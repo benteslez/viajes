@@ -6036,7 +6036,15 @@ const TripDetail = {
       .wr-ep-step .icon-btn{width:34px;height:34px;font-size:1.2rem;background:var(--bg-elev);touch-action:manipulation;}
       .wr-ep-val{min-width:26px;text-align:center;font-weight:700;font-size:1rem;}
       .wr-shop-sum{font-size:.92rem;font-weight:700;text-align:center;color:var(--text-muted);margin-bottom:6px;}
-      .wr-shop-buy{flex-shrink:0;font-size:.82rem;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;}
+      .wr-shop-buy{flex-shrink:0;min-width:64px;text-align:center;font-size:.8rem;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;}
+      .wr-check-row{cursor:default;}
+      .wr-check-step{display:inline-flex;align-items:center;gap:10px;flex-shrink:0;}
+      .wr-step-btn{width:34px;height:34px;border-radius:999px;border:1px solid var(--line);background:var(--bg-soft);color:var(--text);font-size:1.25rem;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);touch-action:manipulation;}
+      .wr-step-btn:active{transform:scale(.9);}
+      .wr-step-btn:disabled{opacity:.4;cursor:not-allowed;}
+      .wr-step-n{min-width:20px;text-align:center;font-weight:800;font-size:1rem;}
+      .wr-step-n.ok{color:var(--status-curso);}
+      .wr-step-need{font-size:.82rem;}
     ` }));
   },
 
@@ -6215,13 +6223,35 @@ const TripDetail = {
     ].filter(Boolean)));
   },
 
-  // Checklist del plan (opcionalmente filtrada por talla). Marcar cuenta para el progreso.
-  async _wardrobeOpenChecklist(t, filterTalla) {
-    const cat = await TripDetail._wardrobeCatalog(t);
+  // Suma/resta una unidad al inventario de (talla, prenda). + crea/incrementa; − decrementa/elimina.
+  // Mantiene una única fuente de verdad: el propio inventario (wardrobe_items).
+  async _wardrobeAdjust(t, talla, prenda, delta, cat) {
     const items = await DB.listByTrip('wardrobe_items', t.id);
-    const haveFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    const matching = items.filter(x => x.talla === talla && x.prenda === prenda);
+    if (delta > 0) {
+      if (matching.length) { const it = matching[0]; it.qty = (Number(it.qty) || 0) + 1; await DB.put('wardrobe_items', it); }
+      else {
+        const tipo = (cat && cat.tipos[prenda] && cat.tipos[prenda][0]) || 'General';
+        await DB.put('wardrobe_items', { id: uuid(), trip_id: t.id, prenda, tipo, talla, qty: 1 });
+      }
+    } else {
+      const it = matching.find(x => (Number(x.qty) || 0) > 0);
+      if (!it) return;
+      const q = (Number(it.qty) || 0) - 1;
+      if (q <= 0) await DB.remove('wardrobe_items', it.id);
+      else { it.qty = q; await DB.put('wardrobe_items', it); }
+    }
+  },
+
+  // Lista del plan (opcionalmente filtrada por talla). Cada línea tiene +/− que ajustan el inventario.
+  async _wardrobeOpenChecklist(t, filterTalla) {
+    TripDetail._wardrobeInjectStyles();
+    const cat = await TripDetail._wardrobeCatalog(t);
+    const editable = canEdit();
     const body = el('div', { class:'wr-check' });
-    const renderBody = () => {
+    const renderBody = async () => {
+      const items = await DB.listByTrip('wardrobe_items', t.id);
+      const haveFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
       body.innerHTML = '';
       const sizes = TripDetail.WARDROBE_PLAN.sizes.filter(s => !filterTalla || s.talla === filterTalla);
       sizes.forEach(sz => {
@@ -6229,35 +6259,30 @@ const TripDetail = {
           el('div', { class:'wr-check-h' }, [ el('span', { class:'wr-check-talla', text: sz.talla }), el('span', { class:'muted', text: sz.meses }) ]),
         ]);
         sz.items.forEach(it => {
-          const key = sz.talla + '|' + it.prenda;
+          const need = TripDetail._wardrobeNeed(cat, sz.talla, it.prenda, it.need);
           const have = haveFor(sz.talla, it.prenda);
-          const auto = have >= it.need;
-          const manual = !!cat.checklist[key];
-          const done = auto || manual;
-          const faltan = Math.max(0, it.need - have);
-          const subParts = [];
-          if (it.nota) subParts.push(it.nota);
-          if (!done && faltan > 0) subParts.push(`faltan ${faltan}`);
-          if (manual && !auto) subParts.push('marcado manualmente');
-          grp.appendChild(el('button', { class: 'wr-check-row' + (done ? ' done' : ''),
-            title: auto ? 'Ya cubierto por el inventario' : 'Marcar como conseguido',
-            onclick: async () => {
-              if (cat.checklist[key]) delete cat.checklist[key]; else cat.checklist[key] = true;
-              await TripDetail._wardrobeSaveCatalog(cat);
-              renderBody();
-            } }, [
-            el('span', { class: 'wr-check-box' + (done ? ' on' : ''), html: done ? svg('check') : '' }),
+          const done = have >= need;
+          const adjust = async (d) => { await TripDetail._wardrobeAdjust(t, sz.talla, it.prenda, d, cat); await renderBody(); };
+          const right = editable
+            ? el('div', { class:'wr-check-step' }, [
+                el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Quitar', disabled: have <= 0 ? true : null, onclick: () => adjust(-1) }, '−'),
+                el('span', { class: 'wr-step-n mono' + (done ? ' ok' : ''), text: String(have) }),
+                el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Añadir', onclick: () => adjust(1) }, '+'),
+                el('span', { class:'wr-step-need muted', text: '/ ' + need }),
+              ])
+            : el('div', { class: 'wr-check-q' + (done ? ' ok' : ''), text: `${have}/${need}` });
+          grp.appendChild(el('div', { class: 'wr-check-row' + (done ? ' done' : '') }, [
             el('div', { class:'wr-check-info' }, [
               el('div', { class:'wr-check-name' }, [ el('span', { text: TripDetail._wardrobeIcon(it.prenda) }), ' ' + it.prenda ]),
-              subParts.length ? el('div', { class:'wr-check-sub muted', text: subParts.join(' · ') }) : null,
+              it.nota ? el('div', { class:'wr-check-sub muted', text: it.nota }) : null,
             ].filter(Boolean)),
-            el('div', { class: 'wr-check-q' + (done ? ' ok' : ''), text: `${have}/${it.need}` }),
+            right,
           ]));
         });
         body.appendChild(grp);
       });
     };
-    renderBody();
+    await renderBody();
     UI.openSheet({
       title: filterTalla ? `Lista · ${filterTalla}` : 'Lista de ropa del plan',
       body,
@@ -6287,6 +6312,7 @@ const TripDetail = {
   // Editar el plan: ajustar cantidades objetivo por talla/prenda (se guarda en cat.prefs.need, sincronizado).
   async _wardrobeEditPlan(t) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    TripDetail._wardrobeInjectStyles();
     const cat = await TripDetail._wardrobeCatalog(t);
     const body = el('div', { class:'wr-edit-plan' });
     body.appendChild(el('div', { class:'field-hint', style:{ margin:'0 0 6px' }, text:'Ajusta cuántas prendas necesitas de cada talla. Se guarda y sincroniza.' }));
@@ -6318,14 +6344,16 @@ const TripDetail = {
     UI.openSheet({ title:'Editar plan', body, footer:[ reset, save ] });
   },
 
-  // Modo "Comprar en España": solo lo que falta, agrupado por talla, con cantidad a comprar.
-  // Marcar una línea la cuenta como conseguida (cat.checklist) y desaparece de la lista.
+  // Modo "Comprar en España": solo lo que falta, agrupado por talla. El "+" registra lo comprado
+  // (suma al inventario) y la línea desaparece al completarse.
   async _wardrobeOpenShopping(t) {
+    TripDetail._wardrobeInjectStyles();
     const cat = await TripDetail._wardrobeCatalog(t);
-    const items = await DB.listByTrip('wardrobe_items', t.id);
-    const haveFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    const editable = canEdit();
     const body = el('div', { class:'wr-check' });
-    const renderBody = () => {
+    const renderBody = async () => {
+      const items = await DB.listByTrip('wardrobe_items', t.id);
+      const haveFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
       body.innerHTML = '';
       let totalFaltan = 0;
       const groups = [];
@@ -6333,21 +6361,24 @@ const TripDetail = {
         if (cat.prefs.archived[sz.talla]) return;
         const rows = [];
         sz.items.forEach(it => {
-          const key = sz.talla + '|' + it.prenda;
-          if (cat.checklist[key]) return;
           const need = TripDetail._wardrobeNeed(cat, sz.talla, it.prenda, it.need);
-          const faltan = Math.max(0, need - haveFor(sz.talla, it.prenda));
+          const have = haveFor(sz.talla, it.prenda);
+          const faltan = Math.max(0, need - have);
           if (faltan <= 0) return;
           totalFaltan += faltan;
-          rows.push(el('button', { class:'wr-check-row', title:'Marcar como comprado/conseguido', onclick: async () => {
-            cat.checklist[key] = true; await TripDetail._wardrobeSaveCatalog(cat); renderBody();
-          } }, [
-            el('span', { class:'wr-check-box' }),
+          const adjust = async (d) => { await TripDetail._wardrobeAdjust(t, sz.talla, it.prenda, d, cat); await renderBody(); };
+          rows.push(el('div', { class:'wr-check-row' }, [
             el('div', { class:'wr-check-info' }, [
               el('div', { class:'wr-check-name' }, [ el('span', { text: TripDetail._wardrobeIcon(it.prenda) }), ' ' + it.prenda ]),
-              el('div', { class:'wr-check-sub muted', text: it.nota || '' }),
+              el('div', { class:'wr-check-sub muted', text: (it.nota ? it.nota + ' · ' : '') + `tienes ${have}` }),
             ]),
-            el('div', { class:'wr-shop-buy mono', text: `comprar ${faltan}` }),
+            editable
+              ? el('div', { class:'wr-check-step' }, [
+                  el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Quitar', disabled: have <= 0 ? true : null, onclick: () => adjust(-1) }, '−'),
+                  el('span', { class:'wr-shop-buy mono', text: `faltan ${faltan}` }),
+                  el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Comprado', onclick: () => adjust(1) }, '+'),
+                ])
+              : el('div', { class:'wr-shop-buy mono', text: `faltan ${faltan}` }),
           ]));
         });
         if (rows.length) groups.push(el('div', { class:'wr-check-grp' }, [ el('div', { class:'wr-check-h' }, [ el('span', { class:'wr-check-talla', text: sz.talla }), el('span', { class:'muted', text: sz.meses }) ]), ...rows ]));
@@ -6355,7 +6386,7 @@ const TripDetail = {
       body.appendChild(el('div', { class:'wr-shop-sum', text: totalFaltan ? `Faltan ${totalFaltan} prendas por comprar` : '¡Todo comprado! 🎉' }));
       groups.forEach(g => body.appendChild(g));
     };
-    renderBody();
+    await renderBody();
     UI.openSheet({ title:'Comprar en España', body, footer:[ el('button', { class:'btn btn-primary', onclick: () => { UI.closeSheet(); Router.renderKeepScroll(); } }, 'Listo') ] });
   },
 
