@@ -52,10 +52,14 @@ create table if not exists wardrobe_catalog (
   prendas jsonb not null default '[]'::jsonb,
   tipos   jsonb not null default '{}'::jsonb,
   tallas  jsonb not null default '[]'::jsonb,
+  checklist jsonb not null default '{}'::jsonb,
+  prefs jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
 create index if not exists wardrobe_catalog_trip_idx on wardrobe_catalog(trip_id);
+alter table if exists wardrobe_catalog add column if not exists checklist jsonb not null default '{}'::jsonb;
+alter table if exists wardrobe_catalog add column if not exists prefs jsonb not null default '{}'::jsonb;
 
 -- 2) Trigger updated_at --------------------------------------
 do $$

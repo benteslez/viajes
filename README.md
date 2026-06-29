@@ -104,25 +104,44 @@ Aparecerá un botón en la pantalla principal que lo abre en pestaña nueva.
 
 ## Pablo · armario del bebé (solo viaje "España")
 
-El viaje cuyo `name` o `country` contenga **España** muestra una pestaña extra **"Pablo"**: un
-inventario de ropa del bebé (prenda → tipo → talla → cantidad). Es **nativo**, no un iframe: usa el
-mismo sistema de datos, diseño, offline y **sincronización Supabase** que el resto de la app.
+El viaje cuyo `name` o `country` contenga **España** muestra una pestaña extra **"Pablo"**: el
+armario del bebé, con inventario y un **plan de ropa con objetivo, estadísticas y progreso**. Es
+**nativo**, no un iframe: usa el mismo sistema de datos, diseño, offline y **sincronización
+Supabase** que el resto de la app.
 
 - **Activación:** la pestaña solo aparece si `name`/`country` del viaje matchean `/espa[ñn]a/i`
-  (ver `tabCandidates` en `index.html`). Se puede ocultar/reordenar como cualquier otra desde
-  *Editar viaje → Pestañas del menú*.
-- **UI:** `TripDetail.tabPablo(panel, t)` pinta la lista; `openWardrobeEditor(t, item?)` abre un
-  *sheet* con el flujo prenda → tipo → talla → cantidad (divulgación progresiva) para añadir/editar.
-- **Datos (sincronizados):** dos stores de IndexedDB que entran en la cola `_pending` → Supabase
-  como cualquier otra tabla:
+  (ver `tabCandidates` en `index.html`). Se puede ocultar/reordenar desde *Editar viaje → Pestañas
+  del menú*.
+- **Dos vistas** (selector *Inventario / Plan* en `TripDetail.tabPablo`):
+  - **Inventario:** lista de prendas, orden, exportar CSV. Añadir/editar con un **asistente a
+    pantalla completa** (`openWardrobeFlow`): prenda → tipo → talla → confirmar en verde, con
+    deslizamiento y botón de volver/descartar en cada paso.
+  - **Plan:** aviso de talla vigente y próximo cambio, **barra de progreso global**, progreso
+    **por talla** y **por prenda**, **gráfico de barras** del inventario por prenda, y acciones
+    (comprar/editar/exportar).
+- **Plan de ropa** (`TripDetail.WARDROBE_PLAN`): objetivo calculado para **Bogotá** (clima fresco
+  todo el año, ~8–19 °C; predominio de manga larga + capas y algo de manga corta para viajes
+  cálidos) cubriendo el curso **sep 2026 – jul 2027**. Pablo (nac. 5-mar-2026) pasa por **6-9m**
+  (sep–nov) → **9-12m** (dic–feb) → **12-18m** (mar–jul). ~124 prendas en total. Cada talla tiene
+  fechas (`desde`/`hasta`) para calcular la talla actual y el próximo cambio.
+  - **Cobertura:** por línea `talla|prenda`, `covered = (archivada || marcada) ? need : min(have, need)`.
+  - **Checklist clicable** (toca el progreso): marca manual que cuenta para el progreso aunque no
+    esté en el inventario; lo que ya cubre el armario sale auto-marcado.
+  - **Editar plan** (`_wardrobeEditPlan`): ajusta las cantidades objetivo por talla/prenda.
+  - **Comprar en España** (`_wardrobeOpenShopping`): lista solo lo que falta, agrupado, con cantidad
+    a comprar; marcar = conseguido. También hay export CSV de la lista de compra.
+  - **Guardar talla** (archivar): cuando se le queda pequeña, márcala como guardada; deja de contar
+    como pendiente (100 %) y se atenúa, para centrar el progreso en lo que viene.
+- **Datos (sincronizados):** stores de IndexedDB que entran en la cola `_pending` → Supabase:
   - `wardrobe_items` — una fila por entrada (`trip_id`, `prenda`, `tipo`, `talla`, `qty`).
-  - `wardrobe_catalog` — una fila por viaje (`id = trip_id`) con las opciones personalizadas
-    (`prendas`, `tipos`, `tallas`) que añadas con el "＋".
+  - `wardrobe_catalog` — una fila por viaje (`id = trip_id`): opciones personalizadas
+    (`prendas`, `tipos`, `tallas`), `checklist` (marcas del plan) y `prefs` (cantidades editadas +
+    tallas archivadas).
   Al ser per-trip, entran también en el **Exportar/Importar JSON** del perfil.
-- **Sincroniza en todos los dispositivos:** como vive en IndexedDB+cola, se replica vía Supabase
-  con el mismo last-write-wins por `updated_at`. ⚠️ Requiere haber ejecutado el `schema.sql`
-  actualizado (crea las tablas `wardrobe_items` y `wardrobe_catalog` con su RLS). Si ya tenías
-  Supabase configurado de antes, **vuelve a ejecutar `schema.sql`** (es idempotente) para crearlas.
+- **Sincroniza en todos los dispositivos** vía Supabase (last-write-wins por `updated_at`).
+  ⚠️ Requiere el `schema.sql` actualizado (tablas `wardrobe_items`/`wardrobe_catalog` con las
+  columnas `checklist` y `prefs`, y su RLS). Si ya tenías Supabase de antes, **vuelve a ejecutar
+  `schema.sql` o `schema-wardrobe.sql`** (idempotentes; incluyen los `alter table … add column`).
 - **Offline:** funciona sin red como el resto (los datos van primero a IndexedDB).
 
 ## Atajos de teclado

@@ -350,10 +350,15 @@ create table if not exists wardrobe_catalog (
   prendas jsonb not null default '[]'::jsonb,
   tipos jsonb not null default '{}'::jsonb,
   tallas jsonb not null default '[]'::jsonb,
+  checklist jsonb not null default '{}'::jsonb,   -- marcas manuales del plan: { "talla|prenda": true }
+  prefs jsonb not null default '{}'::jsonb,        -- { need:{ "talla|prenda":N }, archived:{ "talla":true } }
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
 create index if not exists wardrobe_catalog_trip_idx on wardrobe_catalog(trip_id);
+-- Para DBs ya creadas sin las columnas:
+alter table if exists wardrobe_catalog add column if not exists checklist jsonb not null default '{}'::jsonb;
+alter table if exists wardrobe_catalog add column if not exists prefs jsonb not null default '{}'::jsonb;
 
 -- ============================================================
 -- updated_at automático
