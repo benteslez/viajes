@@ -1656,7 +1656,9 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 /* Con una hoja/editor abierto, oculta los mapas que quedan detrás (el #sheet va
    aparte del #view-root, así que su propio mapa no se ve afectado). Evita que las
    teselas de Leaflet se cuelen por encima del overlay en iOS. */
-body.sheet-open #view-root .leaflet-container { visibility: hidden !important; }
+body.sheet-open #view-root .leaflet-container,
+body:has(.calview) #view-root .leaflet-container,
+body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !important; }
 /* Pin del mapa coloreado por día + leyenda. */
 .map-day-pin { background:transparent; border:none; }
 .map-day-pin span {
@@ -4878,7 +4880,7 @@ const Trips = {
     const today = todayIso();
     const openTrip = (id) => { close(); Router.go('trip', { tripId: id, tab: 'resumen' }); };
 
-    const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+    const close = () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('sheet-open'); overlay.remove(); };
     const onKey = (e) => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowLeft') step(-1); else if (e.key === 'ArrowRight') step(1); };
 
     const ref = parseDate(today);
@@ -8141,7 +8143,7 @@ const TripDetail = {
     const hidden = new Set(Array.isArray(tripSettings(t).cal_hidden) ? tripSettings(t).cal_hidden : []);
     const persistHidden = async () => { try { tripSettingsMut(t).cal_hidden = [...hidden]; await DB.put('trips', t); } catch (_) {} };
 
-    const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+    const close = () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('sheet-open'); overlay.remove(); };
     const onKey = (e) => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowLeft') step(-1); else if (e.key === 'ArrowRight') step(1); };
 
     // Mes inicial: el de hoy si cae en el viaje; si no, el del inicio del viaje.
