@@ -1012,6 +1012,60 @@ h2.section-title {
 .timeline-item.status-confirmado::before  { border-color:#10b981 !important; }
 .timeline-item.status-cancelado::before   { border-color:#ef4444 !important; }
 
+/* ===== Rediseño planning: tarjeta neutra · color de TIPO en el chip · ESTADO en barra lateral ===== */
+.timeline-item.list-item { background: var(--bg-elev); border-color: var(--line-soft); }
+.timeline-item.type-vuelo .item-emoji,
+.timeline-item.type-transporte .item-emoji,
+.timeline-item.type-coche .item-emoji     { background: color-mix(in srgb, var(--tipo-transporte) 22%, var(--bg-elev)); }
+.timeline-item.type-comida .item-emoji    { background: color-mix(in srgb, var(--tipo-comida) 22%, var(--bg-elev)); }
+.timeline-item.type-actividad .item-emoji { background: color-mix(in srgb, var(--tipo-actividad) 22%, var(--bg-elev)); }
+.timeline-item.type-hotel .item-emoji     { background: color-mix(in srgb, var(--tipo-hotel) 22%, var(--bg-elev)); }
+.timeline-item.type-lugar .item-emoji,
+.timeline-item.type-personas .item-emoji  { background: color-mix(in srgb, var(--tipo-lugar) 22%, var(--bg-elev)); }
+.timeline-item.type-playa .item-emoji     { background: color-mix(in srgb, var(--tipo-playa) 24%, var(--bg-elev)); }
+.timeline-item.type-compras .item-emoji   { background: color-mix(in srgb, var(--tipo-compras) 22%, var(--bg-elev)); }
+.timeline-item.type-otro .item-emoji      { background: color-mix(in srgb, var(--tipo-otro) 20%, var(--bg-elev)); }
+.timeline-item.status-por_iniciar { box-shadow: inset 3px 0 0 #f59e0b, var(--sh-1); }
+.timeline-item.status-en_consulta { box-shadow: inset 3px 0 0 #3b82f6, var(--sh-1); }
+.timeline-item.status-confirmado  { box-shadow: inset 3px 0 0 #10b981, var(--sh-1); }
+.timeline-item.status-cancelado   { box-shadow: inset 3px 0 0 #ef4444, var(--sh-1); opacity:.78; }
+.timeline-item.status-confirmado.type-transporte,
+.timeline-item.status-confirmado.type-vuelo,
+.timeline-item.status-confirmado.type-coche,
+.timeline-item.status-confirmado.type-hotel,
+.timeline-item.status-confirmado.type-actividad { background: var(--bg-elev); border-color: var(--line-soft); }
+.timeline-item.list-item .li-title { font-size:15px; }
+.timeline-item.list-item .li-sub-text { color: var(--text-muted); }
+.plan-part { font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin:10px 0 2px 4px; }
+/* Tarjeta más compacta + hora en columna a la izquierda */
+.timeline-item.list-item { padding:10px 12px; min-height:0; gap:10px; }
+.timeline-item .drag-handle { display:none; }
+.timeline-item .li-corner { position:static; right:auto; bottom:auto; margin-top:6px; }
+.timeline-item .li-time { flex-shrink:0; min-width:40px; display:flex; flex-direction:column; align-items:flex-end; justify-content:center; line-height:1.12; }
+.timeline-item .li-time-a { font-family:var(--font-ui); font-feature-settings:"tnum","ss01"; font-size:13px; font-weight:600; color:var(--text); }
+.timeline-item .li-time-b { font-family:var(--font-ui); font-feature-settings:"tnum"; font-size:11px; color:var(--text-muted); }
+/* Meta del día (paradas · clima/ropa · alojamiento) + "Hoy" + acento del día actual */
+.day-meta-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:2px 0 10px; font-size:13px; }
+.day-meta-stops { color:var(--text-muted); font-weight:500; }
+.day-meta-row .wx-chip { display:inline-block; background:var(--bg-soft); border:1px solid var(--line); padding:3px 10px; border-radius:var(--r-pill); }
+.day-hotel-chip { display:inline-flex; align-items:center; gap:4px; background:color-mix(in srgb, var(--tipo-hotel) 14%, var(--bg-elev)); color:var(--text); border:1px solid color-mix(in srgb, var(--tipo-hotel) 30%, var(--line)); padding:3px 10px; border-radius:var(--r-pill); text-decoration:none; font-weight:500; }
+a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
+.day-today-badge { font-size:11px; font-weight:700; color:var(--text-inv); background:var(--accent); border-radius:var(--r-pill); padding:2px 9px; letter-spacing:.02em; }
+.day-group.day-today .day-date, .day-group.day-today .day-num { color:var(--accent); }
+/* Hilo vertical del timeline (días con todas las paradas con hora) */
+.timeline-item.li-thread .li-time { position:relative; align-self:stretch; justify-content:center; }
+.timeline-item.li-thread .li-time::before { content:''; position:absolute; right:-6px; top:0; bottom:-8px; width:2px; background:var(--line); }
+.timeline-item.li-thread.thread-first .li-time::before { top:50%; }
+.timeline-item.li-thread.thread-last .li-time::before { bottom:50%; }
+.timeline-item.li-thread .li-time::after { content:''; position:absolute; right:-11px; top:calc(50% - 4px); width:8px; height:8px; border-radius:50%; background:var(--bg-elev); border:2px solid var(--accent); }
+/* Marcador "ahora" (día de hoy) */
+.now-line { display:flex; align-items:center; gap:8px; margin:3px 0; }
+.now-line::after { content:''; flex:1; height:2px; background:var(--danger); border-radius:2px; opacity:.5; }
+.now-dot { width:8px; height:8px; border-radius:50%; background:var(--danger); flex-shrink:0; }
+.now-label { font-size:11.5px; font-weight:700; color:var(--danger); font-feature-settings:"tnum"; text-transform:uppercase; letter-spacing:.04em; }
+/* Hueco libre entre paradas */
+.gap-chip { font-size:12px; color:var(--text-muted); font-style:italic; margin:1px 0 1px 52px; }
+
 /* Badge del estado al lado del título */
 .status-badge {
   display:inline-flex; align-items:center; gap:4px;
@@ -1212,6 +1266,8 @@ h2.section-title {
 .flash-date, .flash-body { width:100%; max-width:620px; }
 .flash-date { flex-shrink:0; padding:14px 4px 18px; }
 .flash-daynum { font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+.flash-wx { margin-top:10px; font-size:14px; color:var(--text-muted); font-weight:500; }
+.flash-wx:empty { display:none; }
 .flash-date-main { font-family:var(--font-titulo); font-weight:700; font-size:30px; line-height:1.06; letter-spacing:-.03em; color:var(--text); }
 .flash-date-main .flash-wd { display:block; }
 .flash-date-main .flash-wd::first-letter { text-transform:uppercase; }
@@ -1811,7 +1867,7 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 .timeline-item .li-title { font-size:15px; font-weight:600; letter-spacing:-.01em; }
 /* Título en 1 línea (elipsis si es largo); la hora y los datos van en la 2ª fila,
    así todas las tarjetas tienen el mismo alto. */
-.timeline-item .li-title .li-title-text { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.timeline-item .li-title .li-title-text { flex:1 1 auto; min-width:0; white-space:normal; overflow-wrap:anywhere; }
 .timeline-item .li-subrow {
   display:flex; align-items:center; gap:6px; min-height:23px; margin-top:1px;
 }
@@ -3081,6 +3137,14 @@ const Weather = {
     if (!w) return null;
     const rain = (w.rain != null && w.rain >= 30) ? ` · 💧${w.rain}%` : '';
     return `${weatherEmoji(w.code)} ${w.max}°/${w.min}°${rain}`;
+  },
+  // Sugerencia breve de ropa según min/max del día. null si nada destacable.
+  ropaHint(w) {
+    if (!w || w.min == null) return null;
+    if (w.min <= 8)  return '🧥 abrigo';
+    if (w.max >= 30) return '👕 fresco';
+    if (w.min <= 14) return '🧶 capas';
+    return null;
   },
 };
 // Coordenadas representativas de un viaje: primera parada con lat/lng.
@@ -7268,9 +7332,16 @@ const TripDetail = {
     for (const k of keys) {
       const collapsed = TripDetail._collapsedDays.has(k);
       const isPast = pastKeys.includes(k);
-      const g = el('div', { class:'day-group' + (collapsed ? ' collapsed' : '') + (isPast ? ' day-past' : ''), data:{ day:k } });
+      const g = el('div', { class:'day-group' + (collapsed ? ' collapsed' : '') + (isPast ? ' day-past' : '') + (k === todayStr ? ' day-today' : ''), data:{ day:k } });
       const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
       const dayMeta = noteMap[k];
+      // Resumen del día: nº de paradas y alojamiento de continuación (noche sin check-in/out).
+      const _stops = byDay[k].filter(x => !x._virtual).length;
+      const _contNight = byDay[k].find(x => x._virtual === 'night' && !x._isFirstNight);
+      const _hotelDir = (it) => !it ? null
+        : (it.lat != null && it.lng != null) ? `https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}`
+        : it.address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.address)}`
+        : it.place_name ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.place_name)}` : null;
       const head = el('div', { class:'day-head' }, [
         // Zona clicable (chevron + número + fecha + clima + título) → pliega/despliega.
         el('div', { class:'day-head-main', onclick: () => toggleDayGroup(g, k) }, [
@@ -7286,7 +7357,7 @@ const TripDetail = {
                 ' ',
                 el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
               ]),
-          k !== 'sin-fecha' ? el('span', { class:'wx-chip', id:`wx-${k}` }) : null,
+          (k === todayStr) ? el('span', { class:'day-today-badge', text:'Hoy' }) : null,
         ].filter(Boolean)),
         el('div', { class:'day-actions' }, [
           // Optimizar el orden de las paradas del día por cercanía (si hay ≥3 con coords).
@@ -7317,6 +7388,21 @@ const TripDetail = {
         ].filter(Boolean)),
       ].filter(Boolean));
       g.appendChild(head);
+      // Meta del día (bajo la fecha): nº de paradas · clima/ropa · alojamiento (noche de
+      // continuación, clicable → Google Maps). No satura la fila de acciones.
+      if (k !== 'sin-fecha') {
+        const metaKids = [];
+        if (_stops > 0) metaKids.push(el('span', { class:'day-meta-stops', text: `${_stops} ${_stops === 1 ? 'parada' : 'paradas'}` }));
+        metaKids.push(el('span', { class:'wx-chip', id:`wx-${k}` }));
+        if (_contNight) {
+          const hName = _contNight.place_name || _contNight.title || 'Alojamiento';
+          const hDir = _hotelDir(_contNight);
+          metaKids.push(hDir
+            ? el('a', { class:'day-hotel-chip', href: hDir, target:'_blank', rel:'noopener', title:'Cómo llegar al alojamiento', onclick: (e) => e.stopPropagation() }, [ '🛏 ', hName ])
+            : el('span', { class:'day-hotel-chip', text: `🛏 ${hName}` }));
+        }
+        g.appendChild(el('div', { class:'day-meta-row' }, metaKids));
+      }
 
       // Pill del título del día en su propia fila (a ancho completo), bajo la cabecera.
       if (dayMeta && dayMeta.title) {
@@ -7335,21 +7421,55 @@ const TripDetail = {
       const waypoints = [];          // paradas con coords (sin "noches"), en orden
       let firstStopCard = null, firstStopCoords = null, firstStopItem = null;
       let lastStopCoords = null, nightCard = null;
+      // Franjas (Mañana/Tarde/Noche) e hilo de timeline: solo en días donde TODAS las
+      // paradas tienen hora (si no, lista limpia). "Ahora" y huecos solo si hay horas.
+      const _nonVirt = dayArr.filter(x => !x._virtual);
+      const _timed = _nonVirt.filter(x => x.time);
+      const _partOf = (hhmm) => { const h = parseInt(String(hhmm).slice(0, 2), 10) || 0; return h < 12 ? 'Mañana' : (h < 20 ? 'Tarde' : 'Noche'); };
+      const _useParts = _timed.length >= 2 && _nonVirt.length === _timed.length && new Set(_timed.map(x => _partOf(x.time))).size >= 2;
+      const _useThread = _timed.length >= 2 && _nonVirt.length === _timed.length;
+      const _timeMin = (s) => { const m = String(s).match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; };
+      const _isToday = (k === todayStr);
+      const _nowM = _isToday ? (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })() : null;
+      const _nowLine = () => { const d = new Date(); const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0'); return el('div', { class:'now-line' }, [ el('span', { class:'now-dot' }), el('span', { class:'now-label', text:`ahora ${hh}:${mm}` }) ]); };
+      let _lastPart = null, _threadSeen = 0, _nowInserted = false, _prevTimed = null;
       for (let di = 0; di < dayArr.length; di++) {
         const it = dayArr[di];
+        // Noche de continuación → va en la cabecera (chip de alojamiento), no como card.
+        if (it._virtual === 'night' && !it._isFirstNight) continue;
+        if (_useParts && !it._virtual && it.time) {
+          const p = _partOf(it.time);
+          if (p !== _lastPart) { _lastPart = p; list.appendChild(el('div', { class:'plan-part', text: p })); }
+        }
+        // Marcador "ahora" (hoy): antes de la primera parada con hora ≥ ahora.
+        if (_isToday && !_nowInserted && !it._virtual && it.time && _timeMin(it.time) != null && _timeMin(it.time) >= _nowM) {
+          list.appendChild(_nowLine()); _nowInserted = true;
+        }
+        // Hueco libre entre paradas con hora (≥120 min y sin tramo de ruta entre ellas).
+        if (!it._virtual && it.time && _prevTimed) {
+          const gap = _timeMin(it.time) - _timeMin(_prevTimed.time);
+          const hasLeg = (_prevTimed.lat != null && _prevTimed.lng != null && it.lat != null && it.lng != null);
+          if (gap >= 120 && !hasLeg) {
+            const h = Math.floor(gap / 60), m = gap % 60;
+            list.appendChild(el('div', { class:'gap-chip', text: `libre ${h}h${m ? ` ${m}m` : ''}` }));
+          }
+        }
         const card = this._planningItem(it, t);
+        if (_useThread && !it._virtual && it.time) {
+          card.classList.add('li-thread'); _threadSeen++;
+          if (_threadSeen === 1) card.classList.add('thread-first');
+          if (_threadSeen === _timed.length) card.classList.add('thread-last');
+        }
         list.appendChild(card);
+        if (!it._virtual && it.time) _prevTimed = it;
         if (it._virtual === 'night' && !nightCard) nightCard = card;
-        // Las "noches" de hotel y las copias de continuación 'span' no cuentan como
-        // parada para los conectores de ruta.
+        // Las "noches" de hotel y las copias 'span' no cuentan como parada para rutas.
         const skipLeg = (x) => x._virtual === 'night' || x._virtual === 'span';
         if (it.lat != null && it.lng != null && !skipLeg(it)) {
           waypoints.push({ lat: it.lat, lng: it.lng });
           lastStopCoords = { lat: it.lat, lng: it.lng };
           if (!firstStopCard) { firstStopCard = card; firstStopCoords = lastStopCoords; firstStopItem = it; }
         }
-        // Conector con tiempo/distancia hasta la siguiente parada (si ambas tienen
-        // coordenadas y ninguna es noche/continuación). El modo lo marca la parada destino.
         const nx = dayArr[di + 1];
         if (nx && it.lat != null && it.lng != null && nx.lat != null && nx.lng != null
             && !skipLeg(it) && !skipLeg(nx)) {
@@ -7357,6 +7477,8 @@ const TripDetail = {
           if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route, { forceMode: arriveMode(nx) }));
         }
       }
+      // "Ahora" al final si todas las paradas de hoy ya pasaron.
+      if (_isToday && _timed.length && !_nowInserted) list.appendChild(_nowLine());
       // Tramo "desde el alojamiento" hasta la primera parada del día (si hay hotel).
       const hotelC = morningHotel(k);
       if (hotelC && firstStopCoords && firstStopCard && legBetween(hotelC, firstStopCoords).km > 0.03) {
@@ -7369,6 +7491,13 @@ const TripDetail = {
         const back = this._legChip(lastStopCoords, nightC, route, { hotel:'to' });
         if (nightCard) list.insertBefore(back, nightCard); else list.appendChild(back);
         waypoints.push(nightC);
+      }
+      // Día sin actividades (solo alojamiento o vacío): estado "Día libre" + añadir.
+      if (TripDetail._planningFilter === 'todo' && k !== 'sin-fecha' && !dayArr.some(x => !x._virtual)) {
+        list.insertBefore(el('div', { class:'dia-libre', style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px', padding:'12px 14px', border:'1px dashed var(--line)', borderRadius:'14px', color:'var(--text-muted)', fontSize:'13px' } }, [
+          el('span', { text:'Día libre' }),
+          canEdit() ? el('button', { class:'btn btn-sm btn-ghost', style:{ padding:'4px 10px' }, onclick: () => TripDetail.openPlanningEditor(t, null, { day:k }) }, [ el('span', { html: svg('plus') }), 'Añadir plan' ]) : null,
+        ].filter(Boolean)), list.firstChild);
       }
       g.appendChild(list);
       root.appendChild(g);
@@ -7394,9 +7523,10 @@ const TripDetail = {
     Object.values(wxGroups).forEach(({ c, days }) => {
       Weather.forCoords(c.lat, c.lng).then(daily => {
         days.forEach(k => {
-          const txt = Weather.chipText(daily[k]);
+          const w = daily[k];
+          const txt = Weather.chipText(w);
           const span = document.getElementById(`wx-${k}`);
-          if (span && txt) span.textContent = txt;
+          if (span && txt) { const r = Weather.ropaHint(w); span.textContent = txt + (r ? ' · ' + r : ''); }
         });
       }).catch(() => {});
     });
@@ -7652,6 +7782,8 @@ const TripDetail = {
       draggable: isVirtual ? 'false' : 'true',
       data:{ id:it.id, day: it.day_date || 'sin-fecha' }
     }, [
+      // Hora en columna a la izquierda (más clara que la pill). Vacía si no hay hora.
+      timeRangeText ? (() => { const _p = String(timeRangeText).split(' – '); return el('div', { class:'li-time' }, [ el('span', { class:'li-time-a', text: _p[0] }), _p[1] ? el('span', { class:'li-time-b', text: _p[1] }) : null ].filter(Boolean)); })() : null,
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
@@ -7668,7 +7800,6 @@ const TripDetail = {
           const isTransportType = ['vuelo', 'transporte', 'coche'].includes(it.type);
           const subText = subParts.join(' · ') || ((isVirtual || isTransportType) ? '' : td.label);
           return el('div', { class:'li-subrow' }, [
-            timeRangeText ? el('span', { class:'time-pill', text: timeRangeText }) : null,
             subText ? el('span', { class:'li-sub-text', text: subText }) : null,
           ].filter(Boolean));
         })(),
@@ -7676,6 +7807,16 @@ const TripDetail = {
           el('a', { href: it.consultation_url, target:'_blank', rel:'noopener',
             onclick: (e) => e.stopPropagation(), text: TripDetail._shortUrl(it.consultation_url) })
         ) : null,
+        (() => {
+          const cornerKids = [
+            ((status === 'en_consulta' || status === 'por_iniciar') && canEdit() && !isVirtual) ? el('button', {
+              class:'btn btn-sm li-confirm-btn', style:{ background:'var(--status-curso)', color:'#fff', borderColor:'transparent' },
+              onclick: (e) => { e.stopPropagation(); TripDetail.openConfirmPlanning(t, it); }
+            }, [ el('span', { html: svg('check') }), 'Confirmar' ]) : null,
+            (statusDef && !isVirtual) ? el('span', { class:`status-badge s-${status}`, text: statusDef.label }) : null,
+          ].filter(Boolean);
+          return cornerKids.length ? el('div', { class:'li-corner' }, cornerKids) : null;
+        })(),
       ].filter(Boolean)),
       el('div', { class:'li-actions', style:{alignItems:'center'} }, [
         // (El color personalizado de la tarjeta ahora se edita dentro del diálogo
@@ -7693,18 +7834,6 @@ const TripDetail = {
         el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
           title: isVirtual ? 'Editar el hotel' : 'Editar' }),
       ].filter(Boolean)),
-      // Esquina inferior derecha: botón "Confirmar" (si aplica) + pill de estado,
-      // juntos para no quedar sueltos en medio de la tarjeta.
-      (() => {
-        const cornerKids = [
-          ((status === 'en_consulta' || status === 'por_iniciar') && canEdit() && !isVirtual) ? el('button', {
-            class:'btn btn-sm li-confirm-btn', style:{background:'var(--status-curso)', color:'#fff', borderColor:'transparent'},
-            onclick: (e) => { e.stopPropagation(); TripDetail.openConfirmPlanning(t, it); }
-          }, [ el('span', { html: svg('check') }), 'Confirmar' ]) : null,
-          (statusDef && !isVirtual) ? el('span', { class:`status-badge s-${status}`, text: statusDef.label }) : null,
-        ].filter(Boolean);
-        return cornerKids.length ? el('div', { class:'li-corner' }, cornerKids) : null;
-      })(),
     ].filter(Boolean));
     if (customColor) node.style.setProperty('--card-color', customColor);
     return node;
@@ -7766,6 +7895,7 @@ const TripDetail = {
                   el('span', { class:'flash-wd', text: fmtDate(k, { weekday:'long' }) }),
                   el('span', { class:'flash-dm', text: fmtDate(k, { day:'numeric', month:'long' }) }),
                 ]),
+            k !== 'sin-fecha' ? el('div', { class:'flash-wx', id: `fwx-${k}` }) : null,
             (meta && meta.title) ? el('div', { class:'flash-note-title', text: meta.title }) : null,
           ].filter(Boolean)),
           el('div', { class:'flash-body' }, evs.length
@@ -7773,6 +7903,28 @@ const TripDetail = {
             : [ el('div', { class:'flash-empty' }, [ el('div', { class:'flash-empty-emoji', text:'🗓️' }), el('div', { text:'Día libre — sin planes' }) ]) ]),
         ]));
       });
+      // Clima + ropa por día (async), igual que en la lista.
+      const _tripC = tripCoords(rawItems);
+      const _nightMap = nightCoordsMap(rawItems);
+      const _wxGroups = {};
+      for (const k of keys) {
+        if (k === 'sin-fecha') continue;
+        const own = (byDay[k] || []).find(i => i.lat != null && i.lng != null);
+        const c = _nightMap[k] || (own ? { lat: own.lat, lng: own.lng } : null) || _tripC;
+        if (!c) continue;
+        const ck = `${(+c.lat).toFixed(2)},${(+c.lng).toFixed(2)}`;
+        (_wxGroups[ck] = _wxGroups[ck] || { c, days: [] }).days.push(k);
+      }
+      Object.values(_wxGroups).forEach(({ c, days }) => {
+        Weather.forCoords(c.lat, c.lng).then(daily => {
+          days.forEach(k => {
+            const w = daily[k]; const txt = Weather.chipText(w);
+            const span = document.getElementById(`fwx-${k}`);
+            if (span && txt) { const r = Weather.ropaHint(w); span.textContent = txt + (r ? ' · ' + r : ''); }
+          });
+        }).catch(() => {});
+      });
+
       // Reenfocar el día (tras añadir/editar o al abrir).
       const idx = Math.max(0, keys.indexOf(focusDay));
       track.scrollLeft = idx * track.clientWidth;
