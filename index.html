@@ -1033,6 +1033,14 @@ h2.section-title {
 .timeline-item.status-confirmado  { box-shadow: inset 3px 0 0 #10b981, var(--sh-1); }
 .timeline-item.status-cancelado   { box-shadow: inset 3px 0 0 #ef4444, var(--sh-1); opacity:.78; }
 .timeline-item.has-custom-color   { box-shadow: inset 4px 0 0 var(--card-color), var(--sh-1); }
+.timeline-item.is-next { flex-wrap:wrap; background: var(--accent-bg) !important; box-shadow: inset 4px 0 0 var(--accent), var(--sh-1) !important; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.timeline-item.is-next .item-emoji { background: color-mix(in srgb, var(--accent) 20%, var(--bg-elev)) !important; }
+.card-next { flex-basis:100%; width:100%; display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
+.card-next-tag { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
+.card-next .ne-count { font-size:13px; font-weight:700; color:var(--accent); background:var(--bg-elev); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); border-radius:999px; padding:2px 10px; white-space:nowrap; font-feature-settings:"tnum","ss01"; }
+.card-next .ne-bell { margin-left:auto; }
+.card-next .ne-bell { width:30px; height:30px; flex-shrink:0; border:1px solid var(--line); border-radius:50%; background:var(--bg-elev); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.card-next .ne-bell svg { width:16px; height:16px; }
 .timeline-item.status-confirmado.type-transporte,
 .timeline-item.status-confirmado.type-vuelo,
 .timeline-item.status-confirmado.type-coche,
@@ -6665,46 +6673,26 @@ const TripDetail = {
     const paidEur   = budget.filter(b => b.status === 'pagado').reduce((a,b) => a + (Number(b.amount_eur) || 0), 0);
     const packDone  = packing.filter(p => p.checked).length;
 
-    // === Barra "Próximo evento" con cuenta atrás en vivo ===
-    // Próximo planning item con hora (vuelo, hotel check-in, comida…) aún por venir.
+    // Próximo evento (con hora) aún por venir. Se resalta su TARJETA en el "Planning del
+    // día" (abajo); si esa tarjeta no está visible, se pinta una barra "Próximo".
     const nextEv = nextTimedEvent(planning);
-    if (nextEv) {
-      const td = typeDef(nextEv.type);
-      const s = TripDetail._reservationSummary(nextEv) || { emoji: td.emoji, label: td.label, value: nextEv.title };
-      const titleTxt = `${s.label}${s.value ? ' · ' + s.value : ''}`;
-      const canNotify = ('Notification' in window) && Notification.permission !== 'granted' && canEdit();
-      const bar = el('div', { class:'next-event', id:'next-event-bar',
-        title:'Abrir esta parada',
-        onclick: () => TripDetail.openPlanningEditor(t, nextEv) }, [
-        el('span', { class:'ne-emoji', 'aria-hidden':'true', text: s.emoji || '📌' }),
-        el('div', { class:'ne-main' }, [
-          el('span', { class:'ne-tag', text:'Próximo' }),
-          el('span', { class:'ne-title', text: titleTxt }),
-        ]),
-        el('span', { class:'ne-count', id:'ne-count', text: fmtCountdown(nextEv._ts - Date.now()) }),
-        canNotify ? el('button', { class:'ne-bell', title:'Activar avisos', 'aria-label':'Activar avisos',
-          onclick: async (e) => {
-            e.stopPropagation();
-            try {
-              const p = await Notification.requestPermission();
-              if (p === 'granted') { Notifications.scheduleAll(); UI.toast('Avisos activados'); Router.render(); }
-              else UI.toast('Permiso de notificaciones denegado');
-            } catch (_) { UI.toast('No se pudieron activar'); }
-          } }, el('span', { html: svg('bell') })) : null,
-      ].filter(Boolean));
-      root.appendChild(bar);
-      // Cuenta atrás en vivo (cada segundo). Al llegar a 0, re-render para avanzar al siguiente.
+    let nextShown = false;
+    const canNotify = nextEv && ('Notification' in window) && Notification.permission !== 'granted' && canEdit();
+    const _neBell = () => canNotify ? el('button', { class:'ne-bell', title:'Activar avisos', 'aria-label':'Activar avisos',
+      onclick: async (e) => {
+        e.stopPropagation();
+        try { const p = await Notification.requestPermission(); if (p === 'granted') { Notifications.scheduleAll(); UI.toast('Avisos activados'); Router.render(); } else UI.toast('Permiso de notificaciones denegado'); }
+        catch (_) { UI.toast('No se pudieron activar'); }
+      } }, el('span', { html: svg('bell') })) : null;
+    const _startNeTimer = () => {
       TripDetail._neTimer = setInterval(() => {
         const span = document.getElementById('ne-count');
         if (!span) { clearInterval(TripDetail._neTimer); return; }
         const rem = nextEv._ts - Date.now();
         span.textContent = fmtCountdown(rem);
-        if (rem <= 0) {
-          clearInterval(TripDetail._neTimer);
-          setTimeout(() => { if (STATE.currentTab === 'resumen' && STATE.view === 'trip') Router.render(); }, 1500);
-        }
+        if (rem <= 0) { clearInterval(TripDetail._neTimer); setTimeout(() => { if (STATE.currentTab === 'resumen' && STATE.view === 'trip') Router.render(); }, 1500); }
       }, 1000);
-    }
+    };
 
     // Pendientes: items manuales (t.pending_items) + eventos en consulta/por iniciar.
     const pendManual = Array.isArray(t.pending_items) ? t.pending_items : [];
@@ -6749,20 +6737,18 @@ const TripDetail = {
     // Cuando el viaje NO está en curso, las métricas van arriba (comportamiento normal).
     if (!inProgress) root.appendChild(metricGridEl);
 
-    // Reservas de HOY como pills (mismo aspecto que las métricas, con color por estado).
-    // Solo aparecen si las hay. Clicables → abren los detalles de la parada.
-    const todayResv = TripDetail._expandHotels(planning)
-      .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad'].includes(i.type))
-      .sort(planningCompare);
-    if (todayResv.length) {
+    // Render de "Reservas de hoy" (definido aquí; se inserta DEBAJO del planning del día).
+    const renderReservasHoy = () => {
+      const todayResv = TripDetail._expandHotels(planning)
+        .filter(i => (i.day_date || '') === today && ['vuelo','hotel','transporte','actividad'].includes(i.type))
+        .sort(planningCompare);
+      if (!todayResv.length) return;
       root.appendChild(el('h2', { class:'section-title', text:'Reservas de hoy' }));
       const grid = el('div', { class:'resv-grid' });
       todayResv.forEach(it => {
         const s = TripDetail._reservationSummary(it);
         if (!s) return;
         const status = itemStatus(it);
-        // Botones de acción: enlace de reserva (si hay url y el perfil ve enlaces) y/o
-        // Google Maps a pie (si hay dirección/coords). Cada uno solo si existe el dato.
         const actions = [];
         if (s.resvUrl && canSeeLinks()) {
           actions.push(el('a', { class:'resv-btn', href: s.resvUrl, target:'_blank', rel:'noopener',
@@ -6786,7 +6772,7 @@ const TripDetail = {
         ].filter(Boolean)));
       });
       root.appendChild(grid);
-    }
+    };
 
     // Planning de Hoy / Mañana — solo si el viaje está EN CURSO (hoy dentro del rango).
     if (inProgress) {
@@ -6833,7 +6819,21 @@ const TripDetail = {
 
       if (dayItems.length) {
         const list = el('div', { class:'list timeline-list' });
-        dayItems.forEach(it => list.appendChild(TripDetail._planningItem(it, t)));
+        dayItems.forEach(it => {
+          const card = TripDetail._planningItem(it, t);
+          // Resaltar en azul la tarjeta del PRÓXIMO evento (con cuenta atrás), en vez de una barra aparte.
+          if (nextEv && !nextShown && !it._virtual && it.id === nextEv.id && (it.day_date || '') === (nextEv.day_date || '') && (it.time || '') === (nextEv.time || '')) {
+            nextShown = true;
+            card.classList.add('is-next');
+            card.appendChild(el('div', { class:'card-next' }, [
+              el('span', { class:'card-next-tag', text:'Próximo' }),
+              el('span', { class:'ne-count', id:'ne-count', text: fmtCountdown(nextEv._ts - Date.now()) }),
+              _neBell(),
+            ].filter(Boolean)));
+          }
+          list.appendChild(card);
+        });
+        if (nextShown) _startNeTimer();
         root.appendChild(list);
         // Mapa del día: paradas con coordenadas, numeradas en orden + ruta a pie.
         const mapPts = dayItems.filter(i => i.lat != null && i.lng != null);
@@ -6847,6 +6847,23 @@ const TripDetail = {
           : 'No hay nada planificado para hoy.' }));
       }
     }
+
+    // Barra "Próximo" — solo si su tarjeta NO está ya resaltada en el planning de arriba
+    // (evita el duplicado). Para viajes futuros o vista "Mañana".
+    if (nextEv && !nextShown) {
+      const _td = typeDef(nextEv.type);
+      const _s = TripDetail._reservationSummary(nextEv) || { emoji: _td.emoji, label: _td.label, value: nextEv.title };
+      root.appendChild(el('div', { class:'next-event', id:'next-event-bar', title:'Abrir esta parada', onclick: () => TripDetail.openPlanningEditor(t, nextEv) }, [
+        el('span', { class:'ne-emoji', 'aria-hidden':'true', text: _s.emoji || '📌' }),
+        el('div', { class:'ne-main' }, [ el('span', { class:'ne-tag', text:'Próximo' }), el('span', { class:'ne-title', text: `${_s.label}${_s.value ? ' · ' + _s.value : ''}` }) ]),
+        el('span', { class:'ne-count', id:'ne-count', text: fmtCountdown(nextEv._ts - Date.now()) }),
+        _neBell(),
+      ].filter(Boolean)));
+      _startNeTimer();
+    }
+
+    // Reservas de hoy — debajo del planning del día.
+    renderReservasHoy();
 
     // Viaje en curso: el resumen de métricas es menos necesario → va al final,
     // precedido de su propio título para separarlo de las reservas/planning del día.
