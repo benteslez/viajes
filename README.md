@@ -119,11 +119,14 @@ Supabase** que el resto de la app.
   - **Plan:** aviso de talla vigente y próximo cambio, **barra de progreso global**, progreso
     **por talla** y **por prenda**, **gráfico de barras** del inventario por prenda, y acciones
     (comprar/editar/exportar).
-- **Plan de ropa** (`TripDetail.WARDROBE_PLAN`): objetivo calculado para **Bogotá** (clima fresco
-  todo el año, ~8–19 °C; predominio de manga larga + capas y algo de manga corta para viajes
-  cálidos) cubriendo el curso **sep 2026 – jul 2027**. Pablo (nac. 5-mar-2026) pasa por **6-9m**
-  (sep–nov) → **9-12m** (dic–feb) → **12-18m** (mar–jul). ~124 prendas en total. Cada talla tiene
-  fechas (`desde`/`hasta`) para calcular la talla actual y el próximo cambio.
+- **Plan de ropa** (`TripDetail.WARDROBE_PLAN`): cubre **jun 2026 – jul 2027**. Pablo (nac.
+  5-mar-2026) pasa por **3-6m** (jun–ago 2026, **verano en España** → manga corta/corto) →
+  **6-9m** (sep–nov) → **9-12m** (dic–feb) → **12-18m** (mar–jul), estos ya en **Bogotá** (clima
+  fresco todo el año, ~8–19 °C; predominio de manga larga + capas). ~159 prendas en total. Cada
+  talla tiene fechas (`desde`/`hasta`) para calcular la talla actual y el próximo cambio.
+  - **Etiqueta y filtro "☀️ Verano":** las líneas de ropa de verano (pelele/body/camiseta de manga
+    corta, pantalón corto, gorro de sol…) llevan `verano:true` y se marcan con un badge. El botón
+    *"Ver ropa de verano"* (y el toggle *"Solo verano"* en la lista) filtra para ver solo esas.
   - **Cobertura:** por línea `talla|prenda`, `covered = archivada ? need : min(have, need)`.
   - **Lista del plan** (`_wardrobeOpenChecklist`, toca el progreso): cada línea tiene **+/−** que
     ajustan el inventario real (`_wardrobeAdjust` crea/incrementa o decrementa/elimina en
@@ -166,7 +169,7 @@ Supabase** que el resto de la app.
 ## Notas técnicas
 
 - Sin build step. Edita `index.html` y recarga.
-- El service worker tiene un único `CACHE` con versión (`viajes-shell-v67` actualmente). Sube el
+- El service worker tiene un único `CACHE` con versión (`viajes-shell-v74` actualmente). Sube el
   número cuando cambies recursos cacheados (CDNs nuevas, iconos) para forzar invalidación.
 - Aplicación de tema **antes del primer paint** mediante script inline en `<head>` que lee
   `localStorage` — evita el flash de tema claro al cargar en modo oscuro.
