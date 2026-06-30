@@ -930,7 +930,10 @@ h2.section-title {
 /* Override manual: HEX libre del usuario. Inline style fija `--card-color`. */
 .list-item.has-custom-color,
 .timeline-item.has-custom-color {
-  background: color-mix(in srgb, var(--card-color) 14%, var(--bg-elev)) !important;
+  background: var(--bg-elev) !important;
+}
+.timeline-item.has-custom-color .item-emoji {
+  background: color-mix(in srgb, var(--card-color) 24%, var(--bg-elev)) !important;
 }
 
 /* El ESTADO tiñe el fondo de la tarjeta:
@@ -1029,6 +1032,7 @@ h2.section-title {
 .timeline-item.status-en_consulta { box-shadow: inset 3px 0 0 #3b82f6, var(--sh-1); }
 .timeline-item.status-confirmado  { box-shadow: inset 3px 0 0 #10b981, var(--sh-1); }
 .timeline-item.status-cancelado   { box-shadow: inset 3px 0 0 #ef4444, var(--sh-1); opacity:.78; }
+.timeline-item.has-custom-color   { box-shadow: inset 4px 0 0 var(--card-color), var(--sh-1); }
 .timeline-item.status-confirmado.type-transporte,
 .timeline-item.status-confirmado.type-vuelo,
 .timeline-item.status-confirmado.type-coche,
