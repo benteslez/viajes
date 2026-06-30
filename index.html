@@ -7610,6 +7610,11 @@ const TripDetail = {
       const dest = (it.metadata?.destino) || (it.dest_tz ? it.dest_tz.split('/').pop().replace(/_/g,' ') : '');
       displayTitle = `Llegada${dest ? ' · ' + dest : ''}`;
     }
+    // Tipo "personas": el título lista a TODAS las personas seleccionadas
+    // (p. ej. "Noelia y María" o "Noelia, María y Belén").
+    else if (it.type === 'personas' && Array.isArray(it.people) && it.people.length) {
+      displayTitle = fmtList(it.people);
+    }
 
     // Subtítulo
     const subParts = [];
@@ -7706,15 +7711,10 @@ const TripDetail = {
       subParts.push(priceStr);
     }
     // Personas (con quién) — "Con Pepe", "Con Pepe y Juan".
-    // En el tipo "personas" las personas son el sujeto: se muestran sin "Con" y solo si
-    // el título no son ya esos nombres (para no duplicar).
-    if (Array.isArray(it.people) && it.people.length) {
-      if (it.type === 'personas') {
-        const namesStr = fmtList(it.people);
-        if (it.title !== namesStr) subParts.push(namesStr);
-      } else {
-        subParts.push('Con ' + fmtList(it.people));
-      }
+    // En "personas" los nombres ya van listados en el título (arriba), no se repiten aquí.
+    // En el resto de tipos, las personas acompañan: "Con Noelia y María".
+    if (Array.isArray(it.people) && it.people.length && it.type !== 'personas') {
+      subParts.push('Con ' + fmtList(it.people));
     }
     const gm = gmapsUrl(it.lat, it.lng, it.place_name);
 
