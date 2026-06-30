@@ -1400,7 +1400,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .tab-config-label { flex:1; min-width:0; font-weight:600; font-size:14.5px; }
 .tab-config-row .tab-vis { color:var(--text-muted); }
 .tab-config-row .tab-vis.on { color:var(--accent); }
-.day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; }
+.day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
 .day-group.collapsed .day-collapse { transform:rotate(-90deg); }
@@ -7346,23 +7346,23 @@ const TripDetail = {
         : (it.lat != null && it.lng != null) ? `https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}`
         : it.address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.address)}`
         : it.place_name ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.place_name)}` : null;
+      // Zona clicable (chevron + número + fecha + clima + título): clic → pliega/despliega;
+      // pulsación larga (o clic derecho) → editor del día (título/color/nota unificados).
+      const headMain = el('div', { class:'day-head-main', title:'Mantén pulsado para editar el día', onclick: () => toggleDayGroup(g, k) }, [
+        el('span', { class:'day-collapse', html: svg('chevron'), 'aria-hidden':'true' }),
+        dayNum ? el('span', { class:'day-num', text:`Día ${dayNum}` }) : null,
+        (k === 'sin-fecha')
+          ? el('span', { class:'day-date', text:'Sin fecha' })
+          : el('span', { class:'day-date' }, [
+              el('span', { class:'day-wd', text: fmtDate(k, { weekday:'short' }).replace(/\.$/, '') }),
+              ' ',
+              el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
+            ]),
+        (k === todayStr) ? el('span', { class:'day-today-badge', text:'Hoy' }) : null,
+      ].filter(Boolean));
+      if (canEdit() && k !== 'sin-fecha') TripDetail._attachLongPress(headMain, () => TripDetail.openDayEditor(t, k, dayMeta));
       const head = el('div', { class:'day-head' }, [
-        // Zona clicable (chevron + número + fecha + clima + título) → pliega/despliega.
-        el('div', { class:'day-head-main', onclick: () => toggleDayGroup(g, k) }, [
-          el('span', { class:'day-collapse', html: svg('chevron'), 'aria-hidden':'true' }),
-          dayNum ? el('span', { class:'day-num', text:`Día ${dayNum}` }) : null,
-          // Fecha: día de la semana y "26 de junio" como bloques no partibles, de modo
-          // que si no cabe en una línea, el salto sea entre ellos (no a mitad de "junio").
-          (k === 'sin-fecha')
-            ? el('span', { class:'day-date', text:'Sin fecha' })
-            : el('span', { class:'day-date' }, [
-                // Formato compacto en una línea: "Jue 14 ago" (deja sitio a la pill).
-                el('span', { class:'day-wd', text: fmtDate(k, { weekday:'short' }).replace(/\.$/, '') }),
-                ' ',
-                el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
-              ]),
-          (k === todayStr) ? el('span', { class:'day-today-badge', text:'Hoy' }) : null,
-        ].filter(Boolean)),
+        headMain,
         el('div', { class:'day-actions' }, [
           // Optimizar el orden de las paradas del día por cercanía (si hay ≥3 con coords).
           (canEdit() && k !== 'sin-fecha' && byDay[k].filter(i => i.lat != null && i.lng != null && !i._virtual).length >= 3) ? el('button', {
@@ -7377,18 +7377,6 @@ const TripDetail = {
             html: svg('plus'),
             'aria-label':'Añadir evento a este día',
           }) : null,
-          el('button', {
-            class:'icon-btn', title:'Editar título/color del día',
-            onclick: () => TripDetail.openDayEditor(t, k, dayMeta),
-            html: svg('edit'),
-            'aria-label':'Editar título del día',
-          }),
-          el('button', {
-            class:'icon-btn', title: dayMeta && dayMeta.text ? 'Editar nota del día' : 'Añadir nota del día',
-            onclick: () => TripDetail.openDayNoteEditor(t, k, dayMeta),
-            html: svg('note'),
-            'aria-label':'Editar nota del día',
-          }),
         ].filter(Boolean)),
       ].filter(Boolean));
       g.appendChild(head);
@@ -8406,6 +8394,25 @@ const TripDetail = {
 
   // Editor del título y color del día (pill encima del listado).
   // Comparte el mismo registro day_notes que la nota libre.
+  // Pulsación larga (≈500 ms) o clic derecho sobre `node` → ejecuta onLong, y suprime
+  // el click posterior para que no se dispare la acción normal (p. ej. plegar el día).
+  _attachLongPress(node, onLong) {
+    let timer = null, fired = false, sx = 0, sy = 0;
+    const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    node.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      fired = false; sx = e.clientX; sy = e.clientY; clear();
+      timer = setTimeout(() => { fired = true; clear(); onLong(); }, 500);
+    });
+    node.addEventListener('pointermove', (e) => { if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) clear(); });
+    node.addEventListener('pointerup', clear);
+    node.addEventListener('pointercancel', clear);
+    node.addEventListener('pointerleave', clear);
+    node.addEventListener('click', (e) => { if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; } }, true);
+    node.addEventListener('contextmenu', (e) => { e.preventDefault(); onLong(); });
+  },
+
+  // Editor unificado del día: título + color + nota libre (todo en day_notes).
   openDayEditor(t, dateKey, existing) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
     const n = existing || { id: uuid(), trip_id: t.id, date: dateKey, title:'', color:null, text:'' };
@@ -8434,8 +8441,7 @@ const TripDetail = {
     });
 
     const body = el('div', {}, [
-      el('p', { class:'muted', style:{marginTop:0, fontSize:'13.5px'},
-        text:`Etiqueta el ${fmtDayLong(dateKey)} con un título y un color. Aparecerá como pill junto a la fecha.` }),
+      el('p', { class:'muted', style:{marginTop:0, fontSize:'13.5px'}, text: fmtDayLong(dateKey) }),
       el('div', { class:'form-row' }, [
         el('label', { text:'Título del día' }),
         el('input', { id:'dt-title', type:'text', value: n.title || '', placeholder:'Día de museos · Día de playa · Día de viaje…' }),
@@ -8444,15 +8450,22 @@ const TripDetail = {
         el('label', { text:'Color' }),
         grid,
       ]),
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Nota del día' }),
+        el('textarea', { id:'dt-text', style:{minHeight:'120px'} }, n.text || ''),
+        el('div', { class:'field-hint', text:'Recordatorios, ideas o contexto del día (no son paradas del itinerario).' }),
+      ]),
     ]);
 
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
       try {
         const title = ($('#dt-title')?.value || '').trim();
+        const text = ($('#dt-text')?.value || '');
         n.title = title || null;
         n.color = title ? currentColor : null;
-        // Si no hay título ni nota ni texto, borrar la fila
-        if (!n.title && !n.text) {
+        n.text = text;
+        // Si no queda ni título ni nota, borrar la fila.
+        if (!n.title && !n.text.trim()) {
           if (existing) await DB.remove('day_notes', n.id);
         } else {
           await DB.put('day_notes', n);
@@ -8462,12 +8475,10 @@ const TripDetail = {
       finally { UI.closeSheet(); Router.renderKeepScroll(); }
     }}, 'Guardar');
 
-    const delBtn = (existing && (n.title || n.color)) ? el('button', { class:'btn btn-danger', onclick: async () => {
-      n.title = null; n.color = null;
-      if (!n.text) await DB.remove('day_notes', n.id);
-      else await DB.put('day_notes', n);
-      UI.closeSheet(); Router.renderKeepScroll();
-    }}, 'Quitar título') : null;
+    const delBtn = (existing && (n.title || n.color || (n.text && n.text.trim()))) ? el('button', { class:'btn btn-danger', onclick: async () => {
+      const ok = await UI.confirm('¿Borrar título, color y nota de este día?'); if (!ok) return;
+      await DB.remove('day_notes', n.id); UI.closeSheet(); Router.renderKeepScroll();
+    }}, 'Borrar') : null;
 
     UI.openSheet({
       title:'Editar día',
