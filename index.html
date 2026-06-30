@@ -1688,8 +1688,8 @@ body.pack-dragging { user-select:none; -webkit-user-select:none; }
 }
 /* Resumen de ruta del día. */
 .day-route-summary {
-  margin:2px 0 8px 20px; font-size:11.5px; font-weight:600; color:var(--text-muted);
-  display:flex; align-items:center; gap:6px; font-feature-settings:"tnum","ss01";
+  font-size:13px; font-weight:500; color:var(--text-muted);
+  display:inline-flex; align-items:center; gap:5px; font-feature-settings:"tnum","ss01";
 }
 .day-group.collapsed .day-route-summary { display:none; }
 /* Aviso "quizá no dé tiempo" a nivel de día, con botón "Es correcto". */
@@ -7030,7 +7030,7 @@ const TripDetail = {
   // de "quizá no dé tiempo", y lanza el recálculo online en lote.
   _dayRoute(t, dayKey) {
     const legs = [];
-    const summaryEl = el('div', { class:'day-route-summary' });
+    const summaryEl = el('span', { class:'day-route-summary' });
     let warnEl = null, dayArrRef = null, listRef = null, ready = false;
     const self = {
       addLeg(leg) { legs.push(leg); return leg; },
@@ -7042,7 +7042,7 @@ const TripDetail = {
         // Resumen de ruta del día.
         if (legs.length) {
           summaryEl.style.display = '';
-          summaryEl.textContent = `🧭 ${realStops.length} ${realStops.length === 1 ? 'parada' : 'paradas'} · 🚗 ${fmtDur(travelMin)} en ruta · ${fmtKm(travelKm)}`;
+          summaryEl.textContent = `🚗 ${fmtDur(travelMin)} · ${fmtKm(travelKm)}`;
         } else { summaryEl.style.display = 'none'; }
         // ¿Cabe el día? Ventana = desde la primera hora asignada (o 9:00) hasta las 23:00.
         const times = realStops.map(i => i.time).filter(Boolean).map(s => parseInt(s.slice(0,2),10) * 60 + parseInt(s.slice(3,5),10));
@@ -7074,7 +7074,10 @@ const TripDetail = {
       },
       finalize(dayArr, list, waypoints, token) {
         ready = true; dayArrRef = dayArr; listRef = list;
-        list.insertBefore(summaryEl, list.firstChild);
+        // Mete el resumen de ruta en la fila meta del día (misma línea que clima/hotel)
+        // para no crear otra fila. Si no hay (sin-fecha), va al principio de la lista.
+        const _metaRow = list.closest('.day-group')?.querySelector('.day-meta-row');
+        if (_metaRow) _metaRow.appendChild(summaryEl); else list.insertBefore(summaryEl, list.firstChild);
         self.recompute();
         if (waypoints.length >= 2 && legs.some(l => !l.online)) {
           legs.forEach(l => { if (!l.online) l.setPending(true); });
