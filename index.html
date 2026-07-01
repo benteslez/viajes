@@ -1241,7 +1241,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .expense-warn-flag { font-size:13px; line-height:1; }
 
 /* Días plegables en el planning */
-.day-head { align-items:center; }
+.day-head { align-items:flex-start; }
 .plan-collapse-bar { display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px; }
 
 /* ===== Vista "tarjetas" del planning: pantalla completa, un día por tarjeta ===== */
@@ -1409,7 +1409,12 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .tab-config-label { flex:1; min-width:0; font-weight:600; font-size:14.5px; }
 .tab-config-row .tab-vis { color:var(--text-muted); }
 .tab-config-row .tab-vis.on { color:var(--accent); }
-.day-head-main { display:flex; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.day-head-main { display:flex; flex-wrap:wrap; align-items:center; gap:10px; flex:1; min-width:0; cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+/* Clima + pill del día: a la derecha de la fecha (misma línea si cabe; si no, saltan). */
+.day-head-wx { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-left:auto; }
+.day-head-wx .day-title-pill { font-size:12px; padding:3px 10px; max-width:100%; }
+.day-meta-row:empty { display:none; }
+.day-group.collapsed .day-meta-row:not(:has(.day-meta-stops)) { display:none; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
 .day-group.collapsed .day-collapse { transform:rotate(-90deg); }
@@ -1839,7 +1844,7 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
    ====================================================================== */
 .day-group { margin-bottom:24px; }
 .day-head {
-  display:flex; align-items:center; gap:10px; margin-bottom:10px;
+  display:flex; align-items:flex-start; gap:10px; margin-bottom:10px;
   /* Mismo inset horizontal que el contenido de las tarjetas (padding 10 + borde 1)
      para que los iconos de acción queden alineados en columna con los de los eventos. */
   padding:0 11px;
@@ -7431,7 +7436,16 @@ const TripDetail = {
         : (it.lat != null && it.lng != null) ? `https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}`
         : it.address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.address)}`
         : it.place_name ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.place_name)}` : null;
-      // Zona clicable (chevron + número + fecha + clima + título): clic → pliega/despliega;
+      // Pill de etiqueta del día (p. ej. "Día libre") + clima: van en la CABECERA, a la
+      // derecha del día (misma línea si caben; si no, saltan abajo). Visibles al plegar.
+      const _dayPill = (dayMeta && dayMeta.title)
+        ? el('span', { class: 'day-title-pill day-meta-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''), text: dayMeta.title })
+        : null;
+      const _headWx = el('div', { class:'day-head-wx' }, [
+        (k !== 'sin-fecha') ? el('span', { class:'wx-chip', id:`wx-${k}` }) : null,
+        _dayPill,
+      ].filter(Boolean));
+      // Zona clicable (chevron + número + fecha + clima + pill): clic → pliega/despliega;
       // pulsación larga (o clic derecho) → editor del día (título/color/nota unificados).
       const headMain = el('div', { class:'day-head-main', title:'Mantén pulsado para editar el día', onclick: () => toggleDayGroup(g, k) }, [
         el('span', { class:'day-collapse', html: svg('chevron'), 'aria-hidden':'true' }),
@@ -7444,6 +7458,7 @@ const TripDetail = {
               el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
             ]),
         (k === todayStr) ? el('span', { class:'day-today-badge', text:'Hoy' }) : null,
+        _headWx.children.length ? _headWx : null,
       ].filter(Boolean));
       if (canEdit() && k !== 'sin-fecha') TripDetail._attachLongPress(headMain, () => TripDetail.openDayEditor(t, k, dayMeta));
       const head = el('div', { class:'day-head' }, [
@@ -7465,18 +7480,11 @@ const TripDetail = {
         ].filter(Boolean)),
       ].filter(Boolean));
       g.appendChild(head);
-      // Meta del día (bajo la fecha): nº de paradas · clima/ropa · alojamiento (noche de
-      // continuación, clicable → Google Maps). No satura la fila de acciones.
-      // Pill de etiqueta del día (p. ej. "Día libre"): va en la fila meta, a la derecha
-      // junto al clima, para que sea visible también con el día plegado.
-      const _dayPill = (dayMeta && dayMeta.title)
-        ? el('span', { class: 'day-title-pill day-meta-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''), text: dayMeta.title })
-        : null;
+      // Fila meta (bajo la cabecera): nº de paradas · alojamiento (noche de continuación,
+      // clicable → Maps) · resumen de ruta. El clima y la pill van ARRIBA, en la cabecera.
       if (k !== 'sin-fecha') {
         const metaKids = [];
         if (_stops > 0) metaKids.push(el('span', { class:'day-meta-stops', text: `${_stops} ${_stops === 1 ? 'parada' : 'paradas'}` }));
-        metaKids.push(el('span', { class:'wx-chip', id:`wx-${k}` }));
-        if (_dayPill) metaKids.push(_dayPill);
         // El chip de alojamiento (hotel) solo se ve con el día desplegado (CSS lo oculta al plegar).
         if (_contNight) {
           const hName = _contNight.place_name || _contNight.title || 'Alojamiento';
@@ -7486,9 +7494,6 @@ const TripDetail = {
             : el('span', { class:'day-hotel-chip', text: `🛏 ${hName}` }));
         }
         g.appendChild(el('div', { class:'day-meta-row' }, metaKids));
-      } else if (_dayPill) {
-        // Día "sin fecha" (no hay fila meta) → la pill va en su propia fila.
-        g.appendChild(el('div', { class:'day-title-row' }, [ _dayPill ]));
       }
 
       if (noteMap[k] && noteMap[k].text && TripDetail._planningFilter !== 'consulta') {

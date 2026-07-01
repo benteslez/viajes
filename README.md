@@ -169,7 +169,7 @@ Supabase** que el resto de la app.
 ## Notas técnicas
 
 - Sin build step. Edita `index.html` y recarga.
-- El service worker tiene un único `CACHE` con versión (`viajes-shell-v78` actualmente). Sube el
+- El service worker tiene un único `CACHE` con versión (`viajes-shell-v79` actualmente). Sube el
   número cuando cambies recursos cacheados (CDNs nuevas, iconos) para forzar invalidación.
 - Aplicación de tema **antes del primer paint** mediante script inline en `<head>` que lee
   `localStorage` — evita el flash de tema claro al cargar en modo oscuro.
