@@ -3083,16 +3083,24 @@ const itemDateTime = (it) => {
   const dt = new Date(`${d}T${hhmm}:00`);
   return isNaN(dt.getTime()) ? null : dt;
 };
-// Próximo evento (con hora) cuyo momento es >= fromTs. Adjunta ._ts.
+// Próximo evento a partir de fromTs. Prioriza los de HOY (aunque NO tengan hora) y, si
+// hoy ya no queda nada, el siguiente de días futuros. Adjunta ._ts (ms) o null si el
+// evento no tiene hora (entonces se muestra "hoy"/fecha en lugar de cuenta atrás).
 const nextTimedEvent = (items, fromTs = Date.now()) => {
-  let best = null, bestTs = Infinity;
-  for (const it of items) {
+  const today = isoLocal(new Date(fromTs));
+  const cands = items.filter(it => {
+    if (it._virtual) return false;
+    const d = it.day_date;
+    if (!d || d < today) return false;
     const dt = itemDateTime(it);
-    if (!dt) continue;
-    const ts = dt.getTime();
-    if (ts >= fromTs && ts < bestTs) { best = it; bestTs = ts; }
-  }
-  if (best) best._ts = bestTs;
+    if (dt) return dt.getTime() >= fromTs;   // con hora: aún no ha pasado
+    return true;                             // sin hora: cuenta si es hoy o futuro
+  });
+  if (!cands.length) return null;
+  cands.sort((a, b) => (a.day_date || '').localeCompare(b.day_date || '') || planningCompare(a, b));
+  const best = cands[0];
+  const dt = itemDateTime(best);
+  best._ts = dt ? dt.getTime() : null;
   return best;
 };
 // Cuenta atrás (ms) → "en 2 d 3 h", "en 3 h 5 min", "en 12 min", "ahora".
@@ -3106,6 +3114,13 @@ const fmtCountdown = (ms) => {
   if (h >= 1) return `en ${h} h${m ? ' ' + m + ' min' : ''}`;
   if (m >= 1) return `en ${m} min`;
   return 'en menos de 1 min';
+};
+// Texto del "Próximo": cuenta atrás si tiene hora; si no, "hoy" o la fecha del evento.
+const nextEventText = (ev) => {
+  if (!ev) return '';
+  if (ev._ts) return fmtCountdown(ev._ts - Date.now());
+  if ((ev.day_date || '') === todayIso()) return 'hoy';
+  return ev.day_date ? fmtDate(ev.day_date, { weekday:'short', day:'numeric', month:'short' }) : '';
 };
 
 // === Clima (Open-Meteo — gratis, sin clave). Códigos WMO → emoji. ===
@@ -6730,6 +6745,7 @@ const TripDetail = {
         catch (_) { UI.toast('No se pudieron activar'); }
       } }, el('span', { html: svg('bell') })) : null;
     const _startNeTimer = () => {
+      if (!nextEv || !nextEv._ts) return;   // evento sin hora → texto estático ("hoy"), sin cuenta atrás
       TripDetail._neTimer = setInterval(() => {
         const span = document.getElementById('ne-count');
         if (!span) { clearInterval(TripDetail._neTimer); return; }
@@ -6872,7 +6888,7 @@ const TripDetail = {
             card.classList.add('is-next');
             card.appendChild(el('div', { class:'card-next' }, [
               el('span', { class:'card-next-tag', text:'Próximo' }),
-              el('span', { class:'ne-count', id:'ne-count', text: fmtCountdown(nextEv._ts - Date.now()) }),
+              el('span', { class:'ne-count', id:'ne-count', text: nextEventText(nextEv) }),
               _neBell(),
             ].filter(Boolean)));
           }
@@ -6901,7 +6917,7 @@ const TripDetail = {
       root.appendChild(el('div', { class:'next-event', id:'next-event-bar', title:'Abrir esta parada', onclick: () => TripDetail.openPlanningEditor(t, nextEv) }, [
         el('span', { class:'ne-emoji', 'aria-hidden':'true', text: _s.emoji || '📌' }),
         el('div', { class:'ne-main' }, [ el('span', { class:'ne-tag', text:'Próximo' }), el('span', { class:'ne-title', text: `${_s.label}${_s.value ? ' · ' + _s.value : ''}` }) ]),
-        el('span', { class:'ne-count', id:'ne-count', text: fmtCountdown(nextEv._ts - Date.now()) }),
+        el('span', { class:'ne-count', id:'ne-count', text: nextEventText(nextEv) }),
         _neBell(),
       ].filter(Boolean)));
       _startNeTimer();
@@ -7668,17 +7684,21 @@ const TripDetail = {
       } }, el('span', { html: svg('bell') })) : null;
     card.appendChild(el('div', { class:'card-next' }, [
       el('span', { class:'card-next-tag', text:'Próximo' }),
-      el('span', { class:'ne-count', id:'ne-count', text: fmtCountdown(nextEv._ts - Date.now()) }),
+      el('span', { class:'ne-count', id:'ne-count', text: nextEventText(nextEv) }),
       bell,
     ].filter(Boolean)));
     clearInterval(TripDetail._neTimer);
-    TripDetail._neTimer = setInterval(() => {
-      const span = document.getElementById('ne-count');
-      if (!span) { clearInterval(TripDetail._neTimer); return; }
-      const rem = nextEv._ts - Date.now();
-      span.textContent = fmtCountdown(rem);
-      if (rem <= 0) { clearInterval(TripDetail._neTimer); setTimeout(() => { if (STATE.view === 'trip') Router.render(); }, 1500); }
-    }, 1000);
+    // Cuenta atrás en vivo solo si el evento tiene hora; si no (evento de hoy sin hora),
+    // el texto es estático ("hoy").
+    if (nextEv._ts) {
+      TripDetail._neTimer = setInterval(() => {
+        const span = document.getElementById('ne-count');
+        if (!span) { clearInterval(TripDetail._neTimer); return; }
+        const rem = nextEv._ts - Date.now();
+        span.textContent = fmtCountdown(rem);
+        if (rem <= 0) { clearInterval(TripDetail._neTimer); setTimeout(() => { if (STATE.view === 'trip') Router.render(); }, 1500); }
+      }, 1000);
+    }
     return true;
   },
 
