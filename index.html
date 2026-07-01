@@ -1060,6 +1060,11 @@ h2.section-title {
 .day-meta-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:2px 0 10px; font-size:13px; }
 .day-meta-stops { color:var(--text-muted); font-weight:500; }
 .day-meta-row .wx-chip { display:inline-block; background:var(--bg-soft); border:1px solid var(--line); padding:3px 10px; border-radius:var(--r-pill); }
+.day-meta-row .day-title-pill { font-size:12px; padding:3px 10px; max-width:60%; }
+/* Al plegar el día: la sugerencia de ropa ("fresco") y el chip de hotel se ocultan;
+   quedan solo paradas · temperatura · pill del día. Vuelven al desplegar. */
+.day-group.collapsed .wx-ropa { display:none; }
+.day-group.collapsed .day-hotel-chip { display:none; }
 .day-hotel-chip { display:inline-flex; align-items:center; gap:4px; background:color-mix(in srgb, var(--tipo-hotel) 14%, var(--bg-elev)); color:var(--text); border:1px solid color-mix(in srgb, var(--tipo-hotel) 30%, var(--line)); padding:3px 10px; border-radius:var(--r-pill); text-decoration:none; font-weight:500; }
 a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-today-badge { font-size:11px; font-weight:700; color:var(--text-inv); background:var(--accent); border-radius:var(--r-pill); padding:2px 9px; letter-spacing:.02em; }
@@ -7466,10 +7471,17 @@ const TripDetail = {
       g.appendChild(head);
       // Meta del día (bajo la fecha): nº de paradas · clima/ropa · alojamiento (noche de
       // continuación, clicable → Google Maps). No satura la fila de acciones.
+      // Pill de etiqueta del día (p. ej. "Día libre"): va en la fila meta, a la derecha
+      // junto al clima, para que sea visible también con el día plegado.
+      const _dayPill = (dayMeta && dayMeta.title)
+        ? el('span', { class: 'day-title-pill day-meta-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''), text: dayMeta.title })
+        : null;
       if (k !== 'sin-fecha') {
         const metaKids = [];
         if (_stops > 0) metaKids.push(el('span', { class:'day-meta-stops', text: `${_stops} ${_stops === 1 ? 'parada' : 'paradas'}` }));
         metaKids.push(el('span', { class:'wx-chip', id:`wx-${k}` }));
+        if (_dayPill) metaKids.push(_dayPill);
+        // El chip de alojamiento (hotel) solo se ve con el día desplegado (CSS lo oculta al plegar).
         if (_contNight) {
           const hName = _contNight.place_name || _contNight.title || 'Alojamiento';
           const hDir = _hotelDir(_contNight);
@@ -7478,13 +7490,9 @@ const TripDetail = {
             : el('span', { class:'day-hotel-chip', text: `🛏 ${hName}` }));
         }
         g.appendChild(el('div', { class:'day-meta-row' }, metaKids));
-      }
-
-      // Pill del título del día en su propia fila (a ancho completo), bajo la cabecera.
-      if (dayMeta && dayMeta.title) {
-        g.appendChild(el('div', { class:'day-title-row' }, [
-          el('span', { class: 'day-title-pill' + (dayMeta.color ? ' color-' + dayMeta.color : ''), text: dayMeta.title }),
-        ]));
+      } else if (_dayPill) {
+        // Día "sin fecha" (no hay fila meta) → la pill va en su propia fila.
+        g.appendChild(el('div', { class:'day-title-row' }, [ _dayPill ]));
       }
 
       if (noteMap[k] && noteMap[k].text && TripDetail._planningFilter !== 'consulta') {
@@ -7603,7 +7611,13 @@ const TripDetail = {
           const w = daily[k];
           const txt = Weather.chipText(w);
           const span = document.getElementById(`wx-${k}`);
-          if (span && txt) { const r = Weather.ropaHint(w); span.textContent = txt + (r ? ' · ' + r : ''); }
+          if (span && txt) {
+            const r = Weather.ropaHint(w);
+            span.innerHTML = '';
+            span.appendChild(el('span', { class:'wx-temp', text: txt }));
+            // La sugerencia de ropa ("fresco", "abrigo"…) solo se ve al desplegar el día.
+            if (r) span.appendChild(el('span', { class:'wx-ropa', text: ' · ' + r }));
+          }
         });
       }).catch(() => {});
     });

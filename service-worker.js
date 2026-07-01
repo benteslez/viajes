@@ -4,7 +4,7 @@
 
 // Subir el sufijo cuando se quiere forzar la invalidación de la versión cacheada
 // (ej. tras cambios en index.html o en las CDNs declaradas más abajo).
-const CACHE = 'viajes-shell-v76';
+const CACHE = 'viajes-shell-v77';
 
 const SHELL = [
   './',
