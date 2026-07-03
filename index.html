@@ -1333,6 +1333,10 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Día de hoy: punto sutil, posicionado absoluto al pie de la celda para NO descentrar
    el anillo (todos los anillos quedan centrados igual, haya o no punto). */
 .tcal-today-dot { position:absolute; left:50%; bottom:1px; transform:translateX(-50%); width:5px; height:5px; border-radius:50%; background:var(--accent); }
+/* Días ya pasados: colores "apagados" (desaturados y algo transparentes) para
+   distinguir de un vistazo lo que ya ocurrió. No afecta a hoy ni al futuro. */
+.tcal-cell.past .tcal-ring { filter:saturate(.32) opacity(.62); }
+.tcal-cell.past .tcal-num-plain { opacity:.4; }
 /* Leyenda (clicable: activa/desactiva colores). */
 .tcal-legend { display:flex; flex-wrap:wrap; gap:6px; margin-top:18px; padding:8px; border:1px solid var(--line-soft); border-radius:var(--r-lg); background:var(--bg-elev); }
 .tcal-legend-item { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text);
@@ -1371,6 +1375,8 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .gcal-num { font-size:13px; font-weight:600; line-height:1; color:var(--text); font-feature-settings:"tnum"; }
 .gcal-cell.out .gcal-num { opacity:.3; }
 .gcal-cell.today { outline:2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset:-2px; }
+/* Días de viaje ya pasados: color del viaje "apagado". */
+.gcal-cell.past.has-trip { filter:saturate(.3) opacity(.6); }
 /* Puntito de estado (confirmación) del viaje */
 .gcal-status-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; box-sizing:border-box; background:var(--text-muted); }
 .gcal-status-dot.prep { background:transparent; border:1.5px solid color-mix(in srgb, var(--text-muted) 85%, transparent); }
@@ -2553,6 +2559,9 @@ body.readonly .timeline-item { cursor:default; }
 .cal-evt.evt-compras     { border-left-color:var(--tipo-compras); }
 .cal-evt.evt-otro        { border-left-color:var(--tipo-otro); }
 .cal-more { font-size:10px; color:var(--text-muted); padding-left:4px; }
+/* Días ya pasados: eventos con color "apagado" para diferenciarlos. */
+.cal-cell.past .cal-evt { filter:saturate(.25) opacity(.6); }
+.cal-cell.past .cal-day { opacity:.55; }
 
 /* World map (visited countries) */
 .world-map { width:100%; height:360px; border:1px solid var(--line); border-radius:var(--r-lg); overflow:hidden; }
@@ -4924,10 +4933,11 @@ const Trips = {
         const key = fmtKey(dt);
         const inMonth = dt.getMonth() === m;
         const isToday = key === today;
+        const isPast = key < today;
         const dts = tripByDay[key] || [];
         if (dts.length) {
           const cell = el('button', {
-            class:'gcal-cell has-trip' + (isToday ? ' today' : '') + (inMonth ? '' : ' out') + (dts.length > 1 ? ' multi' : ''),
+            class:'gcal-cell has-trip' + (isToday ? ' today' : '') + (isPast ? ' past' : '') + (inMonth ? '' : ' out') + (dts.length > 1 ? ' multi' : ''),
             title: dts.map(t => t.name).join(' · '),
             onclick: () => openTrip(dts[0].id),
           }, [ el('span', { class:'gcal-num', text: String(dt.getDate()) }) ]);
@@ -8207,6 +8217,7 @@ const TripDetail = {
         const inMonth = dt.getMonth() === m;
         const inTrip = tripStart && tripEnd && key >= tripStart && key <= tripEnd;
         const isToday = key === today;
+        const isPast = key < today;
         if (inTrip) {
           const set = catsByDay[key];
           const ordered = orderedCats(set, key);   // respeta izquierda/derecha del transporte
@@ -8219,7 +8230,7 @@ const TripDetail = {
           ring.style.setProperty('--ring', ringFromCats(ordered, bg));
           ring.style.setProperty('--cell-bg', bg);
           grid.appendChild(el('button', {
-            class:'tcal-cell clickable' + (hasRing ? ' has-ring' : '') + (isToday ? ' today' : '') + (inMonth ? '' : ' out'),
+            class:'tcal-cell clickable' + (hasRing ? ' has-ring' : '') + (isToday ? ' today' : '') + (isPast ? ' past' : '') + (inMonth ? '' : ' out'),
             onclick: () => {
               document.removeEventListener('keydown', onKey);
               overlay.style.display = 'none';
@@ -13247,7 +13258,7 @@ const CalendarView = {
           const day = i + 1;
           const iso = `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
           const items = byDate[iso] || [];
-          return el('div', { class:'cal-cell' + (iso === todayIso() ? ' today' : ''),
+          return el('div', { class:'cal-cell' + (iso === todayIso() ? ' today' : '') + (iso < todayIso() ? ' past' : ''),
             onclick: items.length ? (() => {
               const first = items[0];
               Router.go('trip', { tripId: first.t.id, tab:'planning' });

@@ -4,7 +4,13 @@
 
 // Subir el sufijo cuando se quiere forzar la invalidación de la versión cacheada
 // (ej. tras cambios en index.html o en las CDNs declaradas más abajo).
-const CACHE = 'viajes-shell-v79';
+const CACHE = 'viajes-shell-v80';
+
+// Caché SEPARADO para imágenes (portadas de viaje, miniaturas de tarjetas…).
+// No lleva el sufijo del shell a propósito: así las imágenes ya descargadas
+// sobreviven a cada actualización de la app y no hay que volver a bajarlas.
+const IMG_CACHE = 'viajes-img-v1';
+const IMG_MAX = 350;   // tope de imágenes cacheadas (se recortan las más antiguas)
 
 const SHELL = [
   './',
@@ -42,7 +48,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter((k) => k !== CACHE && k !== IMG_CACHE)
+          .map((k) => caches.delete(k))
+      )
     )
   );
   self.clients.claim();
@@ -51,6 +61,37 @@ self.addEventListener('activate', (event) => {
 const isTile = (url) =>
   url.hostname.endsWith('tile.openstreetmap.org') ||
   url.hostname.includes('basemaps.cartocdn.com');
+
+// Recorta el caché de imágenes a IMG_MAX entradas (FIFO: las claves más
+// antiguas primero). El Cache API preserva el orden de inserción.
+async function trimImageCache() {
+  const cache = await caches.open(IMG_CACHE);
+  const keys = await cache.keys();
+  if (keys.length <= IMG_MAX) return;
+  const excess = keys.length - IMG_MAX;
+  for (let i = 0; i < excess; i++) await cache.delete(keys[i]);
+}
+
+// Imágenes → cache-first con revalidación en segundo plano (stale-while-revalidate).
+// La primera vez se baja de la red y se guarda; a partir de ahí se sirve al
+// instante desde caché (y offline). Se cachean respuestas OK y también las
+// opacas (cross-origin sin CORS): se ven bien aunque no podamos leer su estado.
+// Un fallo de red NO envenena la caché: simplemente no se guarda nada.
+function handleImage(req) {
+  return caches.open(IMG_CACHE).then((cache) =>
+    cache.match(req).then((cached) => {
+      const network = fetch(req)
+        .then((resp) => {
+          if (resp && (resp.ok || resp.type === 'opaque')) {
+            cache.put(req, resp.clone()).then(trimImageCache).catch(() => {});
+          }
+          return resp;
+        })
+        .catch(() => cached);   // sin red: nos quedamos con lo cacheado (o nada)
+      return cached || network;
+    })
+  );
+}
 
 const isApi = (url) =>
   url.hostname.includes('supabase.co') ||
@@ -73,10 +114,14 @@ self.addEventListener('fetch', (event) => {
   // APIs en vivo: solo red, no cachear (los datos pasan por IndexedDB).
   if (isApi(url)) return;
 
-  // Imágenes externas (portadas de viaje, etc.): passthrough sin tocar.
-  // Si las cacheamos podemos guardar respuestas opacas/erróneas y luego
-  // servirlas siempre rotas. Mejor que las maneje el navegador.
-  if (req.destination === 'image' && url.origin !== self.location.origin) return;
+  // Imágenes (portadas de viaje, miniaturas…): cache-first con revalidación,
+  // en un caché propio que persiste entre versiones. Así no se vuelven a
+  // descargar en cada carga y quedan disponibles offline.
+  // (Los tiles de mapa también son 'image' pero tienen su propia lógica abajo.)
+  if (req.destination === 'image' && !isTile(url)) {
+    event.respondWith(handleImage(req));
+    return;
+  }
 
   // Documento HTML → network-first
   if (isHtml(url, req)) {
