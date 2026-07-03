@@ -1333,6 +1333,9 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Día de hoy: punto sutil, posicionado absoluto al pie de la celda para NO descentrar
    el anillo (todos los anillos quedan centrados igual, haya o no punto). */
 .tcal-today-dot { position:absolute; left:50%; bottom:1px; transform:translateX(-50%); width:5px; height:5px; border-radius:50%; background:var(--accent); }
+/* Días ya pasados: anillo en pastel (fijado en JS) y número en gris — el gris del
+   número no lo tiene ningún día activo, así el estado "pasado" es inequívoco. */
+.tcal-cell.past .tcal-num { color:#94a3b8; }
 /* Leyenda (clicable: activa/desactiva colores). */
 .tcal-legend { display:flex; flex-wrap:wrap; gap:6px; margin-top:18px; padding:8px; border:1px solid var(--line-soft); border-radius:var(--r-lg); background:var(--bg-elev); }
 .tcal-legend-item { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text);
@@ -8152,11 +8155,17 @@ const TripDetail = {
     // Construye el anillo a partir de una lista YA ORDENADA de categorías. El conic-gradient
     // empieza arriba (0°) y va en sentido horario: el 1er color ocupa la mitad DERECHA y el
     // último la mitad IZQUIERDA (con 2 categorías). Por eso el orden controla izquierda/derecha.
-    const ringFromCats = (cats, bg) => {
+    // Color de una categoría. En días PASADOS se aclara mezclándolo con blanco
+    // (pastel): conserva el matiz pero queda claramente más pálido que cualquier
+    // color de categoría "activo" (incluidos los ya de por sí claros como compras).
+    // Además, el número del día pasado va en gris (CSS), lo que hace inequívoco el
+    // estado "pasado" aunque un pastel se acercara a otro color.
+    const catColor = (c, past) => past ? `color-mix(in srgb, ${CAL_COLOR[c]} 38%, #fff)` : CAL_COLOR[c];
+    const ringFromCats = (cats, bg, past) => {
       if (!cats.length) return bg;
-      if (cats.length === 1) return CAL_COLOR[cats[0]];
+      if (cats.length === 1) return catColor(cats[0], past);
       const seg = 360 / cats.length;
-      return `conic-gradient(${cats.map((c,i)=>`${CAL_COLOR[c]} ${(i*seg).toFixed(2)}deg ${((i+1)*seg).toFixed(2)}deg`).join(', ')})`;
+      return `conic-gradient(${cats.map((c,i)=>`${catColor(c, past)} ${(i*seg).toFixed(2)}deg ${((i+1)*seg).toFixed(2)}deg`).join(', ')})`;
     };
     // Orden de categorías de un día. Por defecto CAL_ORDER. Pero si el día es inicio/fin de
     // un evento multi-día, el color del evento que abarca varios días se queda en el lado
@@ -8216,19 +8225,19 @@ const TripDetail = {
           const set = catsByDay[key];
           const ordered = orderedCats(set, key);   // respeta izquierda/derecha del transporte
           const hasRing = ordered.length > 0;
-          // Relleno del círculo: los días ya pasados van SIEMPRE en gris (haya o no
-          // alojamiento) para verse "apagados" sin tocar el color del anillo (categorías).
-          // Presente y futuro conservan el fondo según el estado del alojamiento.
-          const bg = isPast ? '#D9DCE1'
+          // Relleno del círculo: en días pasados es blanco (el pasado se marca con el
+          // anillo en pastel + el número en gris, ver catColor y el CSS .tcal-cell.past;
+          // ignora el alojamiento). Presente y futuro tiñen el fondo según el alojamiento.
+          const bg = isPast ? '#fff'
             : (accom[key] && showAccom) ? (ACCOM_BG[accom[key]] || '#D4EDDA') : '#fff';
           const ring = el('span', { class:'tcal-ring' }, [
             el('span', { class:'tcal-num', text: String(dt.getDate()) }),
           ]);
           // Custom properties: hay que usar setProperty (Object.assign no las aplica).
-          ring.style.setProperty('--ring', ringFromCats(ordered, bg));
+          ring.style.setProperty('--ring', ringFromCats(ordered, bg, isPast));
           ring.style.setProperty('--cell-bg', bg);
           grid.appendChild(el('button', {
-            class:'tcal-cell clickable' + (hasRing ? ' has-ring' : '') + (isToday ? ' today' : '') + (inMonth ? '' : ' out'),
+            class:'tcal-cell clickable' + (hasRing ? ' has-ring' : '') + (isToday ? ' today' : '') + (isPast ? ' past' : '') + (inMonth ? '' : ' out'),
             onclick: () => {
               document.removeEventListener('keydown', onKey);
               overlay.style.display = 'none';
