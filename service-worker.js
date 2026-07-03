@@ -4,7 +4,7 @@
 
 // Subir el sufijo cuando se quiere forzar la invalidación de la versión cacheada
 // (ej. tras cambios en index.html o en las CDNs declaradas más abajo).
-const CACHE = 'viajes-shell-v80';
+const CACHE = 'viajes-shell-v81';
 
 // Caché SEPARADO para imágenes (portadas de viaje, miniaturas de tarjetas…).
 // No lleva el sufijo del shell a propósito: así las imágenes ya descargadas
