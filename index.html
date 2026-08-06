@@ -6067,18 +6067,31 @@ const TripDetail = {
   _accIcon(p) { return TripDetail.ACCESORIOS_ICONS[p] || '🧸'; },
   _accFaseIds() { return TripDetail.ACCESORIOS_PLAN.fases.map(f => f.id); },
 
+  // Lista de accesorios de una fase: prestablecidos (sin los que el usuario ha
+  // eliminado) + los añadidos a mano. `need`/`nota` ya vienen listos para usar.
+  _accItemsFor(faseId, cat) {
+    const fa = TripDetail.ACCESORIOS_PLAN.fases.find(f => f.id === faseId);
+    const hidden = (cat && cat.prefs && cat.prefs.accHidden) || {};
+    const custom = (cat && cat.prefs && cat.prefs.accCustom) || [];
+    const preset = (fa ? fa.items : []).filter(it => !hidden[faseId + '|' + it.producto]);
+    const own = custom.filter(c => c.fase === faseId)
+      .map(c => ({ producto: c.producto, need: c.need, nota: c.nota || '', custom: true, id: c.id }));
+    return [...preset, ...own];
+  },
+
   // Cobertura del plan de accesorios (misma mecánica que _wardrobePlan, sin solapes de talla).
   _accPlan(items, cat) {
     const lines = [];
     let needTotal = 0, coveredTotal = 0;
     const byFase = {};
     for (const fa of TripDetail.ACCESORIOS_PLAN.fases) {
-      for (const it of fa.items) {
+      const faItems = TripDetail._accItemsFor(fa.id, cat);
+      for (const it of faItems) {
         const key = fa.id + '|' + it.producto;
         const need = TripDetail._wardrobeNeed(cat, fa.id, it.producto, it.need);
         const haveQ = items.filter(x => x.talla === fa.id && x.prenda === it.producto).reduce((s, x) => s + (Number(x.qty) || 0), 0);
         const covered = Math.min(haveQ, need);
-        lines.push({ fase: fa.id, producto: it.producto, nota: it.nota, need, have: haveQ, covered, done: covered >= need, key });
+        lines.push({ fase: fa.id, producto: it.producto, nota: it.nota, need, have: haveQ, covered, done: covered >= need, key, custom: !!it.custom, customId: it.id });
         needTotal += need; coveredTotal += covered;
         (byFase[fa.id] = byFase[fa.id] || { id: fa.id, titulo: fa.titulo, meses: fa.meses, need: 0, covered: 0 });
         byFase[fa.id].need += need; byFase[fa.id].covered += covered;
@@ -6168,7 +6181,7 @@ const TripDetail = {
     const have = (fa, producto) => items.filter(x => x.talla === fa && x.prenda === producto).reduce((s, x) => s + (Number(x.qty) || 0), 0);
     const rows = [['Fase', 'Accesorio', 'Faltan', 'Nota']];
     TripDetail.ACCESORIOS_PLAN.fases.forEach(fa => {
-      fa.items.forEach(it => {
+      TripDetail._accItemsFor(fa.id, cat).forEach(it => {
         const need = TripDetail._wardrobeNeed(cat, fa.id, it.producto, it.need);
         const faltan = Math.max(0, need - have(fa.id, it.producto));
         if (faltan > 0) rows.push([fa.titulo, it.producto, faltan, it.nota || '']);
@@ -6181,8 +6194,26 @@ const TripDetail = {
     UI.toast('Lista de compra descargada');
   },
 
+  // Elimina un accesorio del plan: uno prestablecido se oculta (recuperable si algún día
+  // se resetean prefs), uno añadido a mano se borra del todo. En ambos casos se limpia
+  // también el inventario ya registrado para no dejarlo huérfano, y baja el % al recalcular.
+  async _accRemoveItem(t, cat, faseId, it) {
+    if (!confirm(`¿Eliminar "${it.producto}" del plan de accesorios?`)) return false;
+    if (it.custom) {
+      cat.prefs.accCustom = (cat.prefs.accCustom || []).filter(c => c.id !== it.id);
+    } else {
+      cat.prefs.accHidden[faseId + '|' + it.producto] = true;
+    }
+    await TripDetail._wardrobeSaveCatalog(cat);
+    const items = await DB.listByTrip('wardrobe_items', t.id);
+    const orphaned = items.filter(x => x.talla === faseId && x.prenda === it.producto);
+    for (const row of orphaned) await DB.remove('wardrobe_items', row.id);
+    return true;
+  },
+
   // Checklist de accesorios (opcionalmente filtrado por fase). Cada línea tiene +/− que
-  // ajustan el inventario, reutilizando _wardrobeAdjust (genérico: no depende de tallas de ropa).
+  // ajustan el inventario, reutilizando _wardrobeAdjust (genérico: no depende de tallas de ropa),
+  // más un botón para eliminarla del plan y un formulario para añadir accesorios a mano.
   async _accOpenChecklist(t, filterFaseId) {
     TripDetail._wardrobeInjectStyles();
     const cat = await TripDetail._wardrobeCatalog(t);
@@ -6199,7 +6230,7 @@ const TripDetail = {
         const grp = el('div', { class:'wr-check-grp' }, [
           el('div', { class:'wr-check-h' }, [ el('span', { class:'wr-check-talla', text: fa.titulo }), el('span', { class:'muted', text: fa.meses }) ]),
         ]);
-        fa.items.forEach(it => {
+        TripDetail._accItemsFor(fa.id, cat).forEach(it => {
           const need = TripDetail._wardrobeNeed(cat, fa.id, it.producto, it.need);
           const have = haveFor(fa.id, it.producto);
           const done = have >= need;
@@ -6214,12 +6245,36 @@ const TripDetail = {
             : el('div', { class: 'wr-check-q' + (done ? ' ok' : ''), text: `${have}/${need}` });
           grp.appendChild(el('div', { class: 'wr-check-row' + (done ? ' done' : '') }, [
             el('div', { class:'wr-check-info' }, [
-              el('div', { class:'wr-check-name' }, [ el('span', { text: TripDetail._accIcon(it.producto) }), ' ' + it.producto ]),
+              el('div', { class:'wr-check-name' }, [ el('span', { text: TripDetail._accIcon(it.producto) }), ' ' + it.producto, it.custom ? el('span', { class:'wr-badge', text:'Manual' }) : null ].filter(Boolean)),
               it.nota ? el('div', { class:'wr-check-sub muted', text: it.nota }) : null,
             ].filter(Boolean)),
             right,
-          ]));
+            editable ? el('button', { class:'icon-btn', title:'Eliminar del plan', 'aria-label':'Eliminar accesorio', html: svg('trash'),
+              onclick: async () => { const ok = await TripDetail._accRemoveItem(t, cat, fa.id, it); if (ok) await renderBody(); } }) : null,
+          ].filter(Boolean)));
         });
+        if (editable) {
+          const addWrap = el('div', { class:'wrf-add' });
+          const addBtn = el('button', { class:'wrf-add-btn', text:'＋ Añadir accesorio' });
+          addBtn.onclick = () => {
+            const nameInput = el('input', { type:'text', placeholder:'Nombre del accesorio…', maxlength:'60' });
+            const qtyInput = el('input', { type:'number', min:'1', max:'99', value:'1', style:{ flex:'0 0 64px' } });
+            const commit = async () => {
+              const v = (nameInput.value || '').trim();
+              if (!v) return;
+              const n = Math.max(1, Math.min(99, Number(qtyInput.value) || 1));
+              cat.prefs.accCustom = cat.prefs.accCustom || [];
+              cat.prefs.accCustom.push({ id: uuid(), fase: fa.id, producto: v, need: n, nota: '' });
+              await TripDetail._wardrobeSaveCatalog(cat);
+              await renderBody();
+            };
+            nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+            addBtn.replaceWith(el('div', { class:'wrf-add-form' }, [ nameInput, qtyInput, el('button', { class:'btn btn-primary', onclick: commit }, 'Añadir') ]));
+            setTimeout(() => nameInput.focus(), 30);
+          };
+          addWrap.appendChild(addBtn);
+          grp.appendChild(addWrap);
+        }
         body.appendChild(grp);
       });
     };
@@ -6238,7 +6293,7 @@ const TripDetail = {
     try { row = await DB.get('wardrobe_catalog', t.id); } catch (_) {}
     const okObj = (o) => (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
     if (!row || row.deleted_at) {
-      return { trip_id: t.id, prendas: [...d.prendas], tipos: JSON.parse(JSON.stringify(d.tipos)), tallas: [...d.tallas], checklist: {}, prefs: { need:{}, archived:{} } };
+      return { trip_id: t.id, prendas: [...d.prendas], tipos: JSON.parse(JSON.stringify(d.tipos)), tallas: [...d.tallas], checklist: {}, prefs: { need:{}, archived:{}, accHidden:{}, accCustom:[] } };
     }
     const prefs = okObj(row.prefs);
     return {
@@ -6247,11 +6302,11 @@ const TripDetail = {
       tipos:   okObj(row.tipos) && Object.keys(okObj(row.tipos)).length ? row.tipos : JSON.parse(JSON.stringify(d.tipos)),
       tallas:  Array.isArray(row.tallas) && row.tallas.length ? row.tallas : [...d.tallas],
       checklist: okObj(row.checklist),
-      prefs: { need: okObj(prefs.need), archived: okObj(prefs.archived) },
+      prefs: { need: okObj(prefs.need), archived: okObj(prefs.archived), accHidden: okObj(prefs.accHidden), accCustom: Array.isArray(prefs.accCustom) ? prefs.accCustom : [] },
     };
   },
   async _wardrobeSaveCatalog(cat) {
-    await DB.put('wardrobe_catalog', { id: cat.trip_id, trip_id: cat.trip_id, prendas: cat.prendas, tipos: cat.tipos, tallas: cat.tallas, checklist: cat.checklist || {}, prefs: cat.prefs || { need:{}, archived:{} } });
+    await DB.put('wardrobe_catalog', { id: cat.trip_id, trip_id: cat.trip_id, prendas: cat.prendas, tipos: cat.tipos, tallas: cat.tallas, checklist: cat.checklist || {}, prefs: cat.prefs || { need:{}, archived:{}, accHidden:{}, accCustom:[] } });
   },
 
   // Cantidad objetivo de una línea (con override editable del usuario).
@@ -9555,6 +9610,15 @@ const TripDetail = {
       }
     };
     const peopleBlock = el('div', { class:'form-row', id:'people-block' });
+    // El bloque de Personas se ancla justo bajo "Tipo" cuando el tipo es "personas"
+    // (es el dato principal de ese tipo de evento); en el resto de tipos vuelve a su
+    // posición habitual, tras Lugar/Duración ("con quién" es secundario ahí).
+    const peopleSlotTop = el('div', { id:'people-slot-top' });
+    const peopleSlotBottom = el('div', { id:'people-slot-bottom' });
+    const placePeopleBlock = () => {
+      const type = $('#f-type')?.value || it.type;
+      (type === 'personas' ? peopleSlotTop : peopleSlotBottom).appendChild(peopleBlock);
+    };
     const addPerson = () => {
       const inp = document.getElementById('person-new');
       const name = (inp?.value || '').trim();
@@ -9712,6 +9776,7 @@ const TripDetail = {
         refreshImportVisibility();
         renderBorderPicker();
         renderPeople();
+        placePeopleBlock();
       }},
         TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
       ),
@@ -9720,6 +9785,9 @@ const TripDetail = {
     const body = el('div', {}, [
       // 1) Tipo — arriba del todo (define qué campos aplican).
       typeRow,
+      // 1b) Personas, solo si el tipo es "personas": es el dato principal de ese
+      // tipo, así que va pegado al selector de Tipo (placePeopleBlock la mueve aquí).
+      peopleSlotTop,
       // 2) Título.
       el('div', { class:'form-row' }, [
         el('label', { text:'Título (auto si lo dejas vacío)' }),
@@ -9731,8 +9799,8 @@ const TripDetail = {
       placeBlock,
       // 4b) Duración de visita + cómo llegas.
       travelBlock,
-      // 5) Personas (con quién).
-      peopleBlock,
+      // 5) Personas (con quién) — posición habitual para el resto de tipos.
+      peopleSlotBottom,
       // ---- resto de campos ----
       // Importador de reservas (solo tipos con reserva).
       importBlock,
@@ -9788,7 +9856,7 @@ const TripDetail = {
       renderConsultationDates(); renderStatusPicker();
       refreshTimeVisibility(); refreshHotelDatesVisibility(); refreshTzVisibility();
       renderMetadata(); refreshPlaceVisibility(); refreshTravelVisibility(); refreshStandaloneTime();
-      renderBorderPicker(); refreshSelectedPlace(); renderPeople();
+      renderBorderPicker(); refreshSelectedPlace(); renderPeople(); placePeopleBlock();
       refreshImportVisibility();
     }, 0);
 
