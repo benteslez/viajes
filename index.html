@@ -5876,24 +5876,34 @@ const TripDetail = {
      'wardrobe_catalog' (una fila por viaje con las opciones personalizadas).
      Ambos pasan por DB.put/remove → cola _pending → sync, como el resto. */
   WARDROBE_DEFAULTS: {
-    prendas: ['Pantalón','Body','Camiseta','Pelele','Pijama','Jersey','Chaqueta','Vestido','Calcetines','Gorro'],
+    prendas: ['Pantalón','Body','Camiseta','Camisa','Polo','Pelele','Peto','Conjunto vestir','Pijama','Jersey','Chaleco','Sudadera','Chándal','Chaqueta','Vestido','Calcetines','Gorro','Zapatos'],
     tipos: {
       'Pantalón':['Largo','Corto','Legging'],
       'Body':['Manga larga','Manga corta','Sin mangas'],
       'Camiseta':['Manga larga','Manga corta'],
+      'Camisa':['Manga larga','Manga corta'],
+      'Polo':['Manga corta','Manga larga'],
       'Pelele':['Manga larga','Manga corta','Sin mangas'],
+      'Peto':['Corto','Largo'],
+      'Conjunto vestir':['Manga corta','Manga larga'],
       'Pijama':['Entero','Dos piezas'],
       'Jersey':['Normal','Con cremallera','Con capucha'],
+      'Chaleco':['Acolchado','Punto'],
+      'Sudadera':['Con capucha','Sin capucha'],
+      'Chándal':['2 piezas'],
       'Chaqueta':['Fina','Acolchada','Polar'],
       'Vestido':['Manga larga','Manga corta','Sin mangas'],
       'Calcetines':['Cortos','Largos','Antideslizantes'],
       'Gorro':['Verano','Invierno'],
+      'Zapatos':['Patuco blando','Primeros pasos'],
     },
     tallas: ['0-3m','3-6m','6-9m','9-12m','12-18m','18-24m'],
   },
   WARDROBE_ICONS: {
-    'Pantalón':'👖','Body':'🩱','Camiseta':'👕','Pelele':'🧸','Pijama':'🌙',
-    'Jersey':'🧶','Chaqueta':'🧥','Vestido':'👗','Calcetines':'🧦','Gorro':'🧢',
+    'Pantalón':'👖','Body':'🩱','Camiseta':'👕','Camisa':'👔','Polo':'👘',
+    'Pelele':'🧸','Peto':'🩳','Conjunto vestir':'🎀','Pijama':'🌙',
+    'Jersey':'🧶','Chaleco':'🦺','Sudadera':'🎽','Chándal':'🥋',
+    'Chaqueta':'🧥','Vestido':'👗','Calcetines':'🧦','Gorro':'🧢','Zapatos':'👟',
   },
   _wardrobeSort: 'prenda',
   _wardrobeView: 'inv',   // 'inv' | 'plan'
@@ -5911,48 +5921,315 @@ const TripDetail = {
       { talla:'3-6m', meses:'jun–ago 2026', desde:'2026-06-01', hasta:'2026-08-31', verano:true, items: [
         {prenda:'Body', need:8, nota:'manga corta / sin mangas', verano:true},
         {prenda:'Camiseta', need:5, nota:'manga corta', verano:true},
+        {prenda:'Camisa', need:2, nota:'manga corta, ocasional', verano:true},
+        {prenda:'Polo', need:2, nota:'alternativa arreglada a la camiseta', verano:true},
         {prenda:'Pantalón', need:5, nota:'corto (+1 largo para AC/noche)', verano:true},
+        {prenda:'Peto', need:1, nota:'corto, para looks de verano', verano:true},
         {prenda:'Pelele', need:4, nota:'manga corta / sin mangas', verano:true},
+        {prenda:'Conjunto vestir', need:1, nota:'para bautizos/eventos', verano:true},
         {prenda:'Pijama', need:4, nota:'ligero, dos piezas'},
         {prenda:'Jersey', need:1, nota:'fino para AC/tardes frescas'},
+        {prenda:'Chaleco', need:1, nota:'capa ligera sin mangas'},
+        {prenda:'Sudadera', need:1, nota:'fina, para AC o noches frescas'},
+        {prenda:'Chándal', need:1, nota:'conjunto ligero para viajes'},
         {prenda:'Chaqueta', need:1, nota:'fina'},
         {prenda:'Calcetines', need:6, nota:'cortos'},
         {prenda:'Gorro', need:1, nota:'de sol', verano:true},
+        {prenda:'Zapatos', need:1, nota:'patucos blandos, para sol/frío de AC', verano:true},
       ]},
       { talla:'6-9m',  meses:'sep–nov 2026', desde:'2026-09-01', hasta:'2026-11-30', items: [
         {prenda:'Body', need:8, nota:'sobre todo manga larga (+2 corta)'},
         {prenda:'Camiseta', need:4, nota:'manga larga'},
+        {prenda:'Camisa', need:2, nota:'manga larga, para salir'},
+        {prenda:'Polo', need:1, nota:'ocasional'},
         {prenda:'Pantalón', need:6, nota:'largo (+1 corto para viajes)'},
+        {prenda:'Peto', need:1, nota:'para días de diario/fotos'},
         {prenda:'Pelele', need:3},
+        {prenda:'Conjunto vestir', need:1, nota:'para eventos especiales'},
         {prenda:'Pijama', need:4},
         {prenda:'Jersey', need:3},
+        {prenda:'Chaleco', need:1, nota:'capa ligera sin mangas'},
+        {prenda:'Sudadera', need:2, nota:'de diario, capa cómoda'},
+        {prenda:'Chándal', need:2, nota:'para días de juego/viaje'},
         {prenda:'Chaqueta', need:2, nota:'1 polar/acolchada + 1 fina'},
         {prenda:'Calcetines', need:8},
         {prenda:'Gorro', need:2, nota:'1 de abrigo + 1 fino'},
+        {prenda:'Zapatos', need:1, nota:'patucos blandos, aún no camina'},
       ]},
       { talla:'9-12m', meses:'dic 2026–feb 2027', desde:'2026-12-01', hasta:'2027-02-28', items: [
         {prenda:'Body', need:8, nota:'sobre todo manga larga (+2 corta)'},
         {prenda:'Camiseta', need:4, nota:'manga larga'},
+        {prenda:'Camisa', need:2, nota:'manga larga, para salir'},
+        {prenda:'Polo', need:1, nota:'ocasional'},
         {prenda:'Pantalón', need:6, nota:'largo (+1 corto para viajes)'},
+        {prenda:'Peto', need:1, nota:'para días de diario/fotos'},
         {prenda:'Pelele', need:3},
+        {prenda:'Conjunto vestir', need:1, nota:'para eventos especiales'},
         {prenda:'Pijama', need:4},
         {prenda:'Jersey', need:3},
+        {prenda:'Chaleco', need:1, nota:'capa ligera sin mangas'},
+        {prenda:'Sudadera', need:3, nota:'de diario, capa cómoda'},
+        {prenda:'Chándal', need:3, nota:'para días de juego/viaje'},
         {prenda:'Chaqueta', need:2, nota:'1 polar/acolchada + 1 fina'},
         {prenda:'Calcetines', need:8},
         {prenda:'Gorro', need:2, nota:'1 de abrigo + 1 fino'},
+        {prenda:'Zapatos', need:1, nota:'primeros pasos, suela flexible'},
       ]},
       { talla:'12-18m', meses:'mar–jul 2027', desde:'2027-03-01', hasta:'2027-07-31', items: [
         {prenda:'Body', need:9, nota:'sobre todo manga larga (+2 corta)'},
         {prenda:'Camiseta', need:5, nota:'manga larga'},
+        {prenda:'Camisa', need:3, nota:'manga larga, para salir'},
+        {prenda:'Polo', need:2, nota:'para días de diario más arreglados'},
         {prenda:'Pantalón', need:7, nota:'largo (+2 corto para viajes)'},
+        {prenda:'Peto', need:1, nota:'para días de diario/fotos'},
         {prenda:'Pelele', need:3},
+        {prenda:'Conjunto vestir', need:1, nota:'para eventos especiales'},
         {prenda:'Pijama', need:4},
         {prenda:'Jersey', need:4},
+        {prenda:'Chaleco', need:1, nota:'capa ligera sin mangas'},
+        {prenda:'Sudadera', need:3, nota:'de diario, capa cómoda'},
+        {prenda:'Chándal', need:3, nota:'para días de juego/viaje'},
         {prenda:'Chaqueta', need:2, nota:'1 polar/acolchada + 1 fina'},
         {prenda:'Calcetines', need:8},
         {prenda:'Gorro', need:2, nota:'1 de abrigo + 1 fino'},
+        {prenda:'Zapatos', need:2, nota:'ya anda; crecen rápido, revisar talla'},
       ]},
     ],
+  },
+
+  // ----- Accesorios (BLW, higiene, consumibles) -----
+  // Apartado independiente de las tallas de ropa: se organiza por fase de alimentación/
+  // desarrollo, no por talla. Reutiliza el mismo store 'wardrobe_items' (campo `talla`
+  // guarda el id de fase en vez de una talla de ropa) para no requerir migraciones de BD;
+  // `_accFaseIds()` es lo que distingue accesorios de prendas en el resto de vistas.
+  ACCESORIOS_PLAN: {
+    ropaNota: 'No merece la pena comprar ropa en exceso: Pablo va a crecer varias tallas en estos 10 meses y en Bogotá hay ropa infantil normal y corriente (Zara, Carter\'s, OshKosh vía import, mercado local). Trae solo la talla actual + la siguiente; no compres la 12-18m todavía, no conocéis aún su curva de crecimiento real y ocupa maleta sin necesidad. Si algo específico de calidad os interesa, comprad poca cantidad — es reponible por Amazon España con envío a Colombia si hace falta a mitad de estancia.',
+    priority: [
+      'Vajilla BLW + cucharas de silicona (fase 1, uso diario inmediato)',
+      'Bandejas de congelación',
+      'Protector solar (stock, no se encuentra igual en Bogotá)',
+      'Vaso 360° (x2, por la tasa de pérdida de piezas)',
+      'Todo lo demás es sustituible o pospuesto a viajes/envíos posteriores',
+    ],
+    fases: [
+      { id:'fase1', titulo:'Fase 1 — Inicio BLW', meses:'6-8 meses (~sep-nov 2026)',
+        desc:'Agarre palmar, sin pinza fina, mucho desperdicio de comida.', items: [
+        {producto:'Babero silicona manga larga', need:3, nota:'Se puede lavar y reusar el mismo día, pero conviene tener repuesto mientras seca'},
+        {producto:'Babero silicona con bolsillo (sin mangas)', need:2, nota:'Para cuando ya controle mejor el tronco'},
+        {producto:'Plato con ventosa', need:2, nota:'Uno de repuesto; la ventosa se desgasta con el uso diario'},
+        {producto:'Bol con ventosa', need:2, nota:'Uno para puré/yogur, otro de repuesto'},
+        {producto:'Cucharas de silicona blanda', need:6, nota:'Se pierden, se muerden, se dejan caer constantemente — es lo que más se agota'},
+        {producto:'Mantel de silicona plegable', need:2, nota:'Facilita limpieza bajo la trona'},
+        {producto:'Bandejas de congelación con tapa (12-15 cubitos)', need:3, nota:'Máximo uso en esta fase: purés/triturados en lote'},
+        {producto:'Robot Babycook', need:1, nota:'Cocina al vapor + tritura; opcional si ya tenéis licuadora/vaporera en Bogotá'},
+        {producto:'Doidy Cup', need:1, nota:'Ya lo tenéis — se introduce desde ahora con agua, aunque beba poco'},
+      ]},
+      { id:'fase2', titulo:'Fase 2 — Pinza fina y autoalimentación', meses:'9-11 meses (~dic 2026-feb 2027)',
+        desc:'Empieza a usar índice-pulgar, quiere manejar la cuchara aunque sin éxito, más interés por beber solo. Menos bandejas de congelación nuevas: ya come más en trozos.', items: [
+        {producto:'Vaso 360° Munchkin', need:2, nota:'Compra doble: la válvula/tapa se pierde o se rompe con facilidad'},
+        {producto:'Cucharas MAM sensibles al calor', need:2, nota:'Útil para cuidadores/abuelos que preparan la comida'},
+        {producto:'Vaso de bambú con boquilla antigoteo', need:1, nota:'Alternativa ligera para salidas/paseos'},
+        {producto:'Bolsas/vasos de silicona reutilizables (snacks)', need:4, nota:'Para fruta cortada, cereales — clave cuando empiece a comer fuera de casa'},
+        {producto:'Cepillo dental de silicona (dedo)', need:2, nota:'Se desgasta, conviene tener repuesto'},
+        {producto:'Primer cepillo de cerdas suaves', need:2, nota:'Transición hacia los 10-12 meses, según erupción dental'},
+      ]},
+      { id:'fase3', titulo:'Fase 3 — Mesa familiar y transición', meses:'12-16 meses (~mar-jul 2027)',
+        desc:'Se incorpora a comidas familiares, intenta usar cubiertos reales, bebe con menos ayuda.', items: [
+        {producto:'Cubiertos infantiles reales (mango grueso, punta roma)', need:1, nota:'Transición desde silicona; tipo NUK o Ikea Smaska'},
+        {producto:'Vaso EZPZ Mini Cup o vaso abierto pequeño', need:2, nota:'Practicar sorbo sin válvula, con supervisión'},
+        {producto:'Plato/bol "normales" irrompibles (bambú o silicona rígida)', need:1, nota:'Sustituye gradualmente la vajilla con ventosa'},
+        {producto:'Babero de tela con bolsillo, lavable a máquina', need:3, nota:'Ya menos desastre, puede pasar a babero de tela'},
+      ]},
+      { id:'transversal', titulo:'Consumibles transversales', meses:'Toda la estancia',
+        desc:'No dependen de la fase, pero se agotan y en Bogotá son caros o difíciles de encontrar con la misma formulación.', items: [
+        {producto:'Protector solar mineral pediátrico SPF50', need:4, nota:'Bogotá está a 2.600m, radiación UV alta todo el año — consumo constante'},
+        {producto:'Aspirador nasal tipo NoseFrida', need:1, nota:'No es consumible, pero comprarlo ahora si no lo tenéis (dura años)'},
+        {producto:'Termómetro digital', need:1, nota:'Verificar que sea fácil de conseguir pilas de repuesto en Bogotá'},
+        {producto:'Cepillos/pastas dentales infantiles sin flúor', need:3, nota:'Formulación específica 0-2 años, limitada en Colombia'},
+      ]},
+    ],
+  },
+  ACCESORIOS_ICONS: {
+    'Babero silicona manga larga':'🥼', 'Babero silicona con bolsillo (sin mangas)':'🧺',
+    'Plato con ventosa':'🍽️', 'Bol con ventosa':'🥣', 'Cucharas de silicona blanda':'🥄',
+    'Mantel de silicona plegable':'🧻', 'Bandejas de congelación con tapa (12-15 cubitos)':'🧊',
+    'Robot Babycook':'🍲', 'Doidy Cup':'🥤',
+    'Vaso 360° Munchkin':'🧃', 'Cucharas MAM sensibles al calor':'🥄',
+    'Vaso de bambú con boquilla antigoteo':'🎋', 'Bolsas/vasos de silicona reutilizables (snacks)':'🥡',
+    'Cepillo dental de silicona (dedo)':'🪥', 'Primer cepillo de cerdas suaves':'🪥',
+    'Cubiertos infantiles reales (mango grueso, punta roma)':'🍴',
+    'Vaso EZPZ Mini Cup o vaso abierto pequeño':'🥛',
+    'Plato/bol "normales" irrompibles (bambú o silicona rígida)':'🍽️',
+    'Babero de tela con bolsillo, lavable a máquina':'🧵',
+    'Protector solar mineral pediátrico SPF50':'🧴', 'Aspirador nasal tipo NoseFrida':'👃',
+    'Termómetro digital':'🌡️', 'Cepillos/pastas dentales infantiles sin flúor':'🪥',
+  },
+  _accIcon(p) { return TripDetail.ACCESORIOS_ICONS[p] || '🧸'; },
+  _accFaseIds() { return TripDetail.ACCESORIOS_PLAN.fases.map(f => f.id); },
+
+  // Cobertura del plan de accesorios (misma mecánica que _wardrobePlan, sin solapes de talla).
+  _accPlan(items, cat) {
+    const lines = [];
+    let needTotal = 0, coveredTotal = 0;
+    const byFase = {};
+    for (const fa of TripDetail.ACCESORIOS_PLAN.fases) {
+      for (const it of fa.items) {
+        const key = fa.id + '|' + it.producto;
+        const need = TripDetail._wardrobeNeed(cat, fa.id, it.producto, it.need);
+        const haveQ = items.filter(x => x.talla === fa.id && x.prenda === it.producto).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+        const covered = Math.min(haveQ, need);
+        lines.push({ fase: fa.id, producto: it.producto, nota: it.nota, need, have: haveQ, covered, done: covered >= need, key });
+        needTotal += need; coveredTotal += covered;
+        (byFase[fa.id] = byFase[fa.id] || { id: fa.id, titulo: fa.titulo, meses: fa.meses, need: 0, covered: 0 });
+        byFase[fa.id].need += need; byFase[fa.id].covered += covered;
+      }
+    }
+    return { lines, needTotal, coveredTotal, byFase: Object.values(byFase) };
+  },
+
+  // Vista "Accesorios": prioridad de maleta, progreso global, por fase, y nota sobre ropa.
+  async _accRenderView(root, t) {
+    const allItems = await DB.listByTrip('wardrobe_items', t.id);
+    const ids = new Set(TripDetail._accFaseIds());
+    const items = allItems.filter(x => ids.has(x.talla));
+    const cat = await TripDetail._wardrobeCatalog(t);
+    const st = TripDetail._accPlan(items, cat);
+    const bar = (covered, need) => {
+      const p = need ? Math.min(100, Math.round(covered / need * 100)) : 0;
+      return el('div', { class:'budget-bar' }, [ el('div', { class: 'budget-fill' + (p >= 100 ? ' wr-done' : ''), style:{ width: p + '%' } }) ]);
+    };
+    const pct = st.needTotal ? Math.round(st.coveredTotal / st.needTotal * 100) : 0;
+    const faltan = Math.max(0, st.needTotal - st.coveredTotal);
+
+    root.appendChild(el('div', { class:'wr-aviso' }, [
+      el('span', { class:'wr-aviso-ico', text:'🎒' }),
+      el('div', {}, [
+        el('div', { style:{ fontWeight:700, marginBottom:'4px' }, text:'Prioridad si el espacio de maleta es limitado' }),
+        el('ol', { style:{ margin:'0', paddingLeft:'18px', fontSize:'.85rem', lineHeight:'1.55' } },
+          TripDetail.ACCESORIOS_PLAN.priority.map(p => el('li', { text: p }))),
+      ]),
+    ]));
+
+    root.appendChild(el('div', { class:'wr-plan-card wr-plan-global' }, [
+      el('div', { class:'wr-plan-top' }, [
+        el('div', {}, [
+          el('div', { class:'wr-plan-title', text:'Accesorios BLW y estancia' }),
+          el('div', { class:'wr-plan-sub muted', text:'Vajilla, higiene y consumibles por fase de alimentación' }),
+        ]),
+        el('div', { class:'wr-plan-pct', text: pct + '%' }),
+      ]),
+      bar(st.coveredTotal, st.needTotal),
+      el('div', { class:'wr-plan-legend' }, [
+        el('span', { class:'muted', html:`<span class="mono">${st.coveredTotal}</span> / <span class="mono">${st.needTotal}</span> accesorios` }),
+        el('span', { class: faltan ? 'wr-faltan' : 'wr-ok', text: faltan ? `faltan ${faltan}` : '¡completo! 🎉' }),
+      ]),
+      el('div', { class:'wr-plan-hint muted', text:'Toca para ver y marcar la lista →' }),
+    ]));
+
+    const fw = el('div', { class:'wr-section' }, [ el('div', { class:'wr-section-h', text:'Por fase' }) ]);
+    st.byFase.forEach(g => {
+      const p = g.need ? Math.round(g.covered / g.need * 100) : 0;
+      const fa = TripDetail.ACCESORIOS_PLAN.fases.find(f => f.id === g.id);
+      const card = el('div', { class:'wr-plan-card wr-talla-card', role:'button', tabindex:'0',
+        onclick: () => TripDetail._accOpenChecklist(t, g.id) }, [
+        el('div', { class:'wr-plan-top' }, [
+          el('div', {}, [
+            el('div', { class:'wr-plan-title', text: g.titulo }),
+            el('div', { class:'wr-plan-sub muted', text: g.meses }),
+            fa && fa.desc ? el('div', { class:'wr-plan-sub muted', style:{ marginTop:'2px', fontStyle:'italic' }, text: fa.desc }) : null,
+          ].filter(Boolean)),
+          el('div', { class:'wr-plan-pct', text: p + '%' }),
+        ]),
+        bar(g.covered, g.need),
+        el('div', { class:'wr-plan-legend' }, [
+          el('span', { class:'muted', html:`<span class="mono">${g.covered}</span> / <span class="mono">${g.need}</span>` }),
+        ]),
+      ]);
+      fw.appendChild(card);
+    });
+    root.appendChild(fw);
+
+    root.appendChild(el('div', { class:'wr-aviso' }, [
+      el('span', { class:'wr-aviso-ico', text:'👕' }),
+      el('div', {}, [
+        el('div', { style:{ fontWeight:700, marginBottom:'4px' }, text:'Sobre la ropa (nota aparte)' }),
+        el('div', { style:{ fontSize:'.85rem', lineHeight:'1.55' }, text: TripDetail.ACCESORIOS_PLAN.ropaNota }),
+      ]),
+    ]));
+
+    root.appendChild(el('div', { class:'wr-foot wr-foot-grid' }, [
+      el('button', { class:'btn btn-primary btn-sm', onclick: () => TripDetail._accOpenChecklist(t, null) }, 'Ver lista completa'),
+      el('button', { class:'btn btn-ghost btn-sm', onclick: () => TripDetail._accShoppingCSV(items, cat) }, [ el('span', { html: svg('download') }), 'CSV' ]),
+    ]));
+  },
+
+  // Exporta lo que falta del plan de accesorios.
+  _accShoppingCSV(items, cat) {
+    const have = (fa, producto) => items.filter(x => x.talla === fa && x.prenda === producto).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    const rows = [['Fase', 'Accesorio', 'Faltan', 'Nota']];
+    TripDetail.ACCESORIOS_PLAN.fases.forEach(fa => {
+      fa.items.forEach(it => {
+        const need = TripDetail._wardrobeNeed(cat, fa.id, it.producto, it.need);
+        const faltan = Math.max(0, need - have(fa.id, it.producto));
+        if (faltan > 0) rows.push([fa.titulo, it.producto, faltan, it.nota || '']);
+      });
+    });
+    if (rows.length === 1) { UI.toast('¡No falta nada de accesorios! 🎉'); return; }
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = el('a', { href: 'data:text/csv;charset=utf-8,' + encodeURIComponent('﻿' + csv), download: `accesorios-pablo-${nowIso().slice(0,10)}.csv` });
+    document.body.appendChild(a); a.click(); a.remove();
+    UI.toast('Lista de compra descargada');
+  },
+
+  // Checklist de accesorios (opcionalmente filtrado por fase). Cada línea tiene +/− que
+  // ajustan el inventario, reutilizando _wardrobeAdjust (genérico: no depende de tallas de ropa).
+  async _accOpenChecklist(t, filterFaseId) {
+    TripDetail._wardrobeInjectStyles();
+    const cat = await TripDetail._wardrobeCatalog(t);
+    const editable = canEdit();
+    const body = el('div', { class:'wr-check' });
+    const renderBody = async () => {
+      const allItems = await DB.listByTrip('wardrobe_items', t.id);
+      const ids = new Set(TripDetail._accFaseIds());
+      const items = allItems.filter(x => ids.has(x.talla));
+      const haveFor = (fa, producto) => items.filter(x => x.talla === fa && x.prenda === producto).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+      body.innerHTML = '';
+      const fases = TripDetail.ACCESORIOS_PLAN.fases.filter(f => !filterFaseId || f.id === filterFaseId);
+      fases.forEach(fa => {
+        const grp = el('div', { class:'wr-check-grp' }, [
+          el('div', { class:'wr-check-h' }, [ el('span', { class:'wr-check-talla', text: fa.titulo }), el('span', { class:'muted', text: fa.meses }) ]),
+        ]);
+        fa.items.forEach(it => {
+          const need = TripDetail._wardrobeNeed(cat, fa.id, it.producto, it.need);
+          const have = haveFor(fa.id, it.producto);
+          const done = have >= need;
+          const adjust = async (d) => { await TripDetail._wardrobeAdjust(t, fa.id, it.producto, d, cat); await renderBody(); };
+          const right = editable
+            ? el('div', { class:'wr-check-step' }, [
+                el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Quitar', disabled: have <= 0 ? true : null, onclick: () => adjust(-1) }, '−'),
+                el('span', { class: 'wr-step-n mono' + (done ? ' ok' : ''), text: String(have) }),
+                el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Añadir', onclick: () => adjust(1) }, '+'),
+                el('span', { class:'wr-step-need muted', text: '/ ' + need }),
+              ])
+            : el('div', { class: 'wr-check-q' + (done ? ' ok' : ''), text: `${have}/${need}` });
+          grp.appendChild(el('div', { class: 'wr-check-row' + (done ? ' done' : '') }, [
+            el('div', { class:'wr-check-info' }, [
+              el('div', { class:'wr-check-name' }, [ el('span', { text: TripDetail._accIcon(it.producto) }), ' ' + it.producto ]),
+              it.nota ? el('div', { class:'wr-check-sub muted', text: it.nota }) : null,
+            ].filter(Boolean)),
+            right,
+          ]));
+        });
+        body.appendChild(grp);
+      });
+    };
+    await renderBody();
+    const faseObj = filterFaseId ? TripDetail.ACCESORIOS_PLAN.fases.find(f => f.id === filterFaseId) : null;
+    UI.openSheet({
+      title: faseObj ? faseObj.titulo : 'Lista de accesorios',
+      body,
+      footer: [ el('button', { class:'btn btn-primary', onclick: () => { UI.closeSheet(); Router.renderKeepScroll(); } }, 'Listo') ],
+    });
   },
 
   async _wardrobeCatalog(t) {
@@ -5983,6 +6260,27 @@ const TripDetail = {
     return (ov === 0 || (typeof ov === 'number' && ov > 0)) ? ov : def;
   },
 
+  // Convierte "6-9m" / "6-12" en [6,9). Devuelve null si el texto no tiene ese formato
+  // (packs con rango amplio como calcetines "6-12" o "12-24" siguen siendo válidos).
+  _wardrobeParseTallaRange(s) {
+    const m = /^(\d+)\s*-\s*(\d+)\s*m?$/.exec(String(s || '').trim());
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  },
+  // Dos tallas "coinciden" si son el mismo texto, o si sus rangos de meses se solapan
+  // (así un pack "6-12" cuenta tanto para la talla 6-9m como para la 9-12m del plan).
+  _wardrobeTallaOverlaps(a, b) {
+    if (a === b) return true;
+    const ra = TripDetail._wardrobeParseTallaRange(a), rb = TripDetail._wardrobeParseTallaRange(b);
+    if (!ra || !rb) return false;
+    return ra[0] < rb[1] && rb[0] < ra[1];
+  },
+  // Suma el inventario de una prenda que aplica a una talla del plan, incluyendo packs
+  // de rango amplio (p. ej. calcetines "6-12") que se solapan con esa talla.
+  _wardrobeHaveFor(items, talla, prenda) {
+    return items.filter(x => x.prenda === prenda && TripDetail._wardrobeTallaOverlaps(x.talla, talla))
+      .reduce((s, x) => s + (Number(x.qty) || 0), 0);
+  },
+
   // Talla vigente según la fecha de hoy: { idx, size, estado:'antes'|'actual'|'despues', nextSize, dias }.
   _wardrobeCurrentSize() {
     const today = todayIso();
@@ -6001,8 +6299,6 @@ const TripDetail = {
 
   // Cobertura del plan. covered = (archivada||manual) ? need : min(have, need).
   _wardrobePlan(items, cat) {
-    const have = {};
-    for (const it of items) { const k = it.talla + '|' + it.prenda; have[k] = (have[k] || 0) + (Number(it.qty) || 0); }
     const checks = (cat && cat.checklist) || {};
     const archived = (cat && cat.prefs && cat.prefs.archived) || {};
     const lines = [];
@@ -6013,7 +6309,7 @@ const TripDetail = {
       for (const it of sz.items) {
         const key = sz.talla + '|' + it.prenda;
         const need = TripDetail._wardrobeNeed(cat, sz.talla, it.prenda, it.need);
-        const haveQ = have[key] || 0;
+        const haveQ = TripDetail._wardrobeHaveFor(items, sz.talla, it.prenda);
         const manual = !!checks[key] || isArch;
         const covered = manual ? need : Math.min(haveQ, need);
         const line = { talla: sz.talla, meses: sz.meses, prenda: it.prenda, nota: it.nota, verano: !!it.verano, need, have: haveQ, manual, covered, done: covered >= need, key };
@@ -6029,6 +6325,74 @@ const TripDetail = {
     for (const it of items) haveByPrenda[it.prenda] = (haveByPrenda[it.prenda] || 0) + (Number(it.qty) || 0);
     Object.keys(byPrenda).forEach(p => { byPrenda[p].have = haveByPrenda[p] || 0; });
     return { lines, needTotal, coveredTotal, byTalla: Object.values(byTalla), byPrenda: Object.values(byPrenda), haveByPrenda };
+  },
+
+  // Desglose de una prenda por talla: cuántas tenemos (y de qué tipo) en cada talla del
+  // plan, incluyendo lo que aportan packs de rango amplio (p. ej. calcetines "6-12" cuenta
+  // para 6-9m y 9-12m). Las tallas que no encajan en ningún tramo del plan se listan aparte.
+  async _wardrobeOpenPrendaBreakdown(t, prenda) {
+    TripDetail._wardrobeInjectStyles();
+    const items = await DB.listByTrip('wardrobe_items', t.id);
+    const cat = await TripDetail._wardrobeCatalog(t);
+    const mine = items.filter(i => i.prenda === prenda);
+    const total = mine.reduce((s, i) => s + (Number(i.qty) || 0), 0);
+
+    const planSizes = TripDetail.WARDROBE_PLAN.sizes.filter(sz => sz.items.some(x => x.prenda === prenda));
+    const planTallas = planSizes.map(sz => sz.talla);
+    const rows = [];
+
+    planSizes.forEach(sz => {
+      const it = sz.items.find(x => x.prenda === prenda);
+      const need = TripDetail._wardrobeNeed(cat, sz.talla, prenda, it.need);
+      const have = TripDetail._wardrobeHaveFor(items, sz.talla, prenda);
+      const parts = [];
+      const ownTipos = {};
+      mine.filter(i => i.talla === sz.talla).forEach(i => { ownTipos[i.tipo] = (ownTipos[i.tipo] || 0) + (Number(i.qty) || 0); });
+      Object.entries(ownTipos).forEach(([k, v]) => parts.push(`${v} ${k}`));
+      const extraTipos = {};
+      mine.filter(i => i.talla !== sz.talla && TripDetail._wardrobeTallaOverlaps(i.talla, sz.talla))
+        .forEach(i => { const key = i.talla + '|' + i.tipo; extraTipos[key] = (extraTipos[key] || 0) + (Number(i.qty) || 0); });
+      Object.entries(extraTipos).forEach(([key, v]) => { const [ta, tipo] = key.split('|'); parts.push(`${v} ${tipo} (${ta})`); });
+      rows.push({ talla: sz.talla, have, need, sub: parts.join(' · ') || 'sin unidades' });
+    });
+
+    const tOrder = TripDetail.WARDROBE_DEFAULTS.tallas;
+    const orphanTallas = Array.from(new Set(mine.map(i => i.talla)))
+      .filter(ta => !planTallas.some(pt => TripDetail._wardrobeTallaOverlaps(ta, pt)));
+    orphanTallas.sort((a, b) => {
+      const ai = tOrder.indexOf(a), bi = tOrder.indexOf(b);
+      if (ai >= 0 || bi >= 0) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      const ra = TripDetail._wardrobeParseTallaRange(a), rb = TripDetail._wardrobeParseTallaRange(b);
+      if (ra && rb) return ra[0] - rb[0];
+      return a.localeCompare(b, 'es');
+    });
+    orphanTallas.forEach(ta => {
+      const own = mine.filter(i => i.talla === ta);
+      const have = own.reduce((s, i) => s + (Number(i.qty) || 0), 0);
+      const tipos = {};
+      own.forEach(i => { tipos[i.tipo] = (tipos[i.tipo] || 0) + (Number(i.qty) || 0); });
+      const sub = Object.entries(tipos).map(([k, v]) => `${v} ${k}`).join(' · ') + (planTallas.length ? ' · fuera del plan' : '');
+      rows.push({ talla: ta, have, need: null, sub });
+    });
+
+    const body = el('div', { class:'wr-bd' });
+    if (!rows.length) {
+      body.appendChild(el('div', { class:'muted', style:{ padding:'12px 4px' }, text:'Todavía no hay ninguna registrada.' }));
+    }
+    rows.forEach(r => {
+      body.appendChild(el('div', { class:'wr-bd-row' }, [
+        el('div', { class:'wr-bd-talla mono', text: r.talla }),
+        el('div', { class:'wr-bd-info' }, [
+          el('div', { class:'wr-bd-have', text: r.need != null ? `${r.have} / ${r.need}` : String(r.have) }),
+          el('div', { class:'wr-bd-sub muted', text: r.sub }),
+        ]),
+      ]));
+    });
+    UI.openSheet({
+      title: `${TripDetail._wardrobeIcon(prenda)} ${prenda} · ${total} en total`,
+      body,
+      footer: [ el('button', { class:'btn btn-primary', onclick: () => UI.closeSheet() }, 'Cerrar') ],
+    });
   },
 
   _wardrobeInjectStyles() {
@@ -6128,6 +6492,13 @@ const TripDetail = {
       .wr-pp-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
       .wr-pp-label{font-size:.9rem;font-weight:700;}
       .wr-pp-n{font-size:.8rem;}
+      .wr-clickable{cursor:pointer;background:none;border:none;text-align:left;padding:0;font-family:inherit;color:inherit;width:100%;touch-action:manipulation;}
+      .wr-bd{display:flex;flex-direction:column;gap:8px;}
+      .wr-bd-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--bg-elev);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 13px;}
+      .wr-bd-talla{font-size:.92rem;font-weight:800;flex-shrink:0;}
+      .wr-bd-info{flex:1;min-width:0;text-align:right;}
+      .wr-bd-have{font-weight:700;font-size:.95rem;font-family:var(--font-mono);}
+      .wr-bd-sub{font-size:.76rem;margin-top:1px;}
       .wr-check{display:flex;flex-direction:column;gap:18px;}
       .wr-check-grp{display:flex;flex-direction:column;gap:8px;}
       .wr-check-h{display:flex;align-items:baseline;gap:8px;}
@@ -6182,7 +6553,9 @@ const TripDetail = {
 
   async tabPablo(root, t) {
     TripDetail._wardrobeInjectStyles();
-    const items = await DB.listByTrip('wardrobe_items', t.id);
+    const allItems = await DB.listByTrip('wardrobe_items', t.id);
+    const accFaseIds = new Set(TripDetail._accFaseIds());
+    const items = allItems.filter(i => !accFaseIds.has(i.talla));
     const cat = await TripDetail._wardrobeCatalog(t);
     const total = items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
     const view = TripDetail._wardrobeView || 'inv';
@@ -6195,16 +6568,17 @@ const TripDetail = {
         items.length ? el('span', { class:'wr-dot', text:'·' }) : null,
         items.length ? el('span', { class:'muted', text: `${items.length} ${items.length === 1 ? 'entrada' : 'entradas'}` }) : null,
       ].filter(Boolean)),
-      canEdit() ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir prenda', 'aria-label':'Añadir prenda',
+      (canEdit() && view !== 'acc') ? el('button', { class:'icon-btn icon-btn-primary', title:'Añadir prenda', 'aria-label':'Añadir prenda',
         html: svg('plus'), onclick: () => TripDetail.openWardrobeFlow(t) }) : null,
     ].filter(Boolean)));
 
-    // Selector de vista: Inventario / Plan
+    // Selector de vista: Inventario / Plan / Accesorios
     root.appendChild(el('div', { class:'segmented wr-viewtoggle' }, [
-      ['inv','Inventario'], ['plan','Plan'],
+      ['inv','Inventario'], ['plan','Plan'], ['acc','Accesorios'],
     ].map(([k, lbl]) => el('button', { class: view === k ? 'active' : '',
       onclick: () => { TripDetail._wardrobeView = k; Router.renderKeepScroll(); } }, lbl))));
 
+    if (view === 'acc') { await TripDetail._accRenderView(root, t); return; }
     if (view === 'plan') { TripDetail._wardrobeRenderPlan(root, t, items, cat); return; }
 
     // ---- Vista inventario ----
@@ -6232,10 +6606,13 @@ const TripDetail = {
     sorted.forEach(it => {
       list.appendChild(el('div', { class:'wr-item' }, [
         el('div', { class:'wr-qty mono', text: String(it.qty) }),
-        el('div', { class:'wr-ico', text: TripDetail._wardrobeIcon(it.prenda) }),
-        el('div', { class:'wr-info' }, [
-          el('div', { class:'wr-name', text: it.prenda }),
-          el('div', { class:'wr-sub muted', text: `${it.tipo} · ${it.talla}` }),
+        el('button', { class:'wr-clickable', style:{ display:'flex', alignItems:'center', gap:'12px', flex:'1', minWidth:'0' },
+          title:'Ver desglose por talla', onclick: () => TripDetail._wardrobeOpenPrendaBreakdown(t, it.prenda) }, [
+          el('div', { class:'wr-ico', text: TripDetail._wardrobeIcon(it.prenda) }),
+          el('div', { class:'wr-info' }, [
+            el('div', { class:'wr-name', text: it.prenda }),
+            el('div', { class:'wr-sub muted', text: `${it.tipo} · ${it.talla}` }),
+          ]),
         ]),
         canEdit() ? el('button', { class:'icon-btn', title:'Editar', 'aria-label':'Editar prenda',
           html: svg('edit'), onclick: () => TripDetail.openWardrobeFlow(t, it) }) : null,
@@ -6331,7 +6708,8 @@ const TripDetail = {
       cw.appendChild(el('div', { class:'muted', style:{ fontSize:'.88rem' }, text:'Aún no has añadido prendas.' }));
     } else {
       const max = Math.max(1, ...entries.map(e => e[1]));
-      entries.forEach(([p, n]) => cw.appendChild(el('div', { class:'wr-chart-row' }, [
+      entries.forEach(([p, n]) => cw.appendChild(el('button', { class:'wr-chart-row wr-clickable', title:'Ver desglose por talla',
+        onclick: () => TripDetail._wardrobeOpenPrendaBreakdown(t, p) }, [
         el('div', { class:'wr-chart-label' }, [ el('span', { text: TripDetail._wardrobeIcon(p) }), el('span', { text: p }) ]),
         el('div', { class:'wr-chart-track' }, [ el('div', { class:'wr-chart-bar', style:{ width: Math.round(n / max * 100) + '%' } }) ]),
         el('div', { class:'wr-chart-n mono', text: String(n) }),
@@ -6342,7 +6720,8 @@ const TripDetail = {
     // 4) Progreso por prenda (vs plan)
     const pw = el('div', { class:'wr-section' }, [ el('div', { class:'wr-section-h', text:'Progreso por prenda (vs plan)' }) ]);
     st.byPrenda.sort((a, b) => a.prenda.localeCompare(b.prenda, 'es')).forEach(g => {
-      pw.appendChild(el('div', { class:'wr-pp-row' }, [
+      pw.appendChild(el('button', { class:'wr-pp-row wr-clickable', title:'Ver desglose por talla',
+        onclick: () => TripDetail._wardrobeOpenPrendaBreakdown(t, g.prenda) }, [
         el('div', { class:'wr-pp-head' }, [
           el('span', { class:'wr-pp-label' }, [ el('span', { text: TripDetail._wardrobeIcon(g.prenda) }), ' ' + g.prenda ]),
           el('span', { class:'wr-pp-n muted mono', text: `${g.covered}/${g.need}` }),
@@ -6390,7 +6769,8 @@ const TripDetail = {
     const body = el('div', { class:'wr-check' });
     const renderBody = async () => {
       const items = await DB.listByTrip('wardrobe_items', t.id);
-      const haveFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+      const haveFor = (talla, prenda) => TripDetail._wardrobeHaveFor(items, talla, prenda);
+      const haveExactFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
       body.innerHTML = '';
       // Toggle "Solo verano" (manga corta, pantalón corto, pelele corto…).
       body.appendChild(el('div', { class:'wr-check-filter' }, [
@@ -6409,11 +6789,12 @@ const TripDetail = {
           shown++;
           const need = TripDetail._wardrobeNeed(cat, sz.talla, it.prenda, it.need);
           const have = haveFor(sz.talla, it.prenda);
+          const haveExact = haveExactFor(sz.talla, it.prenda);
           const done = have >= need;
           const adjust = async (d) => { await TripDetail._wardrobeAdjust(t, sz.talla, it.prenda, d, cat); await renderBody(); };
           const right = editable
             ? el('div', { class:'wr-check-step' }, [
-                el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Quitar', disabled: have <= 0 ? true : null, onclick: () => adjust(-1) }, '−'),
+                el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Quitar', disabled: haveExact <= 0 ? true : null, onclick: () => adjust(-1) }, '−'),
                 el('span', { class: 'wr-step-n mono' + (done ? ' ok' : ''), text: String(have) }),
                 el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Añadir', onclick: () => adjust(1) }, '+'),
                 el('span', { class:'wr-step-need muted', text: '/ ' + need }),
@@ -6441,7 +6822,7 @@ const TripDetail = {
 
   // Exporta lo que FALTA para completar el plan (lista de compra para España).
   _wardrobeShoppingCSV(items, cat) {
-    const have = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    const have = (talla, prenda) => TripDetail._wardrobeHaveFor(items, talla, prenda);
     const rows = [['Talla', 'Prenda', 'Faltan', 'Nota']];
     for (const sz of TripDetail.WARDROBE_PLAN.sizes) {
       for (const it of sz.items) {
@@ -6502,7 +6883,8 @@ const TripDetail = {
     const body = el('div', { class:'wr-check' });
     const renderBody = async () => {
       const items = await DB.listByTrip('wardrobe_items', t.id);
-      const haveFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+      const haveFor = (talla, prenda) => TripDetail._wardrobeHaveFor(items, talla, prenda);
+      const haveExactFor = (talla, prenda) => items.filter(x => x.talla === talla && x.prenda === prenda).reduce((s, x) => s + (Number(x.qty) || 0), 0);
       body.innerHTML = '';
       let totalFaltan = 0;
       const groups = [];
@@ -6512,6 +6894,7 @@ const TripDetail = {
         sz.items.forEach(it => {
           const need = TripDetail._wardrobeNeed(cat, sz.talla, it.prenda, it.need);
           const have = haveFor(sz.talla, it.prenda);
+          const haveExact = haveExactFor(sz.talla, it.prenda);
           const faltan = Math.max(0, need - have);
           if (faltan <= 0) return;
           totalFaltan += faltan;
@@ -6523,7 +6906,7 @@ const TripDetail = {
             ]),
             editable
               ? el('div', { class:'wr-check-step' }, [
-                  el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Quitar', disabled: have <= 0 ? true : null, onclick: () => adjust(-1) }, '−'),
+                  el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Quitar', disabled: haveExact <= 0 ? true : null, onclick: () => adjust(-1) }, '−'),
                   el('span', { class:'wr-shop-buy mono', text: `faltan ${faltan}` }),
                   el('button', { class:'wr-step-btn', type:'button', 'aria-label':'Comprado', onclick: () => adjust(1) }, '+'),
                 ])
