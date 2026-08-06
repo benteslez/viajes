@@ -6085,6 +6085,10 @@ const TripDetail = {
     let needTotal = 0, coveredTotal = 0;
     const byFase = {};
     for (const fa of TripDetail.ACCESORIOS_PLAN.fases) {
+      // Se crea la entrada de la fase siempre, aunque no le queden accesorios (todos
+      // eliminados): así su tarjeta sigue apareciendo en "Por fase" y no se queda huérfana,
+      // accesible solo desde "Ver lista completa".
+      byFase[fa.id] = { id: fa.id, titulo: fa.titulo, meses: fa.meses, need: 0, covered: 0 };
       const faItems = TripDetail._accItemsFor(fa.id, cat);
       for (const it of faItems) {
         const key = fa.id + '|' + it.producto;
@@ -6093,7 +6097,6 @@ const TripDetail = {
         const covered = Math.min(haveQ, need);
         lines.push({ fase: fa.id, producto: it.producto, nota: it.nota, need, have: haveQ, covered, done: covered >= need, key, custom: !!it.custom, customId: it.id });
         needTotal += need; coveredTotal += covered;
-        (byFase[fa.id] = byFase[fa.id] || { id: fa.id, titulo: fa.titulo, meses: fa.meses, need: 0, covered: 0 });
         byFase[fa.id].need += need; byFase[fa.id].covered += covered;
       }
     }
@@ -6262,6 +6265,8 @@ const TripDetail = {
             const commit = async () => {
               const v = (nameInput.value || '').trim();
               if (!v) return;
+              const yaExiste = TripDetail._accItemsFor(fa.id, cat).some(x => x.producto.toLowerCase() === v.toLowerCase());
+              if (yaExiste) { UI.toast('Ese accesorio ya está en esta fase'); return; }
               const n = Math.max(1, Math.min(99, Number(qtyInput.value) || 1));
               cat.prefs.accCustom = cat.prefs.accCustom || [];
               cat.prefs.accCustom.push({ id: uuid(), fase: fa.id, producto: v, need: n, nota: '' });
