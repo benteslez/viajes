@@ -6632,9 +6632,9 @@ const TripDetail = {
         html: svg('plus'), onclick: () => TripDetail.openWardrobeFlow(t) }) : null,
     ].filter(Boolean)));
 
-    // Selector de vista: Inventario / Plan / Accesorios
+    // Selector de vista: Plan / Accesorios / Inventario
     root.appendChild(el('div', { class:'segmented wr-viewtoggle' }, [
-      ['inv','Inventario'], ['plan','Plan'], ['acc','Accesorios'],
+      ['plan','Plan'], ['acc','Accesorios'], ['inv','Inventario'],
     ].map(([k, lbl]) => el('button', { class: view === k ? 'active' : '',
       onclick: () => { TripDetail._wardrobeView = k; Router.renderKeepScroll(); } }, lbl))));
 
