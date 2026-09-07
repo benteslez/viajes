@@ -63,7 +63,8 @@ create table if not exists planning_items (
   leg_id uuid references trip_legs(id) on delete set null,
   day_date date,
   time text,
-  type text not null check (type in ('lugar','transporte','actividad','comida','otro','vuelo','hotel','coche','playa')),
+  -- Mantener sincronizado con TYPES_PLANNING en index.html.
+  type text not null check (type in ('lugar','personas','playa','hotel','vuelo','transporte','coche','actividad','comida','compras','gestion','otro')),
   title text not null,
   place_name text,
   lat double precision,
@@ -74,7 +75,9 @@ create table if not exists planning_items (
   order_index int not null default 0,
   -- Estado del item (solo aplica a tipos que requieren reserva: hotel, vuelo, transporte, coche, actividad)
   -- por_iniciar (amarillo) · en_consulta (azul) · confirmado (verde) · cancelado (rojo)
-  status text check (status in ('por_iniciar','en_consulta','confirmado','cancelado')),
+  -- 'ninguno' es el centinela que escribe el editor cuando el usuario elige
+  -- explicitamente "Sin estado" (ver STATUS_PLANNING en index.html).
+  status text check (status in ('ninguno','por_iniciar','en_consulta','confirmado','cancelado')),
   -- Compat legacy (derivado de status='en_consulta')
   in_consultation boolean not null default false,
   consultation_url text,
@@ -509,3 +512,26 @@ end$$;
 -- Eliminamos la restricción si todavía existe.
 alter table if exists packing_items
   drop constraint if exists packing_items_category_check;
+
+-- planning_items.type / planning_items.status: la app añadió valores nuevos
+-- (tipos `personas`, `compras`, `gestion` en TYPES_PLANNING; centinela `ninguno`
+-- para "Sin estado") que los CHECK antiguos no contemplaban. La sincronización
+-- rompía con:
+--   new row for relation "planning_items" violates check constraint
+--   "planning_items_type_check"
+--   new row for relation "planning_items" violates check constraint
+--   "planning_items_status_check"
+-- Recreamos ambos CHECK con la lista completa y actual de valores.
+-- (Solo se amplían los valores permitidos, así que ninguna fila existente falla.)
+alter table if exists planning_items
+  drop constraint if exists planning_items_type_check;
+alter table if exists planning_items
+  add constraint planning_items_type_check
+  check (type in ('lugar','personas','playa','hotel','vuelo','transporte',
+                  'coche','actividad','comida','compras','gestion','otro'));
+
+alter table if exists planning_items
+  drop constraint if exists planning_items_status_check;
+alter table if exists planning_items
+  add constraint planning_items_status_check
+  check (status in ('ninguno','por_iniciar','en_consulta','confirmado','cancelado'));
