@@ -3718,7 +3718,13 @@ const SYNC = {
         await this._upsert(item.table, item.record);
         await DB.db.delete('_pending', item.id);
       } catch (e) {
-        this.lastError = `[${item.table}] ` + (e?.message || e?.error_description || JSON.stringify(e).slice(0, 400));
+        // En los errores de RLS el mensaje de Postgres no dice QUÉ fila falla. Añadimos
+        // el id y el trip_id para poder localizarla (casi siempre: el viaje padre no
+        // existe en Supabase o no es del perfil activo).
+        const ref = this._isRlsError(e)
+          ? ` (id=${item.record?.id || '?'}, trip_id=${item.record?.trip_id || '—'}; el viaje padre no existe en Supabase o no es de este perfil)`
+          : '';
+        this.lastError = `[${item.table}] ` + (e?.message || e?.error_description || JSON.stringify(e).slice(0, 400)) + ref;
         this.lastErrorTable = item.table;
         if (this._isPermanentRowError(e)) {
           // Esta fila no pasará hasta que cambie el esquema remoto (p. ej. un CHECK que no
@@ -3747,6 +3753,12 @@ const SYNC = {
 
   // ¿Error de fila que no se resolverá reintentando (constraint/valor inválido)?
   // Distingue de los transitorios (red) para no bloquear toda la cola por una fila mala.
+  _isRlsError(e) {
+    const code = String((e && (e.code || e.error_code)) || '');
+    if (code === '42501') return true;
+    return /row-level security/i.test(String(e?.message || ''));
+  },
+
   _isPermanentRowError(e) {
     const code = String((e && (e.code || e.error_code)) || '');
     if (/^(22|23)/.test(code)) return true;          // data exception / integrity constraint (Postgres)
@@ -4112,17 +4124,29 @@ const UI = {
             count++;
           }
         }
-        // Tablas hijas: encolar todas las filas (la RLS de Supabase filtra por trip→profile)
+        // Tablas hijas: SOLO las filas cuyo viaje padre existe en local y es del perfil
+        // activo. La RLS de Supabase NO filtra los INSERT: si el `trip_id` no apunta a un
+        // trip del perfil (viaje borrado, importado de otro perfil, fila huérfana), el
+        // upsert falla con "new row violates row-level security policy" y esa fila se
+        // queda atascada en la cola para siempre.
+        const ownTripIds = new Set(
+          (await DB.db.getAll('trips').catch(() => []))
+            .filter(t => t.profile === STATE.profile)
+            .map(t => t.id)
+        );
+        let orphans = 0;
         const childTables = ['trip_legs','planning_items','budget_items','bookings','inquiries',
           'wishlist_items','day_notes','packing_items','addresses','destination_info',
           'emergency_contacts','phrases','shared_expenses','diary'];
         for (const tbl of childTables) {
           const rows = await DB.db.getAll(tbl).catch(() => []);
           for (const r of rows) {
+            if (!ownTripIds.has(r.trip_id)) { orphans++; continue; }
             await DB.db.add('_pending', { table: tbl, record: r, ts: Date.now() });
             count++;
           }
         }
+        if (orphans) console.warn(`[sync] ${orphans} filas huérfanas (sin viaje del perfil activo) NO se encolan.`);
         UI.toast(`${count} cambios encolados — sincronizando…`);
         SYNC._setStatus('syncing');
         await SYNC.flush();
@@ -4131,6 +4155,35 @@ const UI = {
         Router.render();
       } catch (e) { console.warn(e); UI.toast('Falló — revisa la consola'); }
     }}, 'Push completo');
+
+    // Quita de la cola SOLO las filas hijas huérfanas: las que apuntan a un `trip_id`
+    // que no existe en local o que no es del perfil activo. Supabase las rechaza con
+    // "new row violates row-level security policy" y, al ser un error permanente, se
+    // quedan atascadas dejando el pill en rojo para siempre. No toca ningún dato local.
+    const cleanOrphansBtn = el('button', { class:'btn', onclick: async () => {
+      try {
+        const childTables = new Set(['trip_legs','planning_items','budget_items','bookings','inquiries',
+          'wishlist_items','day_notes','packing_items','addresses','destination_info',
+          'emergency_contacts','phrases','shared_expenses','diary','wardrobe_items','wardrobe_catalog']);
+        const ownTripIds = new Set(
+          (await DB.db.getAll('trips').catch(() => []))
+            .filter(t => t.profile === STATE.profile)
+            .map(t => t.id)
+        );
+        const all = await DB.db.getAll('_pending');
+        const bad = all.filter(p => childTables.has(p.table) && !ownTripIds.has(p.record?.trip_id));
+        if (!bad.length) { UI.toast('No hay filas huérfanas en la cola'); return; }
+        const tables = [...new Set(bad.map(p => p.table))].join(', ');
+        if (!confirm(`Se quitarán ${bad.length} filas de la cola (${tables}) que apuntan a viajes inexistentes o de otro perfil.\n\nLos datos locales NO se borran. ¿Continuar?`)) return;
+        for (const p of bad) await DB.db.delete('_pending', p.id);
+        SYNC.lastError = null;
+        SYNC._setStatus('syncing');
+        await SYNC.flush();
+        UI.closeSheet();
+        UI.toast(`${bad.length} filas huérfanas quitadas de la cola`);
+        Router.render();
+      } catch (e) { console.warn(e); UI.toast('Falló — revisa la consola'); }
+    }}, 'Limpiar huérfanos');
 
     const clearBtn = el('button', { class:'btn btn-danger', onclick: async () => {
       if (!confirm('¿Vaciar la cola de cambios pendientes? Los datos locales NO se borran; quedará todo sin enviar a Supabase hasta que vuelvas a editar algo.')) return;
@@ -4150,6 +4203,7 @@ const UI = {
       footer: [
         el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'),
         clearBtn,
+        cleanOrphansBtn,
         forcePushBtn,
         forcePullBtn,
         retryBtn,
