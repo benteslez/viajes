@@ -37,6 +37,19 @@ create table if not exists trips (
   budget_target numeric(12,2),       -- presupuesto objetivo del viaje (en moneda por defecto)
   cover_blob_id uuid,                 -- referencia a media local (no se sincroniza)
   notes text,
+  -- Estado de confirmacion del viaje (TRIP_CONFIRMATIONS en index.html) + motivo.
+  -- Sin check: la lista de estados evoluciona en la app y un check la romperia.
+  confirmation text,
+  confirmation_reason text,
+  -- Preferencias por viaje (pestanas visibles/orden, cal_hidden, day_fit_ok...).
+  settings jsonb not null default '{}'::jsonb,
+  -- Grupos personalizados y orden de la pestana Maleta.
+  packing_categories jsonb not null default '[]'::jsonb,
+  packing_group_order jsonb not null default '[]'::jsonb,
+  -- Lista de "Pendientes" (items manuales + sus grupos y orden).
+  pending_items jsonb not null default '[]'::jsonb,
+  pending_categories jsonb not null default '[]'::jsonb,
+  pending_group_order jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -101,6 +114,14 @@ create table if not exists planning_items (
   visited_at timestamptz,
   -- Hora fin (solo lugar/playa, opcional). La hora de inicio sigue siendo `time` arriba.
   end_time text,
+  -- Zona/barrio libre del evento (se usa para agrupar gastos "por lugar").
+  zona text,
+  -- Personas asociadas al evento: array de nombres. Tipo `personas` y "Con X, Y".
+  people jsonb not null default '[]'::jsonb,
+  -- Override manual del color de la tarjeta (HEX #rrggbb). Sustituye a border_color.
+  custom_color text,
+  -- Marca "pendiente de anadir el gasto" (triangulo de aviso en la tarjeta).
+  expense_reminder boolean not null default false,
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
@@ -214,6 +235,8 @@ create table if not exists packing_items (
   category text not null,
   name text not null,
   checked boolean not null default false,
+  -- A quien pertenece el item de la maleta (chips de persona en la pestana Maleta).
+  person text,
   template_source text,
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -535,3 +558,22 @@ alter table if exists planning_items
 alter table if exists planning_items
   add constraint planning_items_status_check
   check (status in ('ninguno','por_iniciar','en_consulta','confirmado','cancelado'));
+
+-- Columnas que la app ya escribe pero que faltaban en la DB. No daban error
+-- (el cliente detecta "Could not find the 'X' column" y las quita del payload),
+-- pero el dato quedaba LOCAL-ONLY: no viajaba entre dispositivos ni perfiles.
+alter table if exists trips add column if not exists confirmation text;
+alter table if exists trips add column if not exists confirmation_reason text;
+alter table if exists trips add column if not exists settings jsonb not null default '{}'::jsonb;
+alter table if exists trips add column if not exists packing_categories jsonb not null default '[]'::jsonb;
+alter table if exists trips add column if not exists packing_group_order jsonb not null default '[]'::jsonb;
+alter table if exists trips add column if not exists pending_items jsonb not null default '[]'::jsonb;
+alter table if exists trips add column if not exists pending_categories jsonb not null default '[]'::jsonb;
+alter table if exists trips add column if not exists pending_group_order jsonb not null default '[]'::jsonb;
+
+alter table if exists planning_items add column if not exists zona text;
+alter table if exists planning_items add column if not exists people jsonb not null default '[]'::jsonb;
+alter table if exists planning_items add column if not exists custom_color text;
+alter table if exists planning_items add column if not exists expense_reminder boolean not null default false;
+
+alter table if exists packing_items add column if not exists person text;
