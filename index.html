@@ -12711,6 +12711,222 @@ const PerfilView = {
 /* ============================================================
    Exporter — PDF + JSON
    ============================================================ */
+/* ============================================================
+   ShareLinks — convertir el HTML de "Compartir viaje" en un enlace
+   ------------------------------------------------------------
+   Sube el archivo al repo de GitHub que sirve la app por Pages y
+   devuelve su URL. Sin backend propio: la escritura la hace el
+   navegador con un token personal que se guarda SOLO en este
+   dispositivo (localStorage), nunca dentro del HTML compartido.
+   ============================================================ */
+const ShareLinks = {
+  CFG_KEY: 'viajes_share_gh',
+  REG_KEY: 'viajes_share_links',
+
+  cfg() {
+    try { return JSON.parse(localStorage.getItem(this.CFG_KEY) || '{}'); }
+    catch (_) { return {}; }
+  },
+  saveCfg(c) { localStorage.setItem(this.CFG_KEY, JSON.stringify(c)); },
+  isReady() { const c = this.cfg(); return !!(c.owner && c.repo && c.token); },
+
+  registry() {
+    try { return JSON.parse(localStorage.getItem(this.REG_KEY) || '{}'); }
+    catch (_) { return {}; }
+  },
+  linkFor(tripId) { return this.registry()[tripId] || null; },
+  _remember(tripId, entry) {
+    const r = this.registry();
+    if (entry) r[tripId] = entry; else delete r[tripId];
+    localStorage.setItem(this.REG_KEY, JSON.stringify(r));
+  },
+
+  // URL pública que tendrá el archivo. Por defecto la de GitHub Pages del repo.
+  pagesBase(c = this.cfg()) {
+    return (c.pagesBase || `https://${c.owner}.github.io/${c.repo}`).replace(/\/+$/, '');
+  },
+
+  // btoa() solo acepta latin1: hay que pasar por UTF-8 a mano o los acentos
+  // (y los emoji de las notas) revientan la subida.
+  _b64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    const CHUNK = 0x8000; // trocear: fromCharCode peta con arrays enormes
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+  },
+
+  _slug(s) {
+    return String(s || 'viaje').normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'viaje';
+  },
+  _rand() {
+    const a = new Uint8Array(5); crypto.getRandomValues(a);
+    return Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
+  },
+
+  async _api(path, init = {}) {
+    const c = this.cfg();
+    const res = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}`, {
+      ...init,
+      headers: {
+        'Authorization': `Bearer ${c.token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+    });
+    return res;
+  },
+
+  _errMsg(res, body) {
+    if (res.status === 401) return 'Token inválido o caducado.';
+    if (res.status === 403) return 'El token no tiene permiso de escritura (Contents: read and write) en este repo.';
+    if (res.status === 404) return 'Repo o rama no encontrados (o el token no ve este repo).';
+    if (res.status === 409) return 'Conflicto: la rama cambió mientras se subía. Reinténtalo.';
+    return `Error ${res.status}: ${(body && body.message) || 'desconocido'}`;
+  },
+
+  // Sube (o reemplaza) el HTML y devuelve { path, url }.
+  async publish(trip, html) {
+    const c = this.cfg();
+    const dir = (c.dir || 'compartir').replace(/^\/+|\/+$/g, '');
+    const existing = this.linkFor(trip.id);
+    // Reutilizar la ruta si ya había enlace: así "actualizar" no cambia la URL
+    // que ya mandaste a alguien.
+    const path = existing?.path || `${dir}/${this._slug(trip.name)}-${this._rand()}.html`;
+
+    let sha = null;
+    const head = await this._api(`${encodeURI(path)}?ref=${encodeURIComponent(c.branch || 'main')}`);
+    if (head.ok) { const j = await head.json(); sha = j.sha; }
+    else if (head.status !== 404) throw new Error(this._errMsg(head, await head.json().catch(() => null)));
+
+    const res = await this._api(encodeURI(path), {
+      method: 'PUT',
+      body: JSON.stringify({
+        message: `${sha ? 'Actualizar' : 'Publicar'} viaje compartido: ${trip.name}`,
+        content: this._b64(html),
+        branch: c.branch || 'main',
+        ...(sha ? { sha } : {}),
+      }),
+    });
+    if (!res.ok) throw new Error(this._errMsg(res, await res.json().catch(() => null)));
+
+    const url = `${this.pagesBase(c)}/${path}`;
+    const entry = { path, url, at: new Date().toISOString() };
+    this._remember(trip.id, entry);
+    return entry;
+  },
+
+  // Revocar = borrar el archivo del repo. El enlace deja de funcionar.
+  async revoke(trip) {
+    const c = this.cfg();
+    const entry = this.linkFor(trip.id);
+    if (!entry) return;
+    const head = await this._api(`${encodeURI(entry.path)}?ref=${encodeURIComponent(c.branch || 'main')}`);
+    if (head.ok) {
+      const j = await head.json();
+      const res = await this._api(encodeURI(entry.path), {
+        method: 'DELETE',
+        body: JSON.stringify({ message: `Revocar viaje compartido: ${trip.name}`, sha: j.sha, branch: c.branch || 'main' }),
+      });
+      if (!res.ok) throw new Error(this._errMsg(res, await res.json().catch(() => null)));
+    }
+    // Si daba 404 el archivo ya no estaba: quitarlo del registro igualmente.
+    this._remember(trip.id, null);
+  },
+
+  openConfig(onDone) {
+    const c = this.cfg();
+    const row = (id, label, value, ph, hint, type='text') => el('div', { class:'form-row' }, [
+      el('label', { text: label }),
+      el('input', { id, type, value: value || '', placeholder: ph }),
+      hint ? el('div', { class:'field-hint', text: hint }) : null,
+    ].filter(Boolean));
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Para crear enlaces, la app sube el HTML a tu repo de GitHub y usa la URL de GitHub Pages.' }),
+      el('div', { class:'form-grid-2' }, [
+        row('gh-owner', 'Usuario u organización', c.owner, 'benteslez'),
+        row('gh-repo', 'Repositorio', c.repo, 'viajes'),
+      ]),
+      el('div', { class:'form-grid-2' }, [
+        row('gh-branch', 'Rama', c.branch || 'main', 'main'),
+        row('gh-dir', 'Carpeta', c.dir || 'compartir', 'compartir'),
+      ]),
+      row('gh-pages', 'URL base de Pages', c.pagesBase, `https://${c.owner || 'usuario'}.github.io/${c.repo || 'repo'}`,
+          'Déjalo vacío para usar la de por defecto. Cámbialo si tienes dominio propio.'),
+      row('gh-token', 'Token de GitHub', c.token, 'github_pat_…',
+          'Token fine-grained con acceso SOLO a este repo y permiso "Contents: Read and write". Se guarda en este dispositivo (localStorage), nunca dentro del archivo compartido. Quien tenga acceso a este navegador podrá escribir en el repo.',
+          'password'),
+      el('div', { class:'readonly-banner', style:{marginTop:'12px'} }, [
+        el('span', { class:'ico', html: svg('warn') }),
+        el('span', { text:'Si el repo es público, la carpeta de enlaces la puede listar cualquiera: la URL no es un secreto. Para enlaces privados usa un repo privado con Pages o un hosting aparte.' }),
+      ]),
+    ]);
+    const save = el('button', { class:'btn btn-primary', onclick: () => {
+      const c2 = {
+        owner: ($('#gh-owner').value || '').trim(),
+        repo: ($('#gh-repo').value || '').trim(),
+        branch: ($('#gh-branch').value || '').trim() || 'main',
+        dir: ($('#gh-dir').value || '').trim() || 'compartir',
+        pagesBase: ($('#gh-pages').value || '').trim(),
+        token: ($('#gh-token').value || '').trim(),
+      };
+      if (!c2.owner || !c2.repo || !c2.token) { UI.toast('Faltan usuario, repo o token'); return; }
+      ShareLinks.saveCfg(c2);
+      UI.closeSheet();
+      UI.toast('Configuración guardada');
+      if (typeof onDone === 'function') setTimeout(onDone, 280);
+    }}, 'Guardar');
+    const forget = this.isReady() ? el('button', { class:'btn btn-danger', onclick: async () => {
+      const ok = await UI.confirm('¿Borrar el token y la configuración de este dispositivo?');
+      if (!ok) return;
+      localStorage.removeItem(ShareLinks.CFG_KEY);
+      UI.closeSheet(); UI.toast('Configuración borrada');
+    }}, 'Olvidar token') : null;
+    UI.openSheet({
+      title:'Enlaces para compartir',
+      body,
+      footer:[forget, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean),
+    });
+  },
+
+  // Pantalla del enlace ya creado: copiar, abrir, actualizar, revocar.
+  openLinkSheet(trip, entry) {
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Enlace de solo lectura de este viaje. Quien lo abra verá solo este viaje: ni el resto de tus viajes, ni tu app, ni tus credenciales.' }),
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Enlace' }),
+        el('input', { id:'sl-url', type:'text', value: entry.url, readonly:'readonly', onclick: (e) => e.target.select() }),
+      ]),
+      el('div', { class:'field-hint', text:'GitHub Pages tarda alrededor de un minuto en publicar el archivo. Si al abrirlo da 404, espera y recarga.' }),
+      el('div', { class:'readonly-banner', style:{marginTop:'12px'} }, [
+        el('span', { class:'ico', html: svg('lock') }),
+        el('span', { text:'Es una foto fija: si cambias el viaje, pulsa "Actualizar" para regenerar el archivo. La URL no cambia.' }),
+      ]),
+    ]);
+    const copy = el('button', { class:'btn', onclick: async () => {
+      try { await navigator.clipboard.writeText(entry.url); UI.toast('Enlace copiado'); }
+      catch (_) { $('#sl-url')?.select(); UI.toast('Copia el enlace del campo'); }
+    }}, [ el('span', { html: svg('copy') }), 'Copiar' ]);
+    const open = el('button', { class:'btn', onclick: () => window.open(entry.url, '_blank', 'noopener') },
+      [ el('span', { html: svg('external') }), 'Abrir' ]);
+    const revoke = el('button', { class:'btn btn-danger', onclick: async () => {
+      const ok = await UI.confirm('¿Borrar el archivo del repo? El enlace dejará de funcionar.');
+      if (!ok) return;
+      try { await ShareLinks.revoke(trip); UI.closeSheet(); UI.toast('Enlace revocado'); }
+      catch (err) { console.error('revoke', err); UI.toast('No se pudo revocar: ' + (err?.message || '')); }
+    }}, [ el('span', { html: svg('trash') }), 'Revocar' ]);
+    UI.openSheet({
+      title:'Enlace creado',
+      body,
+      footer:[revoke, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'), copy, open],
+    });
+  },
+};
+
 const Exporter = {
   async tripToPdf(t) {
     if (!window.jspdf) { UI.toast('PDF no disponible offline si no se cargó la lib'); return; }
@@ -12779,7 +12995,16 @@ const Exporter = {
 
   /* -------- Compartir viaje con tercero (HTML standalone) -------- */
   openShareSheet(t) {
+    const existingLink = ShareLinks.linkFor(t.id);
     const body = el('div', {}, [
+      existingLink ? el('div', { class:'readonly-banner', style:{marginBottom:'12px'} }, [
+        el('span', { class:'ico', html: svg('external') }),
+        el('span', {}, [
+          el('span', { text:'Ya hay un enlace publicado de este viaje. ' }),
+          el('a', { href:'#', onclick: (e) => { e.preventDefault(); UI.closeSheet(); setTimeout(() => ShareLinks.openLinkSheet(t, existingLink), 280); }, text:'Verlo o revocarlo' }),
+          el('span', { text:'. Si lo regeneras se actualiza en la misma URL.' }),
+        ]),
+      ]) : null,
       el('p', { class:'muted', style:{marginTop:0}, text: `Vas a generar un archivo HTML autónomo de "${t.name}" para compartir. La persona que lo reciba podrá abrirlo en cualquier navegador y ver el viaje en modo solo lectura. No tendrá acceso a otros viajes ni al resto de tu app.` }),
       el('h3', { class:'section-title', style:{fontSize:'15px', margin:'14px 0 6px'}, text:'Qué incluir' }),
       el('label', { class:'switch', style:{padding:'6px 0'} }, [
@@ -12807,17 +13032,26 @@ const Exporter = {
         el('span', { class:'switch-track' }),
         el('span', { text:'Notas del viaje y de los días' }),
       ]),
-      el('div', { class:'field-hint', style:{marginTop:'12px'}, text:'Se descargará un único archivo .html. Lo puedes mandar por email, WhatsApp o AirDrop. La maleta, el diario, la wishlist y los gastos compartidos no se incluyen.' }),
+      el('div', { class:'field-hint', style:{marginTop:'12px'}, text:'Al desactivar un interruptor también se tachan las líneas de las notas que contienen ese dato (números de confirmación, "Reserva bajo…", importes).' }),
+      el('h3', { class:'section-title', style:{fontSize:'15px', margin:'14px 0 6px'}, text:'Ocultar además' }),
+      el('div', { class:'form-row' }, [
+        el('textarea', { id:'sh-hide', rows:'3', placeholder:'Una palabra o frase por línea.\nEj.: tu nombre completo, un teléfono, una matrícula' }, ''),
+      ]),
+      el('div', { class:'field-hint', text:'Se sustituyen por "[dato omitido]" en todo el archivo. El tachado automático se basa en patrones y NO es una garantía: si el viaje lleva datos delicados escritos a mano, revisa el HTML generado antes de mandarlo.' }),
+      el('div', { class:'field-hint', style:{marginTop:'8px'}, text:'Se descargará un único archivo .html. Lo puedes mandar por email, WhatsApp o AirDrop. La maleta, el diario, la wishlist y los gastos compartidos no se incluyen.' }),
     ]);
-    const generate = el('button', { class:'btn btn-primary', onclick: async () => {
+    const readOpts = () => ({
+      includeMoney: $('#sh-money').checked,
+      includeDocs:  $('#sh-docs').checked,
+      includeLinks: $('#sh-links').checked,
+      includeMap:   $('#sh-map').checked,
+      includeNotes: $('#sh-notes').checked,
+      hideTerms: ($('#sh-hide')?.value || '').split('\n').map(x => x.trim()).filter(Boolean),
+    });
+
+    const generate = el('button', { class:'btn', onclick: async () => {
       try {
-        const opts = {
-          includeMoney: $('#sh-money').checked,
-          includeDocs:  $('#sh-docs').checked,
-          includeLinks: $('#sh-links').checked,
-          includeMap:   $('#sh-map').checked,
-          includeNotes: $('#sh-notes').checked,
-        };
+        const opts = readOpts();
         const data = await Exporter._gatherTrip(t);
         const html = Exporter._buildShareHtml(t, data, opts);
         const blob = new Blob([html], { type:'text/html;charset=utf-8' });
@@ -12831,7 +13065,34 @@ const Exporter = {
         console.error('share', err); UI.toast('Error al generar: ' + (err?.message || ''));
       } finally { UI.closeSheet(); }
     }}, [ el('span', { html: svg('download') }), 'Descargar archivo' ]);
-    UI.openSheet({ title:'Compartir viaje', body, footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), generate] });
+    // Segundo camino: en vez de descargar el archivo, subirlo al repo y devolver
+    // su URL. Misma generación y mismos filtros; solo cambia el destino.
+    const makeLink = el('button', { class:'btn btn-primary', id:'sh-link-btn', onclick: async () => {
+      // Sin repo/token configurados no hay a dónde subir: pedirlos y reabrir el panel.
+      if (!ShareLinks.isReady()) { ShareLinks.openConfig(() => Exporter.openShareSheet(t)); return; }
+      const btn = document.getElementById('sh-link-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Subiendo…'; }
+      try {
+        const opts = readOpts();
+        const data = await Exporter._gatherTrip(t);
+        const html = Exporter._buildShareHtml(t, data, opts);
+        const entry = await ShareLinks.publish(t, html);
+        UI.closeSheet();
+        setTimeout(() => ShareLinks.openLinkSheet(t, entry), 280);
+      } catch (err) {
+        console.error('share link', err);
+        UI.toast('No se pudo crear el enlace: ' + (err?.message || ''));
+        if (btn) { btn.disabled = false; btn.textContent = existingLink ? 'Actualizar enlace' : 'Crear enlace'; }
+      }
+    }}, [ el('span', { html: svg('upload') }), existingLink ? 'Actualizar enlace' : 'Crear enlace' ]);
+
+    const ghCfg = el('button', { class:'btn btn-sm btn-ghost', title:'Repo y token para publicar enlaces',
+      onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openConfig(() => Exporter.openShareSheet(t)), 280); } },
+      [ el('span', { html: svg('shield') }), 'Ajustes del enlace' ]);
+    body.appendChild(el('div', { style:{marginTop:'14px'} }, [ ghCfg ]));
+
+    UI.openSheet({ title:'Compartir viaje', body,
+      footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), generate, makeLink] });
   },
 
   async _gatherTrip(t) {
@@ -12870,6 +13131,59 @@ const Exporter = {
       });
     });
 
+    // Planning items + texto libre. Los localizadores y los nombres de titular NO
+    // viven solo en `bookings.structured_data`: están también en `metadata` de cada
+    // evento y, sobre todo, escritos a mano dentro de `notes` ("# de confirmación:
+    // ABC123", "Reserva bajo Fulano"). Sin esto se colaban al HTML compartido aunque
+    // el interruptor estuviera apagado.
+    const DOC_RE = /(#\s*de\s*confirmaci|n[uú]mero\s+de\s+confirmaci|confirmation|localizador|c[oó]digo\s+de\s+reserva|booking\s+ref|reserva\s+bajo|reserva\s+a\s+nombre|titular|matr[ií]cula|p[oó]liza|\bpara\s+[A-ZÁÉÍÓÚÑ][^\s]+\s+[A-ZÁÉÍÓÚÑ])/i;
+    const MONEY_RE = /(\d[\d.,]*\s*(€|eur\b|us\s*\$|usd\b|clp\b|ars\b|\$))|((€|\$)\s*\d)/i;
+    // Redacción por líneas: se tacha solo la línea con el dato, no la nota entera,
+    // para no perder lo útil ("Incluye desayuno", "Probar el kuchen"…).
+    // Términos que el usuario ha pedido ocultar explícitamente (se sustituyen en
+    // cualquier texto, no solo en las notas: también títulos, lugares y direcciones).
+    const hideTerms = (opts.hideTerms || []).filter(Boolean);
+    const hideRes = hideTerms.map(t => new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+    const stripTerms = (txt) => {
+      if (!txt || !hideRes.length) return txt;
+      let out = String(txt);
+      hideRes.forEach(re => { out = out.replace(re, '[dato omitido]'); });
+      return out;
+    };
+    const redact = (txt) => {
+      if (!txt) return txt;
+      const byLine = String(txt).split('\n').map(ln => {
+        if (!opts.includeDocs  && DOC_RE.test(ln))   return '[dato omitido]';
+        if (!opts.includeMoney && MONEY_RE.test(ln)) return '[dato omitido]';
+        return ln;
+      }).join('\n');
+      return stripTerms(byLine);
+    };
+
+    safe.planning.forEach(p => {
+      p.notes = redact(p.notes);
+      p.title = stripTerms(p.title);
+      p.place_name = stripTerms(p.place_name);
+      p.address = stripTerms(p.address);
+      const m = p.metadata || {};
+      Object.keys(m).forEach(k => {
+        if (!opts.includeDocs  && DOC_FIELDS.has(k))   delete m[k];
+        if (!opts.includeMoney && MONEY_FIELDS.has(k)) delete m[k];
+      });
+      if (!opts.includeDocs)  { p.consultation_url = null; }
+      if (!opts.includeMoney) { p.consultation_price = null; p.consultation_currency = null; }
+    });
+    safe.day_notes.forEach(n => { n.text = redact(n.text); n.title = stripTerms(n.title); });
+    safe.trip.notes = redact(safe.trip.notes);
+    safe.trip.name = stripTerms(safe.trip.name);
+    safe.bookings.forEach(b => {
+      const d = b.structured_data || {};
+      Object.keys(d).forEach(k => { if (typeof d[k] === 'string') d[k] = stripTerms(d[k]); });
+      b.doc_name = stripTerms(b.doc_name);
+    });
+    (safe.addresses || []).forEach(a => { a.name = stripTerms(a.name); a.address = stripTerms(a.address); a.notes = redact(a.notes); });
+    (safe.emergency_contacts || []).forEach(c => { c.name = stripTerms(c.name); c.notes = redact(c.notes); });
+
     if (!opts.includeNotes) {
       safe.trip.notes = null;
       safe.day_notes = [];
@@ -12897,7 +13211,10 @@ const Exporter = {
 
     // El script embebido se construye reemplazando placeholders en una plantilla
     // (los ${...} dentro de ese script son del VIEWER, no del main).
-    const viewerScript = Exporter._viewerScript(payload, JSON.stringify(opts));
+    // `opts` se embebe en el HTML como `const OPTS`. `hideTerms` NO puede viajar ahí:
+    // escribiría en el archivo justo los términos que se querían ocultar.
+    const viewerOpts = Object.assign({}, opts); delete viewerOpts.hideTerms;
+    const viewerScript = Exporter._viewerScript(payload, JSON.stringify(viewerOpts));
 
     return `<!DOCTYPE html>
 <html lang="es" data-tema="claro">

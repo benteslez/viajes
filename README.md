@@ -149,6 +149,49 @@ Supabase** que el resto de la app.
   `schema.sql` o `schema-wardrobe.sql`** (idempotentes; incluyen los `alter table … add column`).
 - **Offline:** funciona sin red como el resto (los datos van primero a IndexedDB).
 
+## Compartir un viaje en solo lectura
+
+Desde la pantalla del viaje, *Compartir viaje* genera un **HTML autónomo** con ese viaje y nada
+más: el receptor lo abre en cualquier navegador, sin app, sin cuenta y sin acceso al resto de tus
+datos. El archivo no lleva la clave de Supabase.
+
+Interruptores de qué incluir: precios, localizadores y documentos, enlaces externos, mapa y notas.
+
+**Cómo filtra** (`Exporter._buildShareHtml`):
+
+1. Campos estructurados: `bookings.structured_data` y `planning_items.metadata` — se borran las
+   claves de `DOC_FIELDS` / `MONEY_FIELDS`, más `consultation_price` / `consultation_url`.
+2. Texto libre (`trip.notes`, `day_notes.text`, `planning_items.notes`): se tacha **la línea
+   entera** que contenga un localizador, un "Reserva bajo…"/"Para Nombre Apellido" o un importe,
+   y se sustituye por `[dato omitido]`. El resto de la nota se conserva.
+3. Campo *Ocultar además*: términos literales que el usuario escribe (nombre completo, teléfono,
+   matrícula) y que se sustituyen en todo el archivo, incluidos títulos y direcciones. Estos
+   términos **no** se embeben en `OPTS` — escribirlos en el archivo sería la fuga que se quería
+   evitar.
+
+> El tachado por patrones **no es una garantía**: cubre los formatos habituales, no texto libre
+> arbitrario. Para datos delicados, usa el campo *Ocultar además* y revisa el HTML generado.
+
+### Enlace en vez de archivo
+
+El botón **Crear enlace** sube ese mismo HTML a un repo de GitHub y devuelve su URL de Pages
+(`https://<usuario>.github.io/<repo>/compartir/<viaje>-<aleatorio>.html`). No hay backend: la
+escritura la hace el navegador con la API de GitHub.
+
+Configuración (*Ajustes del enlace*, guardada en `localStorage`, clave `viajes_share_gh`):
+usuario, repo, rama, carpeta, URL base de Pages y un **token fine-grained** con acceso solo a ese
+repo y permiso *Contents: Read and write*.
+
+- El token vive **solo en ese dispositivo** y nunca entra en el HTML publicado (`hideTerms` y el
+  token se excluyen del `OPTS` que se embebe).
+- **Actualizar** reutiliza la misma ruta: la URL que ya mandaste no cambia.
+- **Revocar** borra el archivo del repo; el enlace deja de funcionar.
+- GitHub Pages tarda ~1 minuto en publicar el archivo nuevo.
+
+> En un repo **público** la carpeta de enlaces la puede listar cualquiera: la URL no es un
+> secreto, solo evita que se adivine. Para enlaces realmente privados hace falta un repo privado
+> con Pages o un hosting aparte.
+
 ## Atajos de teclado
 
 - `⌘+K` / `Ctrl+K` → búsqueda global (trips, paradas, gastos, reservas).
