@@ -3419,6 +3419,13 @@ const DB = {
     'wardrobe_items', 'wardrobe_catalog',
     'media',
   ],
+  // Stores que SOLO viven en IndexedDB: no existen como tabla en Supabase.
+  // `media` guarda los Blob de las fotos (portadas), que no se sincronizan.
+  // Si se intenta hacer pull de ellas, PostgREST responde 404 PGRST205
+  // ("Could not find the table 'public.media' in the schema cache").
+  LOCAL_ONLY_STORES: ['media'],
+  // Stores que sí tienen tabla en Supabase (las que participan en el sync).
+  get SYNC_STORES() { return this.STORES.filter(t => !this.LOCAL_ONLY_STORES.includes(t)); },
 
   async open() {
     // Si ya está abierta, devolver directamente.
@@ -3810,7 +3817,7 @@ const SYNC = {
     // así Sergio/Invitado descargan los datos de Rubén.
     // Para tablas hijas: confiamos en la RLS de Supabase (la cabecera x-app-profile lo restringe).
     const ownerForRead = dataProfile();
-    for (const t of DB.STORES) {
+    for (const t of DB.SYNC_STORES) {
       try {
         let q = this.client.from(t).select('*').gt('updated_at', since);
         if (['trips','packing_templates','travel_docs','visited_countries'].includes(t)) {
