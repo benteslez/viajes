@@ -13733,7 +13733,19 @@ details[open] .dh-caret { transform:rotate(90deg); }
 details[open] .day-note,
 details[open] .timeline .tl-item { animation:entra-item .34s cubic-bezier(.22,.8,.3,1) both; }
 details[open] .timeline .tl-item { animation-delay:calc(var(--i, 0) * 42ms); }
-details[open] .day-note { animation-delay:0ms; }
+details[open] /* Notas largas: se recortan a dos líneas y se despliegan a petición. El botón
+   solo aparece si el texto realmente se corta, y eso hay que medirlo cuando el
+   día está abierto: dentro de un <details> cerrado todo mide 0. */
+.nota-txt { white-space:pre-wrap; }
+.nota-txt.clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.nota-mas {
+  display:none; margin-top:6px; padding:0; border:none; background:none; cursor:pointer;
+  font:inherit; font-size:12.5px; font-weight:700; color:var(--accent);
+  -webkit-tap-highlight-color:transparent;
+}
+.nota-mas.on { display:inline-block; }
+.nota-mas:hover { text-decoration:underline; }
+.day-note { animation-delay:0ms; }
 /* Los bloques de día aparecen al alcanzarlos en el scroll. */
 .day-block.reveal { opacity:0; transform:translateY(12px); }
 .day-block.reveal.in { animation:entra-suave .42s cubic-bezier(.22,.8,.3,1) both; }
@@ -13840,6 +13852,29 @@ ${viewerScript}
     lines.push("  if (iconKey) c.appendChild(el('span', {class:'chip-ico', html: ico(iconKey)}));");
     lines.push("  c.appendChild(el('span', {text: txt}));");
     lines.push("  return c;");
+    lines.push("}");
+    lines.push("");
+    lines.push("// Nota con recorte a dos líneas y botón para desplegarla.");
+    lines.push("function notaRecortable(texto, claseWrap) {");
+    lines.push("  const wrap = el('div', {class: claseWrap});");
+    lines.push("  const txt = el('div', {class:'nota-txt clamp', text: texto});");
+    lines.push("  const btn = el('button', {class:'nota-mas', type:'button'}, 'Ver más');");
+    lines.push("  btn.addEventListener('click', (e) => {");
+    lines.push("    e.preventDefault(); e.stopPropagation();");
+    lines.push("    const abierto = !txt.classList.toggle('clamp');");
+    lines.push("    btn.textContent = abierto ? 'Ver menos' : 'Ver más';");
+    lines.push("  });");
+    lines.push("  wrap.appendChild(txt); wrap.appendChild(btn);");
+    lines.push("  return wrap;");
+    lines.push("}");
+    lines.push("// Solo se ofrece 'Ver más' si el texto se corta de verdad.");
+    lines.push("function revisarRecortes(cont) {");
+    lines.push("  cont.querySelectorAll('.nota-txt.clamp').forEach(txt => {");
+    lines.push("    const btn = txt.nextElementSibling;");
+    lines.push("    if (!btn || !btn.classList.contains('nota-mas')) return;");
+    lines.push("    if (txt.scrollHeight - txt.clientHeight > 4) btn.classList.add('on');");
+    lines.push("    else txt.classList.remove('clamp');   // cabe entera: ni recorte ni botón");
+    lines.push("  });");
     lines.push("}");
     lines.push("");
     lines.push("const root = document.getElementById('content');");
@@ -13982,7 +14017,7 @@ ${viewerScript}
     lines.push("    det.appendChild(head);");
     lines.push("");
     lines.push("    const bodyDiv = el('div', {class:'day-body'});");
-    lines.push("    if (note && note.text) bodyDiv.appendChild(el('div', {class:'day-note', text: note.text}));");
+    lines.push("    if (note && note.text) bodyDiv.appendChild(notaRecortable(note.text, 'day-note'));");
     lines.push("    if (items.length) {");
     lines.push("      const tl = el('div', {class:'timeline'});");
     lines.push("      items.forEach((it, idx) => {");
@@ -13994,7 +14029,7 @@ ${viewerScript}
     lines.push("        tlItem.appendChild(titleDiv);");
     lines.push("        if (it.place_name && it.place_name !== it.title) tlItem.appendChild(el('div', {class:'tl-sub', text: it.place_name}));");
     lines.push("        if (it.address) tlItem.appendChild(el('div', {class:'tl-sub', text: it.address}));");
-    lines.push("        if (it.notes) tlItem.appendChild(el('div', {class:'tl-sub', style:{whiteSpace:'pre-wrap'}, text: it.notes}));");
+    lines.push("        if (it.notes) tlItem.appendChild(notaRecortable(it.notes, 'tl-sub'));");
 
     lines.push("        tl.appendChild(tlItem);");
     lines.push("      });");
@@ -14004,6 +14039,9 @@ ${viewerScript}
     lines.push("    }");
     lines.push("    det.appendChild(bodyDiv);");
     lines.push("    det.classList.add('reveal');");
+    lines.push("    det.addEventListener('toggle', () => {");
+    lines.push("      if (det.open && !det._medido) { det._medido = true; revisarRecortes(det); }");
+    lines.push("    });");
     lines.push("    root.appendChild(det);");
     lines.push("    blocks.push(det);");
     lines.push("  });");

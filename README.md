@@ -231,6 +231,10 @@ datos. El archivo no lleva la clave de Supabase.
 - **Diseño**: barra superior que aparece al pasar la portada, portada con degradado de marca,
   cifras del viaje (días, ciudades, paradas, vuelos, alojamientos), número de día en un disco,
   pastillas sin borde e iconos de trazo. Claro y oscuro.
+- **Notas largas recortadas**: las notas (las del día y las de cada parada) se cortan a dos líneas
+  con un *Ver más*. El botón solo aparece si el texto se corta de verdad, y eso se mide **al abrir
+  el día**: dentro de un `<details>` cerrado todo mide 0 y saldría el botón hasta en una nota de
+  tres palabras. Si cabe entera, se le quita el recorte y no se ofrece nada.
 - **Movimiento**: al abrir un día, sus entradas aparecen escalonadas de derecha a izquierda
   (42 ms entre una y otra, cortado a los 12 elementos: con 20 paradas, esperar al último sería lo
   contrario de ágil). Los bloques de día aparecen al alcanzarlos en el scroll, una sola vez, y la
