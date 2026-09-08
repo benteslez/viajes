@@ -13054,11 +13054,38 @@ const ShareLinks = {
     try { return JSON.parse(localStorage.getItem(this.REG_KEY) || '{}'); }
     catch (_) { return {}; }
   },
-  linkFor(tripId) { return this.registry()[tripId] || null; },
-  _remember(tripId, entry) {
+  // El enlace se guarda en el propio viaje: localStorage es de cada navegador, y
+  // con el registro solo ahí, el móvil ofrecía "Actualizar" y el escritorio
+  // "Crear" — y al crear se generaba OTRA ruta, dejando huérfano el enlace ya
+  // repartido. `settings.share` sincroniza por Supabase y viaja en el export.
+  linkFor(trip) {
+    if (!trip) return null;
+    const enViaje = tripSettings(trip).share;
+    if (enViaje && enViaje.path && enViaje.url) return enViaje;
+    return this.registry()[trip.id] || null;      // enlaces de antes de este cambio
+  },
+  async _remember(trip, entry) {
     const r = this.registry();
-    if (entry) r[tripId] = entry; else delete r[tripId];
+    if (entry) r[trip.id] = entry; else delete r[trip.id];
     localStorage.setItem(this.REG_KEY, JSON.stringify(r));
+    try {
+      if (entry) tripSettingsMut(trip).share = entry;
+      else if (tripSettings(trip).share) delete trip.settings.share;
+      await DB.put('trips', trip);
+    } catch (e) { console.error('guardar enlace en el viaje', e); }
+  },
+
+  // Adoptar un enlace creado desde otro dispositivo (o antes de este cambio),
+  // pegando su URL: así se actualiza en su sitio en vez de crear uno nuevo.
+  async adopt(trip, url) {
+    const u = String(url || '').trim();
+    const base = this.pagesBase();
+    if (!u.startsWith(base + '/')) throw new Error('El enlace no empieza por ' + base);
+    const path = u.slice(base.length + 1).replace(/^\/+/, '');
+    if (!path.endsWith('.html')) throw new Error('El enlace no apunta a un archivo .html');
+    const entry = { path, url: u, at: new Date().toISOString() };
+    await this._remember(trip, entry);
+    return entry;
   },
 
   // URL pública que tendrá el archivo. Por defecto la de GitHub Pages del repo.
@@ -13113,7 +13140,7 @@ const ShareLinks = {
   async publish(trip, html) {
     const c = this.cfg();
     const dir = (c.dir || 'compartir').replace(/^\/+|\/+$/g, '');
-    const existing = this.linkFor(trip.id);
+    const existing = this.linkFor(trip);
     // Reutilizar la ruta si ya había enlace: así "actualizar" no cambia la URL
     // que ya mandaste a alguien.
     const path = existing?.path || `${dir}/${this._slug(trip.name)}-${this._rand()}.html`;
@@ -13136,14 +13163,14 @@ const ShareLinks = {
 
     const url = `${this.pagesBase(c)}/${path}`;
     const entry = { path, url, at: new Date().toISOString() };
-    this._remember(trip.id, entry);
+    await this._remember(trip, entry);
     return entry;
   },
 
   // Revocar = borrar el archivo del repo. El enlace deja de funcionar.
   async revoke(trip) {
     const c = this.cfg();
-    const entry = this.linkFor(trip.id);
+    const entry = this.linkFor(trip);
     if (!entry) return;
     const head = await this._api(`${encodeURI(entry.path)}?ref=${encodeURIComponent(c.branch || 'main')}`);
     if (head.ok) {
@@ -13155,7 +13182,29 @@ const ShareLinks = {
       if (!res.ok) throw new Error(this._errMsg(res, await res.json().catch(() => null)));
     }
     // Si daba 404 el archivo ya no estaba: quitarlo del registro igualmente.
-    this._remember(trip.id, null);
+    await this._remember(trip, null);
+  },
+
+  // Registrar en este dispositivo un enlace ya publicado desde otro.
+  openAdopt(trip) {
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Si ya creaste el enlace de este viaje en otro dispositivo, pega aquí su URL. A partir de entonces "Actualizar enlace" lo regenerará en su sitio, en vez de publicar una copia con otra dirección.' }),
+      el('div', { class:'form-row' }, [
+        el('label', { htmlFor:'ad-url', text:'Enlace publicado' }),
+        el('input', { id:'ad-url', type:'url', placeholder: ShareLinks.pagesBase() + '/compartir/…html',
+          autocomplete:'off', autocapitalize:'off', autocorrect:'off', spellcheck:'false' }),
+      ]),
+      el('div', { id:'ad-out', class:'field-hint', style:{whiteSpace:'pre-wrap'} }),
+    ]);
+    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+      try {
+        const entry = await ShareLinks.adopt(trip, $('#ad-url')?.value);
+        UI.closeSheet(); UI.toast('Enlace registrado');
+        setTimeout(() => ShareLinks.openLinkSheet(trip, entry), 280);
+      } catch (e) { const o = $('#ad-out'); if (o) o.textContent = e?.message || 'Enlace no válido'; }
+    }}, 'Registrar');
+    UI.openSheet({ title:'Ya tengo un enlace', body,
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save ] });
   },
 
   openConfig(onDone) {
@@ -13346,7 +13395,7 @@ const Exporter = {
 
   /* -------- Compartir viaje con tercero (HTML standalone) -------- */
   openShareSheet(t) {
-    const existingLink = ShareLinks.linkFor(t.id);
+    const existingLink = ShareLinks.linkFor(t);
     const body = el('div', {}, [
       existingLink ? el('div', { class:'readonly-banner', style:{marginBottom:'12px'} }, [
         el('span', { class:'ico', html: svg('external') }),
@@ -13434,7 +13483,14 @@ const Exporter = {
     const ghCfg = el('button', { class:'btn btn-sm btn-ghost', title:'Repo y token para publicar enlaces',
       onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openConfig(() => Exporter.openShareSheet(t)), 280); } },
       [ el('span', { html: svg('shield') }), 'Ajustes del enlace' ]);
-    body.appendChild(el('div', { style:{marginTop:'14px'} }, [ ghCfg ]));
+    // Si este dispositivo no conoce el enlace pero ya existe (se creó en otro),
+    // pegar su URL evita publicar una segunda copia con otra dirección.
+    const adoptar = !existingLink ? el('button', { class:'btn btn-sm btn-ghost',
+      title:'Registrar un enlace creado en otro dispositivo',
+      onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openAdopt(t), 280); } },
+      [ el('span', { html: svg('external') }), 'Ya tengo un enlace' ]) : null;
+    body.appendChild(el('div', { style:{marginTop:'14px', display:'flex', gap:'8px', flexWrap:'wrap'} },
+      [ ghCfg, adoptar ].filter(Boolean)));
 
     UI.openSheet({ title:'Compartir viaje', body,
       footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), generate, makeLink] });
