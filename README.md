@@ -66,10 +66,16 @@ La app funciona perfectamente sin Supabase. Si quieres sincronizar entre tu móv
 
 ### Modelo de aislamiento por perfil
 
-No hay autenticación. El cliente envía `x-app-profile: rubén|sergio|invitado` en cada petición.
-La función `app_profile()` y las políticas RLS filtran filas por esa cabecera. Como el frontend es
-trusted (solo lo usas tú), basta con esto. **No publiques la app sin antes pensar si esta
-asunción te sigue valiendo.**
+> **La asunción de abajo dejó de valer en cuanto la app se publicó en GitHub Pages.**
+> Con la `anonKey` en el HTML público y el perfil declarado por el cliente, cualquiera
+> podía leerlo todo con `curl -H "x-app-profile: ruben"`. El cierre está en
+> `schema-auth.sql`: el perfil pasa a salir de una sesión de Supabase Auth, cuyo JWT
+> firma el servidor. Léelo antes de ejecutarlo — el orden de aplicación importa.
+
+El modelo original: no hay autenticación, el cliente envía `x-app-profile:
+ruben|sergio|invitado` en cada petición, y la función `app_profile()` y las políticas RLS
+filtran filas por esa cabecera. Solo es defendible con la app en local o en un sitio
+privado, nunca publicada.
 
 ## Comportamiento offline
 
