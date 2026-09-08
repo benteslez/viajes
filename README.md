@@ -217,6 +217,25 @@ datos. El archivo no lleva la clave de Supabase.
   cifras del viaje (días, ciudades, paradas, vuelos, alojamientos), número de día en un disco,
   pastillas sin borde e iconos de trazo. Claro y oscuro.
 
+**Qué se publica y qué no** (`Exporter._buildShareHtml`). Interruptores: precios, localizadores y
+documentos, enlaces externos y notas.
+
+1. Campos estructurados: `bookings.structured_data` y `planning_items.metadata` — se borran las
+   claves de `DOC_FIELDS` / `MONEY_FIELDS`, más `consultation_price` y `consultation_url`.
+2. Texto libre (`trip.notes`, `day_notes.text`, `planning_items.notes`): se tacha **la línea
+   entera** que contenga un localizador, un "Reserva bajo…" o un importe, sustituyéndola por
+   `[dato omitido]`. El resto de la nota se conserva.
+   El patrón del titular (`TITULAR_RE`) va **sin la bandera `i`** y exige dos palabras
+   capitalizadas seguidas: con `i`, `[A-Z]` casa también con minúsculas y degeneraba en "para" +
+   dos palabras cualesquiera, tachando frases normales ("para llegar", "para comer viendo las
+   cataratas").
+3. Campo *Ocultar además*: términos literales del usuario (nombre completo, teléfono, matrícula),
+   sustituidos en todo el archivo, incluidos títulos y direcciones. **No** se embeben en `OPTS`:
+   escribirlos ahí sería la fuga que se quería evitar.
+
+> El tachado por patrones **no es una garantía**: cubre los formatos habituales, no texto libre
+> arbitrario. Para datos delicados, usa *Ocultar además* y revisa el HTML antes de mandarlo.
+
 ### Enlace en vez de archivo
 
 El botón **Crear enlace** sube ese mismo HTML a un repo de GitHub y devuelve su URL de Pages
