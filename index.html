@@ -13135,7 +13135,9 @@ const Exporter = {
     const emergency_contacts = await DB.listByTrip('emergency_contacts', tripId);
     const phrases = await DB.listByTrip('phrases', tripId);
     const day_notes = await DB.listByTrip('day_notes', tripId);
-    return { trip: t, planning, bookings, addresses, destination_info, emergency_contacts, phrases, day_notes };
+    // Los tramos dan el nombre del lugar de cada día en la vista plegada.
+    const trip_legs = await DB.listByTrip('trip_legs', tripId);
+    return { trip: t, planning, bookings, addresses, destination_info, emergency_contacts, phrases, day_notes, trip_legs };
   },
 
   _buildShareHtml(t, data, opts) {
@@ -13205,6 +13207,7 @@ const Exporter = {
       if (!opts.includeMoney) { p.consultation_price = null; p.consultation_currency = null; }
     });
     safe.day_notes.forEach(n => { n.text = redact(n.text); n.title = stripTerms(n.title); });
+    (safe.trip_legs || []).forEach(l => { l.city = stripTerms(l.city); l.country = stripTerms(l.country); });
     safe.trip.notes = redact(safe.trip.notes);
     safe.trip.name = stripTerms(safe.trip.name);
     safe.bookings.forEach(b => {
@@ -13268,6 +13271,9 @@ ${opts.includeMap ? '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.
   --text:#0f172a; --text-muted:#64748b;
   --line:#e2e8f0; --line-soft:#f1f5f9;
   --accent:#2563eb; --accent-2:#06b6d4; --accent-bg:#dbeafe;
+  --c-hotel:#0f766e;  --c-hotel-bg:#ccfbf1;
+  --c-flight:#6d28d9; --c-flight-bg:#ede9fe;
+  --c-car:#b45309;    --c-car-bg:#fef3c7;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -13275,6 +13281,9 @@ ${opts.includeMap ? '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.
     --text:#f1f5f9; --text-muted:#94a3b8;
     --line:#334155; --line-soft:#1e293b;
     --accent:#60a5fa; --accent-2:#22d3ee; --accent-bg:#1e3a5f;
+    --c-hotel:#5eead4;  --c-hotel-bg:#134e4a;
+    --c-flight:#c4b5fd; --c-flight-bg:#3b2f63;
+    --c-car:#fcd34d;    --c-car-bg:#4a3410;
   }
 }
 * { box-sizing:border-box; }
@@ -13325,6 +13334,45 @@ h3.day { font-weight:600; letter-spacing:-.01em; font-size:17px; margin:16px 0 8
 .kv .v { font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; }
 .muted { color:var(--text-muted); }
 #map { height:380px; border-radius:var(--r-lg); border:1px solid var(--line); overflow:hidden; }
+/* --- Itinerario plegable --- */
+.itin-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 14px; }
+.btn-mini {
+  font:inherit; font-size:13px; font-weight:600; cursor:pointer;
+  background:var(--bg-elev); color:var(--text); border:1px solid var(--line);
+  border-radius:var(--r-pill); padding:6px 14px;
+}
+.btn-mini:hover { background:var(--bg-soft); }
+.itin-count { color:var(--text-muted); font-size:13px; }
+details.day-block {
+  background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md);
+  margin-bottom:10px; box-shadow:var(--sh-1); overflow:hidden;
+}
+details.day-block[open] { box-shadow:var(--sh-2); border-color:color-mix(in srgb, var(--accent) 30%, var(--line)); }
+summary.day-head { list-style:none; cursor:pointer; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; }
+summary.day-head::-webkit-details-marker { display:none; }
+summary.day-head:hover { background:var(--bg-soft); }
+.dh-caret { flex:none; width:16px; height:16px; margin-top:3px; color:var(--text-muted); transition:transform .18s ease; }
+details[open] .dh-caret { transform:rotate(90deg); }
+.dh-main { flex:1; min-width:0; }
+.dh-top { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.dh-num { font-feature-settings:"tnum","ss01"; font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
+.dh-date { font-weight:600; font-size:15.5px; letter-spacing:-.01em; }
+.dh-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.chip {
+  display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+  font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:var(--r-pill);
+  border:1px solid transparent;
+}
+.chip-place  { background:var(--accent-bg); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 25%, transparent); }
+.chip-hotel  { background:var(--c-hotel-bg);  color:var(--c-hotel);  border-color:color-mix(in srgb, var(--c-hotel) 25%, transparent); }
+.chip-flight { background:var(--c-flight-bg); color:var(--c-flight); border-color:color-mix(in srgb, var(--c-flight) 25%, transparent); }
+.chip-car    { background:var(--c-car-bg);    color:var(--c-car);    border-color:color-mix(in srgb, var(--c-car) 25%, transparent); }
+.chip-count  { background:var(--bg-soft); color:var(--text-muted); font-weight:500; }
+.day-body { padding:2px 14px 14px; }
+.day-empty { color:var(--text-muted); font-size:13.5px; padding:0 14px 16px; }
+.map-hint { color:var(--text-muted); font-size:13px; margin:0 0 10px; }
+.map-pop b { display:block; margin-bottom:2px; }
+.map-pop a { font-size:12.5px; }
 footer.foot { margin-top:48px; padding-top:24px; border-top:1px solid var(--line-soft); color:var(--text-muted); font-size:12px; text-align:center; }
 a { color:var(--accent); text-decoration:none; }
 a:hover { text-decoration:underline; }
@@ -13375,30 +13423,115 @@ ${viewerScript}
     lines.push("const root = document.getElementById('content');");
     lines.push("const trip = DATA.trip;");
     lines.push("");
-    lines.push("// === Itinerario ===");
-    lines.push("if (DATA.planning.length || DATA.day_notes.length || (trip.start_date && trip.end_date)) {");
+    lines.push("// === Itinerario (acordeón por días) ===");
+    lines.push("// Helpers de fechas y de etiquetado del día.");
+    lines.push("const isoOf = (d) => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');");
+    lines.push("const LEGS = DATA.trip_legs || [];");
+    lines.push("// Ciudad a partir de una dirección postal: el segundo segmento, sin el código");
+    lines.push("// postal de delante ('11000 Montevideo' -> 'Montevideo', 'V9410AVG Ushuaia' -> 'Ushuaia').");
+    lines.push("// Es una heurística: si no cuadra, simplemente no se muestra la pastilla.");
+    lines.push("function cityFromAddress(addr) {");
+    lines.push("  if (!addr) return null;");
+    lines.push("  const parts = String(addr).split(',').map(x => x.trim()).filter(Boolean);");
+    lines.push("  if (parts.length < 2) return null;");
+    lines.push("  const c = parts[1].replace(/^[A-Za-z]{0,2}\\d[\\w-]*\\s+/, '').trim();");
+    lines.push("  return c && !/^\\d+$/.test(c) ? c : null;");
+    lines.push("}");
+    lines.push("// Rango [entrada, salida) de un alojamiento. Los tipos 'rango' guardan las");
+    lines.push("// fechas en consultation_planned_d1/d2; si faltan, se usa el día del evento.");
+    lines.push("function stayRange(p) {");
+    lines.push("  const d1 = p.consultation_planned_d1 || p.day_date;");
+    lines.push("  const d2 = p.consultation_planned_d2 || (p.metadata && p.metadata.end_date) || null;");
+    lines.push("  return d1 ? { d1, d2 } : null;");
+    lines.push("}");
+    lines.push("const STAYS = DATA.planning.filter(p => p.type === 'hotel').map(p => ({ p, r: stayRange(p) })).filter(x => x.r);");
+    lines.push("function stayOn(iso) {");
+    lines.push("  // La noche del día: entrada <= día < salida. El día del check-out ya no cuenta.");
+    lines.push("  const hit = STAYS.find(x => x.r.d1 <= iso && (!x.r.d2 || iso < x.r.d2));");
+    lines.push("  return hit ? hit.p : null;");
+    lines.push("}");
+    lines.push("function legOn(iso) {");
+    lines.push("  const l = LEGS.find(x => (x.arrival_date || '') <= iso && (!x.departure_date || iso <= x.departure_date));");
+    lines.push("  return l && l.city ? l.city : null;");
+    lines.push("}");
+    lines.push("// Nombre del lugar del día, en cascada: título del día -> tramo -> ciudad del");
+    lines.push("// alojamiento de esa noche. Si nada cuadra, el día va sin pastilla de lugar.");
+    lines.push("function placeOf(iso, note) {");
+    lines.push("  if (note && note.title) return note.title;");
+    lines.push("  const leg = legOn(iso); if (leg) return leg;");
+    lines.push("  const st = stayOn(iso);");
+    lines.push("  if (st) return cityFromAddress(st.address) || st.place_name || st.title;");
+    lines.push("  return null;");
+    lines.push("}");
+    lines.push("// 'MVD · Montevideo' -> 'MVD'. Sin metadata, se cae al título del evento.");
+    lines.push("const iata = (v) => String(v || '').split('·')[0].trim();");
+    lines.push("function flightLabel(p) {");
+    lines.push("  const m = p.metadata || {};");
+    lines.push("  if (m.origen && m.destino) return iata(m.origen) + ' → ' + iata(m.destino);");
+    lines.push("  return p.title;");
+    lines.push("}");
+    lines.push("");
+    lines.push("const byDay = {};");
+    lines.push("DATA.planning.forEach(p => { const k = p.day_date || 'sin-fecha'; (byDay[k]=byDay[k]||[]).push(p); });");
+    lines.push("const noteMap = {}; DATA.day_notes.forEach(n => noteMap[n.date]=n);");
+    lines.push("Object.keys(noteMap).forEach(k => { if (!byDay[k]) byDay[k] = []; });");
+    lines.push("if (trip.start_date && trip.end_date) {");
+    lines.push("  let d = new Date(trip.start_date+'T00:00:00'); const end = new Date(trip.end_date+'T00:00:00');");
+    lines.push("  while (d <= end) { const k = isoOf(d); if (!byDay[k]) byDay[k]=[]; d.setDate(d.getDate()+1); }");
+    lines.push("}");
+    lines.push("const dayKeys = Object.keys(byDay).sort();");
+    lines.push("const blocks = [];");
+    lines.push("");
+    lines.push("if (dayKeys.length) {");
     lines.push("  root.appendChild(el('h2', {class:'section', text:'Itinerario'}));");
-    lines.push("  const byDay = {};");
-    lines.push("  DATA.planning.forEach(p => { const k = p.day_date || 'sin-fecha'; (byDay[k]=byDay[k]||[]).push(p); });");
-    lines.push("  const noteMap = {}; DATA.day_notes.forEach(n => noteMap[n.date]=n);");
-    lines.push("  Object.keys(noteMap).forEach(k => { if (!byDay[k]) byDay[k] = []; });");
-    lines.push("  if (trip.start_date && trip.end_date) {");
-    lines.push("    let d = new Date(trip.start_date+'T00:00:00'); const end = new Date(trip.end_date+'T00:00:00');");
-    lines.push("    while (d <= end) { const k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); if (!byDay[k]) byDay[k]=[]; d.setDate(d.getDate()+1); }");
-    lines.push("  }");
-    lines.push("  Object.keys(byDay).sort().forEach(k => {");
+    lines.push("  const tools = el('div', {class:'itin-tools'});");
+    lines.push("  const btnAll = el('button', {class:'btn-mini', type:'button'}, 'Desplegar todo');");
+    lines.push("  btnAll.addEventListener('click', () => {");
+    lines.push("    const abrir = blocks.some(b => !b.open);");
+    lines.push("    blocks.forEach(b => { b.open = abrir; });");
+    lines.push("    btnAll.textContent = abrir ? 'Plegar todo' : 'Desplegar todo';");
+    lines.push("  });");
+    lines.push("  tools.appendChild(btnAll);");
+    lines.push("  tools.appendChild(el('span', {class:'itin-count', text: dayKeys.length + (dayKeys.length===1?' día':' días') + ' · toca uno para ver el detalle'}));");
+    lines.push("  root.appendChild(tools);");
+    lines.push("");
+    lines.push("  dayKeys.forEach(k => {");
     lines.push("    const items = byDay[k];");
     lines.push("    items.sort((a,b) => (a.time||'').localeCompare(b.time||'') || (a.order_index||0)-(b.order_index||0));");
+    lines.push("    const note = noteMap[k];");
     lines.push("    const dayNum = (trip.start_date && k!=='sin-fecha') ? daysBetween(trip.start_date, k)+1 : null;");
-    lines.push("    const dayH = el('h3', {class:'day'});");
-    lines.push("    if (dayNum) dayH.appendChild(el('span', {class:'day-num', text:'Día '+dayNum+' '}));");
-    lines.push("    dayH.appendChild(document.createTextNode(k==='sin-fecha' ? 'Sin fecha' : fmtDayLong(k)));");
-    lines.push("    root.appendChild(dayH);");
-    lines.push("    if (noteMap[k] && noteMap[k].text) {");
-    lines.push("      root.appendChild(el('div', {class:'day-note', text: noteMap[k].text}));");
-    lines.push("    }");
+    lines.push("");
+    lines.push("    const det = el('details', {class:'day-block'});");
+    lines.push("    det.id = 'dia-' + k;");
+    lines.push("    const head = el('summary', {class:'day-head'});");
+    lines.push("    head.appendChild(el('span', {class:'dh-caret', html:'<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 18l6-6-6-6\"/></svg>'}));");
+    lines.push("    const main = el('div', {class:'dh-main'});");
+    lines.push("    const top = el('div', {class:'dh-top'});");
+    lines.push("    if (dayNum) top.appendChild(el('span', {class:'dh-num', text:'Día '+dayNum}));");
+    lines.push("    top.appendChild(el('span', {class:'dh-date', text: k==='sin-fecha' ? 'Sin fecha' : fmtDayLong(k)}));");
+    lines.push("    main.appendChild(top);");
+    lines.push("");
+    lines.push("    const chips = el('div', {class:'dh-chips'});");
+    lines.push("    const lugar = placeOf(k, note);");
+    lines.push("    if (lugar) chips.appendChild(el('span', {class:'chip chip-place', text:'📍 ' + lugar}));");
+    lines.push("    const stay = stayOn(k);");
+    lines.push("    if (stay) chips.appendChild(el('span', {class:'chip chip-hotel', text:'🏨 ' + (stay.place_name || stay.title)}));");
+    lines.push("    items.filter(p => p.type === 'vuelo').forEach(p => {");
+    lines.push("      chips.appendChild(el('span', {class:'chip chip-flight', text:'✈️ ' + flightLabel(p)}));");
+    lines.push("    });");
+    lines.push("    items.filter(p => p.type === 'coche').forEach(p => {");
+    lines.push("      chips.appendChild(el('span', {class:'chip chip-car', text:'🚗 ' + (p.place_name || p.title)}));");
+    lines.push("    });");
+    lines.push("    const paradas = items.filter(p => !['hotel','vuelo','coche'].includes(p.type)).length;");
+    lines.push("    if (paradas) chips.appendChild(el('span', {class:'chip chip-count', text: paradas + (paradas===1?' parada':' paradas')}));");
+    lines.push("    if (chips.children.length) main.appendChild(chips);");
+    lines.push("    head.appendChild(main);");
+    lines.push("    det.appendChild(head);");
+    lines.push("");
+    lines.push("    const bodyDiv = el('div', {class:'day-body'});");
+    lines.push("    if (note && note.text) bodyDiv.appendChild(el('div', {class:'day-note', text: note.text}));");
     lines.push("    if (items.length) {");
-    lines.push("      const tl = el('div', {class:'timeline'}); root.appendChild(tl);");
+    lines.push("      const tl = el('div', {class:'timeline'});");
     lines.push("      items.forEach(it => {");
     lines.push("        const tlItem = el('div', {class:'tl-item'});");
     lines.push("        const titleDiv = el('div', {class:'tl-title'});");
@@ -13412,8 +13545,89 @@ ${viewerScript}
     lines.push("        if (gm) tlItem.appendChild(el('a', {class:'tl-link', href: gm, target:'_blank', rel:'noopener', text:'Abrir en Google Maps'}));");
     lines.push("        tl.appendChild(tlItem);");
     lines.push("      });");
+    lines.push("      bodyDiv.appendChild(tl);");
+    lines.push("    } else if (!note || !note.text) {");
+    lines.push("      bodyDiv.appendChild(el('div', {class:'day-empty', text:'Día libre'}));");
     lines.push("    }");
+    lines.push("    det.appendChild(bodyDiv);");
+    lines.push("    root.appendChild(det);");
+    lines.push("    blocks.push(det);");
     lines.push("  });");
+    lines.push("}");
+    lines.push("");
+    lines.push("// Abre un día y lo trae a la vista (lo usan los popups del mapa).");
+    lines.push("function abrirDia(iso) {");
+    lines.push("  const d = document.getElementById('dia-' + iso);");
+    lines.push("  if (!d) return;");
+    lines.push("  d.open = true;");
+    lines.push("  d.scrollIntoView({ behavior:'smooth', block:'start' });");
+    lines.push("}");
+    lines.push("window.abrirDia = abrirDia;");
+    lines.push("");
+    lines.push("// === Mapa de la ruta ===");
+    lines.push("// Puntos en orden cronológico: una línea por día con su color, y un tramo");
+    lines.push("// discontinuo entre el último punto de un día y el primero del siguiente.");
+    lines.push("if (OPTS.includeMap && typeof L !== 'undefined') {");
+    lines.push("  const porDia = [];");
+    lines.push("  dayKeys.forEach(k => {");
+    lines.push("    const pts = (byDay[k] || [])");
+    lines.push("      .filter(p => p.lat != null && p.lng != null)");
+    lines.push("      .map(p => ({ lat:p.lat, lng:p.lng, name:p.title, sub:p.place_name || p.address || '', iso:k, type:p.type }));");
+    lines.push("    if (pts.length) porDia.push({ iso:k, pts });");
+    lines.push("  });");
+    lines.push("  const sueltos = DATA.addresses.filter(a => a.lat != null && a.lng != null)");
+    lines.push("    .map(a => ({ lat:a.lat, lng:a.lng, name:a.label, sub:a.address || '', iso:null, type:'otro' }));");
+    lines.push("  const total = porDia.reduce((n,d) => n + d.pts.length, 0) + sueltos.length;");
+    lines.push("");
+    lines.push("  if (total) {");
+    lines.push("    root.appendChild(el('h2', {class:'section', text:'Mapa de la ruta'}));");
+    lines.push("    root.appendChild(el('p', {class:'map-hint', text: total + ' puntos · el color avanza con los días. Toca un punto para ir a su día.'}));");
+    lines.push("    const mapEl = el('div', {id:'map'}); root.appendChild(mapEl);");
+    lines.push("    setTimeout(() => {");
+    lines.push("      const m = L.map('map', { scrollWheelZoom:false });");
+    lines.push("      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(m);");
+    lines.push("      const capa = L.featureGroup().addTo(m);");
+    lines.push("      // Tono azul -> magenta según avanza el viaje: se ve la progresión.");
+    lines.push("      const colorDia = (i) => 'hsl(' + Math.round(212 + (porDia.length > 1 ? i*130/(porDia.length-1) : 0)) + ',72%,48%)';");
+    lines.push("      const num = (iso) => trip.start_date ? daysBetween(trip.start_date, iso)+1 : null;");
+    lines.push("      // Dos pasadas: primero TODAS las líneas y después los puntos. Si se");
+    lines.push("      // mezclan, la línea de un día tapa los marcadores de los días anteriores");
+    lines.push("      // que caen en la misma zona y el clic nunca llega al punto. Además las");
+    lines.push("      // líneas van con interactive:false para no robar el clic.");
+    lines.push("      porDia.forEach((d, i) => {");
+    lines.push("        const col = colorDia(i);");
+    lines.push("        if (d.pts.length > 1) {");
+    lines.push("          L.polyline(d.pts.map(x => [x.lat, x.lng]), { color:col, weight:3, opacity:.75, interactive:false }).addTo(capa);");
+    lines.push("        }");
+    lines.push("        if (i > 0) {");
+    lines.push("          const prev = porDia[i-1].pts[porDia[i-1].pts.length-1];");
+    lines.push("          L.polyline([[prev.lat, prev.lng], [d.pts[0].lat, d.pts[0].lng]],");
+    lines.push("            { color:'#94a3b8', weight:2, opacity:.6, dashArray:'5,7', interactive:false }).addTo(capa);");
+    lines.push("        }");
+    lines.push("      });");
+    lines.push("      porDia.forEach((d, i) => {");
+    lines.push("        const col = colorDia(i);");
+    lines.push("        d.pts.forEach(x => {");
+    lines.push("          const dn = num(x.iso);");
+    lines.push("          const mk = L.circleMarker([x.lat, x.lng], {");
+    lines.push("            radius: x.type === 'hotel' ? 8 : 6, color:'#fff', weight:2,");
+    lines.push("            fillColor: col, fillOpacity:1,");
+    lines.push("          }).addTo(capa);");
+    lines.push("          const cab = (dn ? 'Día ' + dn + ' · ' : '') + fmtDateShort(x.iso);");
+    lines.push("          mk.bindPopup('<div class=\"map-pop\"><b>' + escHtml(x.name) + '</b>' +");
+    lines.push("            (x.sub ? escHtml(x.sub) + '<br>' : '') +");
+    lines.push("            '<span class=\"muted\">' + escHtml(cab) + '</span><br>' +");
+    lines.push("            '<a href=\"#\" onclick=\"abrirDia(\\'' + x.iso + '\\');return false;\">Ver este día</a></div>');");
+    lines.push("        });");
+    lines.push("      });");
+    lines.push("      sueltos.forEach(x => {");
+    lines.push("        const mk = L.circleMarker([x.lat, x.lng], { radius:6, color:'#fff', weight:2, fillColor:'#64748b', fillOpacity:1 }).addTo(capa);");
+    lines.push("        mk.bindPopup('<div class=\"map-pop\"><b>' + escHtml(x.name) + '</b>' + escHtml(x.sub) + '</div>');");
+    lines.push("      });");
+    lines.push("      const b = capa.getBounds();");
+    lines.push("      if (b.isValid()) m.fitBounds(b.pad(0.15));");
+    lines.push("    }, 60);");
+    lines.push("  }");
     lines.push("}");
     lines.push("");
     lines.push("// === Reservas ===");
@@ -13498,22 +13712,6 @@ ${viewerScript}
     lines.push("  root.appendChild(el('div', {class:'notes-card', text: trip.notes}));");
     lines.push("}");
     lines.push("");
-    lines.push("// === Mapa ===");
-    lines.push("if (OPTS.includeMap) {");
-    lines.push("  const pins = [];");
-    lines.push("  DATA.planning.forEach(p => { if (p.lat!=null && p.lng!=null) pins.push({lat:p.lat,lng:p.lng,name:p.title,sub:p.place_name||p.address||''}); });");
-    lines.push("  DATA.addresses.forEach(a => { if (a.lat!=null && a.lng!=null) pins.push({lat:a.lat,lng:a.lng,name:a.label,sub:a.address||''}); });");
-    lines.push("  if (pins.length && typeof L !== 'undefined') {");
-    lines.push("    root.appendChild(el('h2', {class:'section', text:'Mapa'}));");
-    lines.push("    const map = el('div', {id:'map'}); root.appendChild(map);");
-    lines.push("    setTimeout(() => {");
-    lines.push("      const m = L.map('map');");
-    lines.push("      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(m);");
-    lines.push("      const g = L.featureGroup(pins.map(p => { const mk = L.marker([p.lat,p.lng]); mk.bindPopup('<b>'+escHtml(p.name)+'</b><br>'+escHtml(p.sub)); return mk; })).addTo(m);");
-    lines.push("      m.fitBounds(g.getBounds().pad(0.2));");
-    lines.push("    }, 60);");
-    lines.push("  }");
-    lines.push("}");
     return lines.join('\n');
   },
 

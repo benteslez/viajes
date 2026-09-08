@@ -155,6 +155,23 @@ Desde la pantalla del viaje, *Compartir viaje* genera un **HTML autónomo** con 
 más: el receptor lo abre en cualquier navegador, sin app, sin cuenta y sin acceso al resto de tus
 datos. El archivo no lleva la clave de Supabase.
 
+**Cómo se ve** (`Exporter._viewerScript`):
+
+- **Itinerario plegable.** Un `<details>` por día, cerrados de entrada, con un botón *Desplegar
+  todo*. La cabecera de cada día lleva pastillas: 📍 lugar, 🏨 alojamiento de esa noche,
+  ✈️ cada vuelo, 🚗 cada coche y el número de paradas.
+- **De dónde sale el lugar del día**, en cascada: título del día (`day_notes.title`) → ciudad del
+  tramo vigente (`trip_legs`) → ciudad deducida de la dirección del alojamiento de esa noche
+  (`cityFromAddress`: segundo segmento de la dirección sin el código postal). Si nada cuadra, el
+  día va sin pastilla en vez de inventarse una.
+- **Alojamiento de la noche**: `consultation_planned_d1 <= día < consultation_planned_d2`, así que
+  el día del check-out ya no lo muestra.
+- **Mapa de la ruta**: los puntos van en orden cronológico, con el color avanzando de azul a
+  magenta según el día; línea continua dentro de cada día y discontinua entre días. Cada punto
+  abre un popup con su día y un enlace *Ver este día* que despliega ese día del itinerario.
+  Las líneas se dibujan antes que los puntos y con `interactive:false` — si no, la línea de un día
+  tapa los marcadores de los días anteriores que caen en la misma zona y el clic no llega.
+
 Interruptores de qué incluir: precios, localizadores y documentos, enlaces externos, mapa y notas.
 
 **Cómo filtra** (`Exporter._buildShareHtml`):
