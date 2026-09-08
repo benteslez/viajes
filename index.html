@@ -862,6 +862,21 @@ h2.section-title {
 .timeline-item.list-item .drag-handle { padding:2px; }
 .timeline-item.list-item .icon-btn { width:28px; height:28px; }
 .icon-btn.btn-note-on { color:var(--accent); background:var(--accent-bg); }
+/* Editor de la versión para compartir */
+.sd-day { border:1px solid var(--line); border-radius:12px; margin-bottom:8px; overflow:hidden; }
+.sd-day-head { list-style:none; cursor:pointer; padding:10px 12px; display:flex; justify-content:space-between; gap:10px; align-items:center; background:var(--bg-soft); }
+.sd-day-head::-webkit-details-marker { display:none; }
+.sd-day-t { font-weight:600; font-size:14px; }
+.sd-day-n { color:var(--text-muted); font-size:12px; }
+.sd-day-body { padding:10px 12px 12px; }
+.sd-lab { display:block; font-size:12px; color:var(--text-muted); margin:2px 0 4px; }
+.sd-item { border-top:1px solid var(--line-soft); padding:10px 0 2px; }
+.sd-item.sd-off { opacity:.45; }
+.sd-cab { display:flex; align-items:center; gap:8px; }
+.sd-tipo { flex:none; font-size:15px; }
+.sd-title { flex:1; min-width:0; font:inherit; font-size:14px; font-weight:600; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
+.sd-notes { width:100%; margin-top:6px; font:inherit; font-size:13px; padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); resize:vertical; }
+.sd-item.sd-off .sd-title, .sd-item.sd-off .sd-notes { text-decoration:line-through; }
 .timeline-item.list-item .icon-btn svg { width:16px; height:16px; }
 .timeline-item.list-item .li-actions .btn.btn-sm { height:28px; padding:0 9px; font-size:12px; }
 /* Sub-texto en 1-2 líneas máximo con ellipsis para que no expanda la card */
@@ -13186,6 +13201,152 @@ const ShareLinks = {
   },
 
   // Registrar en este dispositivo un enlace ya publicado desde otro.
+  /* -------- Versión para compartir --------
+     Capa de cambios que se aplica SOLO al generar el HTML compartido. Los datos
+     del viaje no se tocan: aquí se decide qué se enseña y con qué palabras.
+     Vive en `trip.settings.share_draft`, así que sincroniza y viaja en el export.
+       { items: { <id>: { title?, notes?, hidden? } }, days: { <iso>: { text? } } } */
+  shareDraft(t) {
+    const d = tripSettings(t).share_draft;
+    return (d && typeof d === 'object') ? d : { items: {}, days: {} };
+  },
+  _draftMut(t) {
+    const st = tripSettingsMut(t);
+    if (!st.share_draft || typeof st.share_draft !== 'object') st.share_draft = { items: {}, days: {} };
+    if (!st.share_draft.items) st.share_draft.items = {};
+    if (!st.share_draft.days) st.share_draft.days = {};
+    return st.share_draft;
+  },
+  _draftCount(t) {
+    const d = this.shareDraft(t);
+    return Object.keys(d.items || {}).length + Object.keys(d.days || {}).length;
+  },
+
+  async openShareDraft(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const planning = (await DB.listByTrip('planning_items', t.id))
+      .filter(i => !i.deleted_at)
+      .sort((a, b) => (a.day_date || '').localeCompare(b.day_date || '')
+                   || (a.time || '').localeCompare(b.time || '')
+                   || (a.order_index || 0) - (b.order_index || 0));
+    const dayNotes = await DB.listByTrip('day_notes', t.id);
+    const notaDe = {}; dayNotes.forEach(n => { notaDe[n.date] = n; });
+
+    const porDia = {};
+    planning.forEach(i => { const k = i.day_date || 'sin-fecha'; (porDia[k] = porDia[k] || []).push(i); });
+    Object.keys(notaDe).forEach(k => { if (!porDia[k]) porDia[k] = []; });
+    const dias = Object.keys(porDia).sort();
+
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Lo que escribas aquí se usa solo en el enlace compartido. Tu viaje no cambia: si vacías un campo, vuelve a mostrarse el texto original.' }),
+      el('div', { id:'sd-list' }),
+    ]);
+
+    const marcaCambio = () => {
+      const n = ShareLinks._draftCount(t);
+      const b = document.getElementById('sd-count');
+      if (b) b.textContent = n ? (n === 1 ? '1 cambio' : n + ' cambios') : 'Sin cambios';
+    };
+
+    const guardar = async () => { try { await DB.put('trips', t); } catch (e) { console.error('share draft', e); } marcaCambio(); };
+
+    const filaItem = (it) => {
+      const d = ShareLinks._draftMut(t);
+      const o = d.items[it.id] || {};
+      const wrap = el('div', { class:'sd-item' + (o.hidden ? ' sd-off' : '') });
+      const cab = el('div', { class:'sd-cab' }, [
+        el('span', { class:'sd-tipo', text: (typeDef(it.type).emoji || '') }),
+        el('input', { class:'sd-title', type:'text', value: o.title != null ? o.title : (it.title || ''),
+          placeholder: it.title || 'Título', autocomplete:'off',
+          onchange: async (e) => {
+            const v = e.target.value.trim();
+            const dd = ShareLinks._draftMut(t);
+            dd.items[it.id] = dd.items[it.id] || {};
+            if (!v || v === it.title) delete dd.items[it.id].title; else dd.items[it.id].title = v;
+            if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
+            await guardar();
+          } }),
+        el('button', { class:'icon-btn' + (o.hidden ? ' btn-note-on' : ''), title: o.hidden ? 'Volver a mostrarla' : 'Ocultar en el enlace',
+          html: svg('eye'),
+          onclick: async (e) => {
+            const dd = ShareLinks._draftMut(t);
+            dd.items[it.id] = dd.items[it.id] || {};
+            if (dd.items[it.id].hidden) delete dd.items[it.id].hidden; else dd.items[it.id].hidden = true;
+            const oculto = !!dd.items[it.id].hidden;
+            if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
+            wrap.classList.toggle('sd-off', oculto);
+            e.currentTarget.classList.toggle('btn-note-on', oculto);
+            await guardar();
+          } }),
+      ]);
+      const ta = el('textarea', { class:'sd-notes', rows:'2',
+        placeholder: (it.notes || '').trim() ? 'Nota original: ' + (it.notes || '').slice(0, 60) + '…' : 'Sin nota',
+        onchange: async (e) => {
+          const v = e.target.value;
+          const dd = ShareLinks._draftMut(t);
+          dd.items[it.id] = dd.items[it.id] || {};
+          if (v === (it.notes || '')) delete dd.items[it.id].notes; else dd.items[it.id].notes = v;
+          if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
+          await guardar();
+        } }, o.notes != null ? o.notes : (it.notes || ''));
+      wrap.appendChild(cab); wrap.appendChild(ta);
+      return wrap;
+    };
+
+    const render = () => {
+      const cont = document.getElementById('sd-list');
+      if (!cont) return;
+      cont.innerHTML = '';
+      dias.forEach(k => {
+        const det = el('details', { class:'sd-day' });
+        const n = notaDe[k];
+        const dr = ShareLinks.shareDraft(t);
+        det.appendChild(el('summary', { class:'sd-day-head' }, [
+          el('span', { class:'sd-day-t', text: k === 'sin-fecha' ? 'Sin fecha' : fmtDate(k, {weekday:'long', day:'numeric', month:'long'}) }),
+          el('span', { class:'sd-day-n', text: (porDia[k].length || 0) + (porDia[k].length === 1 ? ' parada' : ' paradas') }),
+        ]));
+        const cuerpo = el('div', { class:'sd-day-body' });
+        cuerpo.appendChild(el('label', { class:'sd-lab', text:'Nota del día' }));
+        cuerpo.appendChild(el('textarea', { class:'sd-notes', rows:'2',
+          placeholder: n && n.text ? 'Nota original: ' + n.text.slice(0, 60) + '…' : 'Sin nota',
+          onchange: async (e) => {
+            const v = e.target.value;
+            const dd = ShareLinks._draftMut(t);
+            dd.days[k] = dd.days[k] || {};
+            if (v === ((n && n.text) || '')) delete dd.days[k].text; else dd.days[k].text = v;
+            if (!Object.keys(dd.days[k]).length) delete dd.days[k];
+            await guardar();
+          } }, (dr.days[k] && dr.days[k].text != null) ? dr.days[k].text : ((n && n.text) || '')));
+        det.addEventListener('toggle', () => {
+          if (!det.open || det._montado) return;
+          det._montado = true;
+          porDia[k].forEach(it => cuerpo.appendChild(filaItem(it)));
+        });
+        det.appendChild(cuerpo);
+        cont.appendChild(det);
+      });
+      marcaCambio();
+    };
+    setTimeout(render, 0);
+
+    const reset = el('button', { class:'btn btn-danger', onclick: async () => {
+      const ok = await UI.confirm('¿Descartar todos los cambios de la versión compartida y volver a los textos del viaje?');
+      if (!ok) return;
+      const st = tripSettingsMut(t); delete st.share_draft;
+      await DB.put('trips', t);
+      UI.toast('Versión compartida restablecida');
+      render();
+    }}, 'Restablecer');
+
+    UI.openSheet({
+      title:'Versión para compartir',
+      body,
+      footer:[ reset,
+        el('span', { id:'sd-count', class:'field-hint', style:{marginRight:'auto', alignSelf:'center'} }, ''),
+        el('button', { class:'btn btn-primary', onclick: () => { UI.closeSheet(); setTimeout(() => Exporter.openShareSheet(t), 280); } }, 'Listo') ],
+    });
+  },
+
   openAdopt(trip) {
     const body = el('div', {}, [
       el('p', { class:'muted', style:{marginTop:0}, text:'Si ya creaste el enlace de este viaje en otro dispositivo, pega aquí su URL. A partir de entonces "Actualizar enlace" lo regenerará en su sitio, en vez de publicar una copia con otra dirección.' }),
@@ -13485,12 +13646,17 @@ const Exporter = {
       [ el('span', { html: svg('shield') }), 'Ajustes del enlace' ]);
     // Si este dispositivo no conoce el enlace pero ya existe (se creó en otro),
     // pegar su URL evita publicar una segunda copia con otra dirección.
+    const nDraft = ShareLinks._draftCount(t);
+    const draftBtn = el('button', { class:'btn btn-sm' + (nDraft ? '' : ' btn-ghost'),
+      title:'Ajustar los textos que verá quien abra el enlace',
+      onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openShareDraft(t), 280); } },
+      [ el('span', { html: svg('edit') }), nDraft ? `Versión para compartir · ${nDraft}` : 'Versión para compartir' ]);
     const adoptar = !existingLink ? el('button', { class:'btn btn-sm btn-ghost',
       title:'Registrar un enlace creado en otro dispositivo',
       onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openAdopt(t), 280); } },
       [ el('span', { html: svg('external') }), 'Ya tengo un enlace' ]) : null;
     body.appendChild(el('div', { style:{marginTop:'14px', display:'flex', gap:'8px', flexWrap:'wrap'} },
-      [ ghCfg, adoptar ].filter(Boolean)));
+      [ draftBtn, ghCfg, adoptar ].filter(Boolean)));
 
     UI.openSheet({ title:'Compartir viaje', body,
       footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), generate, makeLink] });
@@ -13513,6 +13679,24 @@ const Exporter = {
   _buildShareHtml(t, data, opts) {
     // Filtrar datos según opts antes de embeber
     const safe = JSON.parse(JSON.stringify(data));
+
+    // Versión para compartir: títulos y notas propios del enlace, y paradas
+    // ocultas. Se aplica antes que nada; los datos del viaje no se tocan.
+    const draft = ShareLinks.shareDraft(t);
+    const dItems = draft.items || {}, dDays = draft.days || {};
+    safe.planning = safe.planning.filter(p => !(dItems[p.id] && dItems[p.id].hidden));
+    safe.planning.forEach(p => {
+      const o = dItems[p.id];
+      if (!o) return;
+      if (o.title != null) p.title = o.title;
+      if (o.notes != null) p.notes = o.notes;
+    });
+    Object.keys(dDays).forEach(iso => {
+      if (dDays[iso].text == null) return;
+      const n = (safe.day_notes || []).find(x => x.date === iso);
+      if (n) n.text = dDays[iso].text;
+      else (safe.day_notes = safe.day_notes || []).push({ id:'draft-' + iso, trip_id:t.id, date:iso, title:null, color:null, text:dDays[iso].text });
+    });
 
     // Limpiar planning notes de URLs si !includeLinks
     if (!opts.includeLinks) {

@@ -266,6 +266,22 @@ documentos, enlaces externos y notas.
 > El tachado por patrones **no es una garantía**: cubre los formatos habituales, no texto libre
 > arbitrario. Para datos delicados, usa *Ocultar además* y revisa el HTML antes de mandarlo.
 
+### Versión para compartir
+
+Paso previo a publicar: *Compartir viaje → **Versión para compartir***. Es una capa de cambios que
+se aplica **solo al generar el HTML**; los datos del viaje no se tocan.
+
+- Título y nota propios para el enlace, por parada, y nota propia por día.
+- **Ocultar** paradas que no se quieran enseñar.
+- Vaciar un campo devuelve el texto original del viaje. *Restablecer* descarta la capa entera.
+- El botón muestra cuántos cambios hay.
+
+Vive en `trip.settings.share_draft` (`{ items: { <id>: { title?, notes?, hidden? } },
+days: { <iso>: { text? } } }`), así que sincroniza por Supabase y viaja en el export.
+
+Las filas de cada día se montan **al abrir ese día**: con 24 días y 144 paradas, construir todos
+los campos de golpe deja la pantalla pesada en el móvil.
+
 ### Enlace en vez de archivo
 
 El botón **Crear enlace** sube ese mismo HTML a un repo de GitHub y devuelve su URL de Pages
