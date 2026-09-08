@@ -2693,6 +2693,12 @@ window.App = window.App || {};
 /* ============================================================
    CFG
    ============================================================ */
+// Versión de la app. Se enseña en Ajustes junto a la del service worker activo:
+// si no coinciden, lo que se está ejecutando es una copia cacheada vieja y el
+// problema está en el navegador, no en el servidor. Subirla en cada despliegue,
+// a la vez que CACHE en service-worker.js.
+const APP_VERSION = 'v103';
+
 const CFG = {
   // Rellena estos dos valores para activar la sync con Supabase.
   // Si quedan vacíos, la app funciona local-only sin errores.
@@ -12951,6 +12957,33 @@ const PerfilView = {
     root.appendChild(el('h2', { class:'section-title', text:'Aplicación' }));
     root.appendChild(el('p', { class:'muted', style:{marginBottom:'8px'},
       text:'Busca la última versión y recarga. En iPhone (pantalla de inicio), si tras esto sigues viendo lo mismo, cierra la app del todo y vuelve a abrirla.' }));
+    const verBox = el('div', { class:'card', style:{marginBottom:'10px'} }, [
+      el('div', { class:'kv' }, [ el('span', {class:'k', text:'Versión de esta pantalla'}),
+                                  el('span', {class:'v', text: APP_VERSION}) ]),
+      el('div', { class:'kv' }, [ el('span', {class:'k', text:'Caché del service worker'}),
+                                  el('span', {class:'v', id:'sw-ver', text:'…'}) ]),
+    ]);
+    root.appendChild(verBox);
+    // Se le pregunta al service worker activo qué caché está sirviendo. Si no
+    // coincide con APP_VERSION, hay una copia vieja instalada.
+    (async () => {
+      const celda = () => document.getElementById('sw-ver');
+      try {
+        const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+        if (!sw) { const c = celda(); if (c) c.textContent = 'sin service worker'; return; }
+        const ch = new MessageChannel();
+        const respuesta = new Promise(r => { ch.port1.onmessage = e => r(e.data); });
+        sw.postMessage('VERSION', [ch.port2]);
+        const resp = await Promise.race([
+          respuesta,
+          new Promise(r => setTimeout(() => r(null), 1500)),   // un SW viejo no contesta
+        ]);
+        const c = celda(); if (!c) return;
+        if (!resp) { c.textContent = 'no responde (versión antigua)'; return; }
+        const v = String(resp).replace('viajes-shell-', '');
+        c.textContent = v + (v === APP_VERSION ? ' ✓' : ' — desfasada');
+      } catch (_) { const c = celda(); if (c) c.textContent = 'no disponible'; }
+    })();
     root.appendChild(el('button', { class:'btn btn-sm', onclick: async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true; btn.textContent = 'Buscando…';

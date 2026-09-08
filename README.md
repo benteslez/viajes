@@ -194,6 +194,17 @@ a evento y un resumen con los que no ha podido verificar.
   menciona esa ciudad, se usa como respaldo la **mediana de los puntos de ese mismo día** (con
   tres o más), para que ningún día se quede sin revisar.
 
+### Saber qué versión estás ejecutando
+
+*Ajustes → Aplicación* muestra dos líneas: la **versión de la pantalla** (`APP_VERSION` en
+`index.html`) y la **caché que sirve el service worker** (`CACHE` en `service-worker.js`), que se
+le pregunta por `postMessage`. Si no coinciden, lo que se está ejecutando es una copia cacheada
+vieja: el problema está en el navegador, no en el servidor. Al desplegar hay que subir **las dos**.
+
+El documento HTML se pide con `cache: 'no-cache'`. GitHub Pages sirve `index.html` con
+`max-age=600`, así que sin eso el navegador devolvía su copia durante diez minutos tras cada
+despliegue sin llegar a preguntar al servidor, y la app parecía no actualizarse.
+
 ### Buscar duplicados
 
 En el menú del viaje. Agrupa **paradas** por tipo + día + nombre, y **reservas** por tipo +
