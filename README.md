@@ -278,6 +278,14 @@ repo y permiso *Contents: Read and write*.
 
 - El token vive **solo en ese dispositivo** y nunca entra en el HTML publicado (`hideTerms` y el
   token se excluyen del `OPTS` que se embebe).
+- **Qué enlace tiene cada viaje se guarda en el propio viaje** (`settings.share`), no solo en
+  `localStorage`: si no, el dispositivo donde se creó ofrecía *Actualizar* y cualquier otro
+  *Crear*, y al crear se publicaba una segunda copia con otra dirección. Al ir en `settings`
+  sincroniza por Supabase y viaja en el export. `localStorage` queda de respaldo para los enlaces
+  anteriores a este cambio.
+- **Ya tengo un enlace**: si este dispositivo no lo conoce y no hay sincronización, se pega su URL
+  y queda registrado, conservando la ruta. Se rechaza cualquier URL que no cuelgue de la base de
+  Pages configurada.
 - **Actualizar** reutiliza la misma ruta: la URL que ya mandaste no cambia.
 - **Revocar** borra el archivo del repo; el enlace deja de funcionar.
 - GitHub Pages tarda ~1 minuto en publicar el archivo nuevo.
