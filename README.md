@@ -149,6 +149,34 @@ Supabase** que el resto de la app.
   `schema.sql` o `schema-wardrobe.sql`** (idempotentes; incluyen los `alter table … add column`).
 - **Offline:** funciona sin red como el resto (los datos van primero a IndexedDB).
 
+## Ubicaciones y geocodificación
+
+Las coordenadas de cada parada salen de geocodificar su nombre con Nominatim. Buscar el nombre a
+secas y quedarse con el primer resultado del mundo produce disparates: un "Obelisco" en Italia, un
+"Piano Staircase" en Los Ángeles.
+
+**`geocodeInContext(texto, ctx)`** acota la búsqueda:
+
+1. Prueba `nombre, ciudad, país`, luego `nombre, país`, luego el nombre solo — siempre con un
+   `viewbox` de ~75 km alrededor del centro de la ciudad del día y `bounded=1`.
+2. Valida el resultado: si cae a más de 60 km de esa ciudad, se descarta.
+3. Si nada encaja devuelve `null`. **Nunca escribe una coordenada sin validar**: mejor sin
+   ubicación que en el país equivocado.
+
+La ciudad de cada día la da `GeoCities.deduce()` (ver más abajo), que es también lo que usa el
+visor compartido. Una sola implementación para los dos.
+
+### Revisar ubicaciones
+
+En el menú del viaje. Compara cada evento con la ciudad de su día, y los que se salgan más de
+200 km los vuelve a buscar con contexto. Muestra el recuento antes de empezar, el progreso evento
+a evento y un resumen con los que no ha podido verificar.
+
+- Nominatim admite **una consulta por segundo**, así que el panel estima la duración y se puede
+  cancelar cerrándolo.
+- Un evento que no se pueda verificar **se queda como está**, salvo que se marque *Quitar la
+  ubicación de los que no se puedan verificar*.
+
 ## Compartir un viaje en solo lectura
 
 Desde la pantalla del viaje, *Compartir viaje* genera un **HTML autónomo** con ese viaje y nada
@@ -181,28 +209,13 @@ datos. El archivo no lleva la clave de Supabase.
   algo distinto de la ciudad, se muestra en una pastilla aparte.
 - **Alojamiento de la noche**: `consultation_planned_d1 <= día < consultation_planned_d2`, así que
   el día del check-out ya no lo muestra.
-- **Mapa de la ruta**: los puntos van en orden cronológico, con el color avanzando de azul a
-  magenta según el día; línea continua dentro de cada día y discontinua entre días. Cada punto
-  abre un popup con su día y un enlace *Ver este día* que despliega ese día del itinerario.
-  Las líneas se dibujan antes que los puntos y con `interactive:false` — si no, la línea de un día
-  tapa los marcadores de los días anteriores que caen en la misma zona y el clic no llega.
-
-Interruptores de qué incluir: precios, localizadores y documentos, enlaces externos, mapa y notas.
-
-**Cómo filtra** (`Exporter._buildShareHtml`):
-
-1. Campos estructurados: `bookings.structured_data` y `planning_items.metadata` — se borran las
-   claves de `DOC_FIELDS` / `MONEY_FIELDS`, más `consultation_price` / `consultation_url`.
-2. Texto libre (`trip.notes`, `day_notes.text`, `planning_items.notes`): se tacha **la línea
-   entera** que contenga un localizador, un "Reserva bajo…"/"Para Nombre Apellido" o un importe,
-   y se sustituye por `[dato omitido]`. El resto de la nota se conserva.
-3. Campo *Ocultar además*: términos literales que el usuario escribe (nombre completo, teléfono,
-   matrícula) y que se sustituyen en todo el archivo, incluidos títulos y direcciones. Estos
-   términos **no** se embeben en `OPTS` — escribirlos en el archivo sería la fuga que se quería
-   evitar.
-
-> El tachado por patrones **no es una garantía**: cubre los formatos habituales, no texto libre
-> arbitrario. Para datos delicados, usa el campo *Ocultar además* y revisa el HTML generado.
+- **Sin mapa.** Se quitó: las coordenadas guardadas venían mal geocodificadas y el mapa era ruido.
+  El archivo tampoco publica ya `lat`/`lng`, y el enlace de cada parada se arma con el nombre del
+  sitio, que acierta más que una coordenada equivocada. La ciudad de cada día se calcula **antes**
+  de vaciar las coordenadas, porque son su señal principal.
+- **Diseño**: barra superior que aparece al pasar la portada, portada con degradado de marca,
+  cifras del viaje (días, ciudades, paradas, vuelos, alojamientos), número de día en un disco,
+  pastillas sin borde e iconos de trazo. Claro y oscuro.
 
 ### Enlace en vez de archivo
 

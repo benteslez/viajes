@@ -5613,6 +5613,118 @@ const Trips = {
    VIEW — Trip detail
    ============================================================ */
 const TripDetail = {
+  // Contexto geográfico del viaje: ciudad de cada día y su centro, para
+  // geocodificar con sentido y para validar lo que ya está guardado.
+  async _geoContext(t) {
+    const planning = await DB.listByTrip('planning_items', t.id);
+    const legs = await DB.listByTrip('trip_legs', t.id);
+    const dayNotes = await DB.listByTrip('day_notes', t.id);
+    const g = GeoCities.deduce({ trip: t, planning, legs, dayNotes });
+    const pais = String(t.country || '').split(',')[0].trim();
+    return {
+      ...g, planning,
+      ctxFor(iso) {
+        const city = g.cityByDay[iso] || null;
+        return { city, country: pais || null, near: (city && g.centers[city]) || null, maxKm: 60 };
+      },
+    };
+  },
+
+  // Estimación en cristiano. 1,5 s por evento: los que se resuelven a la primera
+  // gastan una consulta y los que fallan reintentan con menos contexto.
+  _minutos(n) {
+    const seg = Math.round(n * 1.5);
+    if (seg < 90) return seg + ' segundos';
+    return Math.round(seg / 60) + ' minutos';
+  },
+
+  // Revisión de ubicaciones: encuentra los puntos que no encajan con el día en
+  // el que están y los vuelve a geocodificar con contexto.
+  async openGeoAudit(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const TOPE_KM = 200;
+    const geo = await TripDetail._geoContext(t);
+    const GEO_TYPES = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
+    const conNombre = geo.planning.filter(i => GEO_TYPES.includes(i.type) && (i.address || i.place_name || i.title));
+
+    const malos = [], sinUbicar = [];
+    conNombre.forEach(i => {
+      const c = geo.cityByDay[i.day_date];
+      const cen = c && geo.centers[c];
+      if (i.lat == null || i.lng == null) { if (c) sinUbicar.push(i); return; }
+      if (cen && GeoCities.km([i.lat, i.lng], cen) > TOPE_KM) malos.push(i);
+    });
+    const cola = malos.concat(sinUbicar);
+
+    const resumen = el('div', { class:'card' }, [
+      el('div', { class:'kv' }, [ el('span', {class:'k', text:'Eventos con nombre'}), el('span', {class:'v', text:String(conNombre.length)}) ]),
+      el('div', { class:'kv' }, [ el('span', {class:'k', text:'Ubicación que no encaja con su día'}), el('span', {class:'v', text:String(malos.length)}) ]),
+      el('div', { class:'kv' }, [ el('span', {class:'k', text:'Sin ubicación'}), el('span', {class:'v', text:String(sinUbicar.length)}) ]),
+    ]);
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Se comparan las coordenadas de cada evento con la ciudad en la que transcurre su día. Los que se salgan más de ' + TOPE_KM + ' km se vuelven a buscar acotando por esa ciudad.' }),
+      resumen,
+      el('label', { class:'switch', style:{padding:'8px 0', width:'100%'} }, [
+        el('input', { id:'ga-clear', type:'checkbox' }),
+        el('span', { class:'switch-track' }),
+        el('span', { text:'Quitar la ubicación de los que no se puedan verificar' }),
+      ]),
+      el('div', { class:'field-hint', text:'Sin marcar, un evento que no se pueda verificar se queda como está y se lista al final. Nunca se cambia nada sin que la nueva ubicación caiga cerca de la ciudad del día.' }),
+      el('div', { class:'field-hint', style:{marginTop:'10px'},
+        text: cola.length ? 'Nominatim permite una consulta por segundo, así que esto tarda: alrededor de ' + TripDetail._minutos(cola.length) + '. Puedes cerrar el panel para cancelar.' : '' }),
+      el('div', { id:'ga-prog', class:'field-hint', style:{marginTop:'12px', whiteSpace:'pre-wrap'} }),
+    ]);
+
+    let abortado = false;
+    const run = async () => {
+      const limpiar = !!$('#ga-clear')?.checked;
+      const prog = $('#ga-prog');
+      const btn = $('#ga-run');
+      if (btn) { btn.disabled = true; btn.textContent = 'Revisando…'; }
+      let ok = 0, sin = 0;
+      const fallidos = [];
+      for (let n = 0; n < cola.length; n++) {
+        if (abortado) break;
+        const it = cola[n];
+        // Nominatim va a 1 petición por segundo: hay que avisar de la espera.
+        if (prog) prog.textContent = `${n + 1} / ${cola.length} · ${it.title}\n${ok} corregidos · ${sin} sin resultado`;
+        const ctx = geo.ctxFor(it.day_date);
+        const c = await geocodeInContext(it.address || it.place_name || it.title, ctx);
+        const fresh = await DB.get('planning_items', it.id);
+        if (!fresh) continue;
+        if (c) {
+          fresh.lat = c.lat; fresh.lng = c.lng;
+          fresh.gmaps_url = gmapsUrl(c.lat, c.lng, fresh.place_name);
+          try { await DB.put('planning_items', fresh); ok++; } catch (_) {}
+        } else {
+          sin++; fallidos.push(it.title);
+          if (limpiar && fresh.lat != null) {
+            fresh.lat = null; fresh.lng = null; fresh.gmaps_url = null;
+            try { await DB.put('planning_items', fresh); } catch (_) {}
+          }
+        }
+      }
+      if (prog) {
+        prog.textContent = (abortado ? 'Cancelado. ' : 'Listo. ') +
+          `${ok} ubicaciones corregidas · ${sin} sin resultado` +
+          (fallidos.length ? '\n\nSin resultado:\n· ' + fallidos.slice(0, 12).join('\n· ') +
+            (fallidos.length > 12 ? `\n… y ${fallidos.length - 12} más` : '') : '');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Revisar de nuevo'; }
+      Router.render();
+    };
+
+    const runBtn = el('button', { class:'btn btn-primary', id:'ga-run', onclick: run },
+      [ el('span', { html: svg('refresh') }), cola.length ? `Revisar ${cola.length}` : 'Nada que revisar' ]);
+    if (!cola.length) runBtn.disabled = true;
+
+    UI.openSheet({
+      title:'Revisar ubicaciones',
+      body,
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => { abortado = true; UI.closeSheet(); } }, 'Cerrar'), runBtn ],
+    });
+  },
+
   // Menú "..." de acciones del viaje (Editar, PDF, Compartir, etc.).
   // Se abre desde el botón hamburguesa del topbar.
   _openActionsMenu(t) {
@@ -5633,6 +5745,10 @@ const TripDetail = {
       items.push({
         icon: svg('external'), label: 'Compartir viaje',
         onclick: () => { UI.closeSheet(); Exporter.openShareSheet(t); }
+      });
+      items.push({
+        icon: svg('map'), label: 'Revisar ubicaciones',
+        onclick: () => { UI.closeSheet(); TripDetail.openGeoAudit(t); }
       });
       items.push({
         icon: svg('copy'), label: 'Duplicar viaje',
@@ -8092,10 +8208,13 @@ const TripDetail = {
     const GEO_TYPES = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
     const targets = rawItems.filter(i => !i._virtual && GEO_TYPES.includes(i.type) && (i.lat == null || i.lng == null) && (i.address || i.place_name));
     if (!targets.length) return;
+    // Contexto: en qué ciudad transcurre cada día. Sin esto, un nombre genérico
+    // se resuelve en el otro extremo del mundo.
+    const geo = await TripDetail._geoContext(t);
     let changed = 0;
     for (const it of targets) {
       if (TripDetail._geoToken !== token) return;          // re-render: abortar
-      const c = await geocodeText(it.address || it.place_name);
+      const c = await geocodeInContext(it.address || it.place_name, geo.ctxFor(it.day_date));
       if (TripDetail._geoToken !== token) return;
       if (c) {
         const fresh = await DB.get('planning_items', it.id); // por si cambió mientras tanto
@@ -12719,6 +12838,155 @@ const PerfilView = {
    navegador con un token personal que se guarda SOLO en este
    dispositivo (localStorage), nunca dentro del HTML compartido.
    ============================================================ */
+/* ============================================================
+   GeoCities — deducir en qué ciudad transcurre cada día
+   ------------------------------------------------------------
+   Los lugares casi nunca traen dirección, pero sí coordenadas. La ciudad de
+   cada día se decide votando entre unas candidatas con posición conocida.
+   Lo usan el visor compartido (para las pastillas y para filtrar el mapa) y la
+   revisión de ubicaciones (para geocodificar con contexto y validar).
+   ============================================================ */
+const GeoCities = {
+  REGION_RE: /\b(regi[oó]n|region|provincia|province|state|estado|departamento|department|metropolitan)\b/i,
+
+  // Ciudad de una dirección postal: el segundo segmento sin el código postal.
+  // 'Sarandí 287, 11000 Montevideo, …' -> 'Montevideo'.
+  cityFromAddress(addr) {
+    if (!addr) return null;
+    const parts = String(addr).split(',').map(x => x.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
+    const c = parts[1].replace(/^[A-Za-z]{0,2}\d[\w-]*\s+/, '').trim();
+    return (c && !/^\d+$/.test(c)) ? c : null;
+  },
+
+  // 'MVD · Montevideo' -> 'Montevideo'
+  cityOfCode(v) { const q = String(v || '').split('·'); return q.length > 1 ? q[1].trim() : ''; },
+
+  km(a, b) {
+    const R = 6371, r = Math.PI / 180;
+    const p1 = a[0] * r, p2 = b[0] * r, dp = p2 - p1, dl = (b[1] - a[1]) * r;
+    const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  },
+
+  _median(arr) {
+    const a = arr.slice().sort((x, y) => x - y), n = a.length;
+    return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
+  },
+
+  // Devuelve { cityByDay, centers, cities }.
+  deduce({ trip, planning, legs = [], dayNotes = [] }) {
+    const RE = this.REGION_RE;
+    const main = String(trip.city || '').split(',').map(x => x.trim())
+      .filter(Boolean).filter(c => !RE.test(c));
+    const set = new Set(main);
+    legs.forEach(l => { if (l.city && !RE.test(l.city)) set.add(String(l.city).trim()); });
+    planning.forEach(p => {
+      const c = this.cityFromAddress(p.address);
+      if (c && !RE.test(c)) set.add(c);
+      const m = p.metadata || {};
+      [this.cityOfCode(m.destino), this.cityOfCode(m.origen)].forEach(x => { if (x && !RE.test(x)) set.add(x); });
+    });
+    const cities = [...set];
+
+    // Posición de cada candidata: mediana de los puntos que la nombran. Mediana
+    // y no media: un punto mal geocodificado desplazaría el centro.
+    const centers = {};
+    cities.forEach(c => {
+      const low = c.toLowerCase(), la = [], ln = [];
+      planning.forEach(p => {
+        if (p.lat == null) return;
+        const m = p.metadata || {};
+        const txt = [p.title, p.place_name, p.address, m.destino, m.origen].filter(Boolean).join(' ').toLowerCase();
+        if (txt.indexOf(low) !== -1) { la.push(p.lat); ln.push(p.lng); }
+      });
+      if (la.length) centers[c] = [this._median(la), this._median(ln)];
+    });
+
+    // Un barrio pegado a una ciudad del viaje cuenta como esa ciudad.
+    const alias = {};
+    cities.forEach(c => {
+      if (main.indexOf(c) !== -1 || !centers[c]) return;
+      let best = null, dist = Infinity;
+      main.forEach(m => { if (!centers[m]) return; const d = this.km(centers[c], centers[m]); if (d < dist) { dist = d; best = m; } });
+      if (best && dist < 25) alias[c] = best;
+    });
+    const canon = (c) => alias[c] || c;
+
+    const byDay = {};
+    planning.forEach(p => { const k = p.day_date; if (k) (byDay[k] = byDay[k] || []).push(p); });
+    const keys = Object.keys(byDay).sort();
+    if (trip.start_date && trip.end_date) {
+      let d = new Date(trip.start_date + 'T00:00:00');
+      const end = new Date(trip.end_date + 'T00:00:00');
+      while (d <= end) {
+        const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        if (!byDay[k]) byDay[k] = [];
+        d.setDate(d.getDate() + 1);
+      }
+    }
+    const dayKeys = Object.keys(byDay).sort();
+
+    const stays = planning.filter(p => p.type === 'hotel').map(p => ({
+      p, d1: p.consultation_planned_d1 || p.day_date,
+      d2: p.consultation_planned_d2 || (p.metadata && p.metadata.end_date) || null,
+    })).filter(x => x.d1);
+    const stayOn = (iso) => { const h = stays.find(x => x.d1 <= iso && (!x.d2 || iso < x.d2)); return h ? h.p : null; };
+    const legOn = (iso) => {
+      const l = legs.find(x => (x.arrival_date || '') <= iso && (!x.departure_date || iso <= x.departure_date));
+      return l && l.city && !RE.test(l.city) ? String(l.city).trim() : null;
+    };
+
+    // Dirección y nombre pesan más que la cercanía; el radio es corto (30 km)
+    // para no saltar de ciudad (Colonia del Sacramento votaría a Buenos Aires).
+    const RADIO = 30;
+    const vote = (items, iso) => {
+      const v = {};
+      const add = (c, n) => { if (c) v[c] = (v[c] || 0) + n; };
+      items.forEach(p => {
+        const ca = this.cityFromAddress(p.address);
+        if (ca && !RE.test(ca)) add(canon(ca), 3);
+        const txt = [p.title, p.place_name].filter(Boolean).join(' ').toLowerCase();
+        cities.forEach(c => { if (txt.indexOf(c.toLowerCase()) !== -1) add(canon(c), 3); });
+        if (p.type === 'vuelo') add(canon(this.cityOfCode((p.metadata || {}).destino)), 3);
+        if (p.lat != null) {
+          let best = null, dist = Infinity;
+          Object.keys(centers).forEach(c => { const d = this.km([p.lat, p.lng], centers[c]); if (d < dist) { dist = d; best = c; } });
+          if (best && dist < RADIO) add(canon(best), 1);
+        }
+      });
+      const st = stayOn(iso);
+      if (st) { const c = this.cityFromAddress(st.address); if (c && !RE.test(c)) add(canon(c), 2); }
+      const orden = Object.keys(v).sort((a, b) => v[b] - v[a]);
+      return orden.length ? orden[0] : null;
+    };
+
+    const noteTitle = {};
+    dayNotes.forEach(n => { if (n.title) noteTitle[n.date] = n.title; });
+
+    const out = {};
+    dayKeys.forEach(k => { out[k] = legOn(k) || vote(byDay[k] || [], k); });
+    let prev = null;
+    dayKeys.forEach(k => { if (out[k]) prev = out[k]; else if (prev) out[k] = prev; });
+
+    // Los días iniciales huérfanos se emparejan en orden con las ciudades del
+    // viaje que no se han podido situar, y solo si el número coincide exacto:
+    // una etiqueta equivocada es peor que ninguna.
+    const gaps = []; let block = null;
+    dayKeys.forEach(k => {
+      if (!out[k]) { if (block) block.push(k); else block = [k]; }
+      else if (block) { gaps.push(block); block = null; }
+    });
+    if (block) gaps.push(block);
+    const used = new Set(dayKeys.map(k => out[k]).filter(Boolean));
+    const free = main.filter(c => !centers[c] && !used.has(c));
+    if (gaps.length && gaps.length === free.length) {
+      gaps.forEach((g, i) => g.forEach(k => { out[k] = free[i]; }));
+    }
+    return { cityByDay: out, centers, cities };
+  },
+};
+
 const ShareLinks = {
   CFG_KEY: 'viajes_share_gh',
   REG_KEY: 'viajes_share_links',
@@ -13054,11 +13322,6 @@ const Exporter = {
         el('span', { text:'Enlaces externos (Google Maps, webs)' }),
       ]),
       el('label', { class:'switch', style:{padding:'6px 0', width:'100%'} }, [
-        el('input', { id:'sh-map', type:'checkbox', checked: true }),
-        el('span', { class:'switch-track' }),
-        el('span', { text:'Mapa interactivo (requiere conexión)' }),
-      ]),
-      el('label', { class:'switch', style:{padding:'6px 0', width:'100%'} }, [
         el('input', { id:'sh-notes', type:'checkbox', checked: true }),
         el('span', { class:'switch-track' }),
         el('span', { text:'Notas del viaje y de los días' }),
@@ -13075,7 +13338,6 @@ const Exporter = {
       includeMoney: $('#sh-money').checked,
       includeDocs:  $('#sh-docs').checked,
       includeLinks: $('#sh-links').checked,
-      includeMap:   $('#sh-map').checked,
       includeNotes: $('#sh-notes').checked,
       hideTerms: ($('#sh-hide')?.value || '').split('\n').map(x => x.trim()).filter(Boolean),
     });
@@ -13224,10 +13486,11 @@ const Exporter = {
       safe.phrases = [];
     }
 
-    if (!opts.includeMap) {
-      safe.planning.forEach(p => { p.lat = null; p.lng = null; });
-      safe.addresses.forEach(a => { a.lat = null; a.lng = null; });
-    }
+    // El visor ya no lleva mapa: las coordenadas no se usan y no se publican. El
+    // enlace a Google Maps se arma con el nombre del sitio, que además acierta
+    // más que una coordenada mal geocodificada.
+    safe.planning.forEach(p => { p.lat = null; p.lng = null; });
+    safe.addresses.forEach(a => { a.lat = null; a.lng = null; });
 
     // Quitar datos completamente irrelevantes / sensibles que nunca compartimos
     safe.trip.budget_target = null;
@@ -13238,7 +13501,13 @@ const Exporter = {
 
     const payload = JSON.stringify(safe).replace(/<\/script>/g, '<\\/script>');
     const titleEsc = escHtml(t.name);
-    const subtitle = [t.city, t.country].filter(Boolean).join(', ');
+    // El subtítulo repetía ciudades y países y ocupaba media portada. Fechas y
+    // duración arriba; debajo, unas pocas ciudades.
+    const _ciu = (t.city || '').split(',').map(x => x.trim()).filter(Boolean);
+    const subtitle = _ciu.length > 4
+      ? _ciu.slice(0, 4).join(' · ') + ' y ' + (_ciu.length - 4) + ' más'
+      : (_ciu.join(' · ') || t.country || '');
+    const _nd = (t.start_date && t.end_date) ? daysBetween(t.start_date, t.end_date) + 1 : 0;
     const dates = (t.start_date && t.end_date)
       ? `${fmtDateShort(t.start_date)} – ${fmtDateShort(t.end_date)}`
       : 'Sin fechas';
@@ -13248,7 +13517,16 @@ const Exporter = {
     // `opts` se embebe en el HTML como `const OPTS`. `hideTerms` NO puede viajar ahí:
     // escribiría en el archivo justo los términos que se querían ocultar.
     const viewerOpts = Object.assign({}, opts); delete viewerOpts.hideTerms;
-    const viewerScript = Exporter._viewerScript(payload, JSON.stringify(viewerOpts));
+    // Ciudad de cada día: se calcula aquí una sola vez y viaja como dato. Se usan
+    // los datos ORIGINALES, no `safe`: ahí las coordenadas ya están a null y son
+    // justo la señal principal para deducir la ciudad.
+    const geo = GeoCities.deduce({ trip: data.trip, planning: data.planning,
+                                   legs: data.trip_legs || [], dayNotes: data.day_notes || [] });
+    // Coherencia con "Ocultar además": si el usuario tapó un nombre, tampoco debe
+    // asomar como etiqueta de ciudad.
+    Object.keys(geo.cityByDay).forEach(k => { geo.cityByDay[k] = stripTerms(geo.cityByDay[k]); });
+    const viewerScript = Exporter._viewerScript(payload, JSON.stringify(viewerOpts),
+      { cityByDay: JSON.stringify(geo.cityByDay) });
 
     return `<!DOCTYPE html>
 <html lang="es" data-tema="claro">
@@ -13260,132 +13538,177 @@ const Exporter = {
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" />
-${opts.includeMap ? '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />' : ''}
+
 <style>
 :root {
-  --r-sm:8px; --r-md:14px; --r-lg:20px; --r-pill:999px;
-  --sh-1:0 1px 2px rgba(0,0,0,.04),0 1px 1px rgba(0,0,0,.03);
-  --sh-2:0 2px 10px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
-  --gap-4:16px; --gap-5:24px;
-  --bg:#f8fafc; --bg-elev:#fff; --bg-soft:#f1f5f9;
-  --text:#0f172a; --text-muted:#64748b;
-  --line:#e2e8f0; --line-soft:#f1f5f9;
-  --accent:#2563eb; --accent-2:#06b6d4; --accent-bg:#dbeafe;
-  --c-hotel:#0f766e;  --c-hotel-bg:#ccfbf1;
-  --c-flight:#6d28d9; --c-flight-bg:#ede9fe;
-  --c-car:#b45309;    --c-car-bg:#fef3c7;
+  --r-sm:10px; --r-md:16px; --r-lg:22px; --r-pill:999px;
+  --sh-1:0 1px 2px rgba(15,23,42,.04);
+  --sh-2:0 4px 16px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.04);
+  --sh-3:0 12px 40px rgba(15,23,42,.10);
+  --bg:#fbfcfe; --bg-elev:#fff; --bg-soft:#f4f6fa;
+  --text:#0b1220; --text-muted:#68738a;
+  --line:#e8ecf3; --line-soft:#f1f4f9;
+  --accent:#2563eb; --accent-2:#06b6d4; --accent-bg:#eaf1ff;
+  --c-hotel:#0d9488;  --c-hotel-bg:#e6fbf7;
+  --c-flight:#7c3aed; --c-flight-bg:#f2ecff;
+  --c-car:#c2760a;    --c-car-bg:#fff5e0;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg:#0b1220; --bg-elev:#111a2e; --bg-soft:#1e293b;
-    --text:#f1f5f9; --text-muted:#94a3b8;
-    --line:#334155; --line-soft:#1e293b;
-    --accent:#60a5fa; --accent-2:#22d3ee; --accent-bg:#1e3a5f;
-    --c-hotel:#5eead4;  --c-hotel-bg:#134e4a;
-    --c-flight:#c4b5fd; --c-flight-bg:#3b2f63;
-    --c-car:#fcd34d;    --c-car-bg:#4a3410;
+    --sh-1:0 1px 2px rgba(0,0,0,.3);
+    --sh-2:0 4px 18px rgba(0,0,0,.35);
+    --sh-3:0 12px 40px rgba(0,0,0,.5);
+    --bg:#0a0f1a; --bg-elev:#131b2b; --bg-soft:#1a2436;
+    --text:#f2f5fa; --text-muted:#95a1b8;
+    --line:#26324a; --line-soft:#1a2436;
+    --accent:#7aa7ff; --accent-2:#3ddbf0; --accent-bg:#17263f;
+    --c-hotel:#5eead4;  --c-hotel-bg:#10352f;
+    --c-flight:#c9b6ff; --c-flight-bg:#291f45;
+    --c-car:#fbc858;    --c-car-bg:#3a2a0c;
   }
 }
 * { box-sizing:border-box; }
-body { margin:0; font-family:'Manrope',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; line-height:1.5; }
-main { max-width:900px; margin:0 auto; padding:24px 18px 60px; }
+html { -webkit-text-size-adjust:100%; }
+body {
+  margin:0; background:var(--bg); color:var(--text); line-height:1.5;
+  font-family:'Manrope',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  font-feature-settings:"tnum","ss01";
+}
+main { max-width:760px; margin:0 auto; padding:0 16px 72px; }
+/* Barra superior: aparece cuando la portada deja de verse, como en iOS. */
+.topbar {
+  position:fixed; inset:0 0 auto; z-index:20; padding:10px 16px;
+  background:color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter:saturate(180%) blur(18px); -webkit-backdrop-filter:saturate(180%) blur(18px);
+  border-bottom:1px solid transparent;
+  opacity:0; transform:translateY(-100%); transition:opacity .25s ease, transform .25s ease;
+  pointer-events:none;
+}
+.topbar.show { opacity:1; transform:none; border-bottom-color:var(--line); }
+.topbar .tb-in { max-width:760px; margin:0 auto; }
+.topbar .tb-t { font-weight:700; font-size:15px; letter-spacing:-.02em; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .cover {
-  position:relative; height:240px; border-radius:var(--r-lg); overflow:hidden;
-  background:linear-gradient(135deg, var(--accent-bg), var(--bg-soft));
-  display:flex; flex-direction:column; justify-content:flex-end; padding:22px;
+  position:relative; margin-top:16px; min-height:212px; border-radius:26px; overflow:hidden;
+  background:
+    radial-gradient(120% 120% at 12% 8%, color-mix(in srgb, var(--accent) 92%, #fff) 0%, transparent 58%),
+    radial-gradient(120% 120% at 92% 96%, var(--accent-2) 0%, transparent 62%),
+    linear-gradient(150deg, var(--accent), color-mix(in srgb, var(--accent-2) 70%, var(--accent)));
+  display:flex; flex-direction:column; justify-content:flex-end; padding:24px;
+  box-shadow:var(--sh-3);
 }
 .cover img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-.cover::after { content:''; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.55), transparent 60%); }
+.cover.has-photo::after { content:''; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.62), transparent 62%); }
 .cover > * { position:relative; z-index:1; }
-.cover h1 { color:#fff; font-weight:800; letter-spacing:-.02em; font-size:28px; margin:0; text-shadow:0 1px 3px rgba(0,0,0,.4); }
-.cover .meta { color:rgba(255,255,255,.92); margin-top:6px; font-weight:500; text-shadow:0 1px 2px rgba(0,0,0,.3); }
+.cover .eyebrow { color:rgba(255,255,255,.72); font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; margin-bottom:10px; }
+.cover h1 { color:#fff; font-weight:800; letter-spacing:-.04em; font-size:clamp(28px,7vw,40px); line-height:1.06; margin:0; }
+.cover .meta { color:rgba(255,255,255,.94); margin-top:10px; font-weight:600; font-size:14.5px; letter-spacing:-.01em; }
+.cover .meta-2 { color:rgba(255,255,255,.74); margin-top:4px; font-weight:500; font-size:13px; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(76px,1fr)); gap:8px; margin-top:12px; }
+.stat { background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); padding:12px 10px; text-align:center; box-shadow:var(--sh-1); }
+.stat b { display:block; font-size:21px; font-weight:800; letter-spacing:-.03em; line-height:1.1; }
+.stat span { display:block; margin-top:2px; font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.03em; }
 .share-banner {
-  display:flex; align-items:center; gap:10px;
-  background:var(--accent-bg); color:var(--text);
-  border-radius:var(--r-md); padding:10px 14px; margin:14px 0 0;
-  font-size:13px;
+  display:flex; align-items:center; gap:9px; margin:12px 0 0;
+  background:var(--accent-bg); color:var(--accent);
+  border-radius:var(--r-md); padding:11px 14px; font-size:13px; font-weight:600;
 }
-.share-banner svg { width:16px; height:16px; stroke:var(--accent); }
-h2.section { font-weight:600; letter-spacing:-.02em; font-size:22px; margin:36px 0 12px; }
-h3.day { font-weight:600; letter-spacing:-.01em; font-size:17px; margin:16px 0 8px; }
-.day-num { font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; font-size:12px; color:var(--text-muted); margin-right:8px; }
-.timeline { position:relative; margin-left:8px; padding-left:30px; border-left:2px solid var(--line-soft); }
-.tl-item { position:relative; padding:10px 14px; background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); margin-bottom:10px; box-shadow:var(--sh-1); }
-.tl-item::before { content:''; position:absolute; left:-37px; top:14px; width:14px; height:14px; border-radius:50%; background:var(--bg-elev); border:2px solid var(--accent); box-shadow:0 0 0 3px var(--bg); }
-.tl-time { display:inline-block; font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; font-size:11px; background:var(--bg-soft); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-pill); margin-right:6px; }
-.tl-title { font-weight:600; }
-.tl-sub { color:var(--text-muted); font-size:13.5px; margin-top:4px; overflow-wrap:anywhere; }
-.tl-title, .day-note, .card p, main { overflow-wrap:anywhere; }
-.tl-link { display:inline-block; margin-top:6px; font-size:13px; }
-.day-note {
-  background:color-mix(in srgb, var(--accent-bg) 30%, var(--bg-elev));
-  border:1px dashed color-mix(in srgb, var(--accent) 35%, var(--line));
-  border-radius:var(--r-md); padding:10px 14px; margin-bottom:10px;
-  font-size:13.5px; white-space:pre-wrap;
-}
-.card { background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); padding:14px 16px; margin-bottom:10px; box-shadow:var(--sh-1); }
-.card .ti { font-weight:600; display:flex; align-items:center; gap:8px; }
-.card .sub { color:var(--text-muted); font-size:13.5px; margin-top:4px; }
-.card .ref { font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; font-size:11px; background:var(--bg-soft); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-pill); }
-.card a { color:var(--accent); }
-.kv { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line-soft); font-size:14px; }
-.kv:last-child { border-bottom:none; }
-.kv .k { color:var(--text-muted); }
-.kv .v { font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; }
-.muted { color:var(--text-muted); }
-#map { height:380px; border-radius:var(--r-lg); border:1px solid var(--line); overflow:hidden; }
-/* --- Itinerario plegable --- */
-.itin-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 14px; }
+.share-banner svg { width:15px; height:15px; flex:none; }
+h2.section { font-weight:800; letter-spacing:-.04em; font-size:24px; margin:44px 0 16px; }
+h3.day { font-weight:700; letter-spacing:-.02em; font-size:16px; margin:18px 0 8px; }
+.itin-tools { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 14px; }
 .btn-mini {
-  font:inherit; font-size:13px; font-weight:600; cursor:pointer;
-  background:var(--bg-elev); color:var(--text); border:1px solid var(--line);
-  border-radius:var(--r-pill); padding:6px 14px;
+  font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; letter-spacing:-.01em;
+  background:var(--bg-elev); color:var(--accent); border:1px solid var(--line);
+  border-radius:var(--r-pill); padding:8px 16px; box-shadow:var(--sh-1);
+  transition:background .15s ease, transform .12s ease; -webkit-tap-highlight-color:transparent;
 }
-.btn-mini:hover { background:var(--bg-soft); }
+.btn-mini:hover { background:var(--accent-bg); }
+.btn-mini:active { transform:scale(.96); }
 .itin-count { color:var(--text-muted); font-size:13px; }
 details.day-block {
-  background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md);
+  background:var(--bg-elev); border:1px solid var(--line); border-radius:20px;
   margin-bottom:10px; box-shadow:var(--sh-1); overflow:hidden;
+  transition:box-shadow .2s ease, border-color .2s ease;
 }
-details.day-block[open] { box-shadow:var(--sh-2); border-color:color-mix(in srgb, var(--accent) 30%, var(--line)); }
-summary.day-head { list-style:none; cursor:pointer; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; }
+details.day-block[open] { box-shadow:var(--sh-2); border-color:color-mix(in srgb, var(--accent) 22%, var(--line)); }
+summary.day-head {
+  list-style:none; cursor:pointer; padding:14px; display:flex; gap:13px; align-items:center;
+  -webkit-tap-highlight-color:transparent; transition:background .15s ease;
+}
 summary.day-head::-webkit-details-marker { display:none; }
-summary.day-head:hover { background:var(--bg-soft); }
-.dh-caret { flex:none; width:16px; height:16px; margin-top:3px; color:var(--text-muted); transition:transform .18s ease; }
-details[open] .dh-caret { transform:rotate(90deg); }
-.dh-main { flex:1; min-width:0; }
-.dh-top { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
-.dh-num { font-feature-settings:"tnum","ss01"; font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
-.dh-date { font-weight:600; font-size:15.5px; letter-spacing:-.01em; }
-.dh-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
-.chip {
-  display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
-  font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:var(--r-pill);
-  border:1px solid transparent;
+summary.day-head:hover, summary.day-head:active { background:var(--bg-soft); }
+.dh-badge {
+  flex:none; width:38px; height:38px; border-radius:13px; background:var(--accent-bg); color:var(--accent);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1;
 }
-.chip-place  { background:var(--accent-bg); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 25%, transparent); }
-.chip-hotel  { background:var(--c-hotel-bg);  color:var(--c-hotel);  border-color:color-mix(in srgb, var(--c-hotel) 25%, transparent); }
-.chip-flight { background:var(--c-flight-bg); color:var(--c-flight); border-color:color-mix(in srgb, var(--c-flight) 25%, transparent); }
-.chip-car    { background:var(--c-car-bg);    color:var(--c-car);    border-color:color-mix(in srgb, var(--c-car) 25%, transparent); }
-.chip-count  { background:var(--bg-soft); color:var(--text-muted); font-weight:500; }
-.day-body { padding:2px 14px 14px; }
-.day-empty { color:var(--text-muted); font-size:13.5px; padding:0 14px 16px; }
-.map-hint { color:var(--text-muted); font-size:13px; margin:0 0 10px; }
-.map-pop b { display:block; margin-bottom:2px; }
-.map-pop a { font-size:12.5px; }
-footer.foot { margin-top:48px; padding-top:24px; border-top:1px solid var(--line-soft); color:var(--text-muted); font-size:12px; text-align:center; }
+.dh-badge span { font-size:8.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; opacity:.7; margin-bottom:2px; }
+.dh-badge b { font-size:16px; font-weight:800; letter-spacing:-.03em; }
+.dh-main { flex:1; min-width:0; }
+.dh-date { font-weight:700; font-size:15.5px; letter-spacing:-.025em; }
+.dh-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.dh-caret { flex:none; width:16px; height:16px; color:var(--text-muted); opacity:.5; transition:transform .22s cubic-bezier(.4,0,.2,1); }
+details[open] .dh-caret { transform:rotate(90deg); }
+.chip {
+  display:inline-flex; align-items:center; gap:5px; white-space:nowrap; max-width:100%;
+  font-size:12px; font-weight:700; letter-spacing:-.01em; padding:4px 11px 4px 8px;
+  border-radius:var(--r-pill); border:none; overflow:hidden; text-overflow:ellipsis;
+}
+.chip-ico { display:inline-flex; flex:none; }
+.chip-ico svg { width:13px; height:13px; opacity:.9; }
+.chip-place  { background:var(--accent-bg); color:var(--accent); }
+.chip-hotel  { background:var(--c-hotel-bg);  color:var(--c-hotel); }
+.chip-flight { background:var(--c-flight-bg); color:var(--c-flight); }
+.chip-car    { background:var(--c-car-bg);    color:var(--c-car); }
+.chip-count  { background:var(--bg-soft); color:var(--text-muted); font-weight:600; padding:4px 11px; }
+.day-body { padding:2px 16px 16px; }
+.day-empty { color:var(--text-muted); font-size:13.5px; padding:0 16px 18px; }
+.timeline { position:relative; margin-left:5px; padding-left:22px; border-left:1.5px solid var(--line); }
+.tl-item { position:relative; padding:12px 14px; background:var(--bg-soft); border-radius:15px; margin-bottom:8px; }
+.tl-item::before {
+  content:''; position:absolute; left:-27px; top:18px; width:8px; height:8px; border-radius:50%;
+  background:var(--accent); opacity:.5; box-shadow:0 0 0 4px var(--bg-elev);
+}
+.tl-time {
+  display:inline-block; font-size:11.5px; font-weight:700;
+  background:var(--bg-elev); color:var(--accent); padding:2px 8px; border-radius:var(--r-pill); margin-right:7px;
+}
+.tl-title { font-weight:700; letter-spacing:-.02em; font-size:15px; }
+.tl-sub { color:var(--text-muted); font-size:13.5px; margin-top:5px; overflow-wrap:anywhere; }
+.tl-title, .day-note, .card p, main { overflow-wrap:anywhere; }
+.tl-link { display:inline-block; margin-top:8px; font-size:12.5px; font-weight:700; }
+.day-note {
+  background:var(--accent-bg); border:none; border-left:3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius:12px; padding:11px 14px; margin-bottom:10px; font-size:13.5px; white-space:pre-wrap;
+}
+.card { background:var(--bg-elev); border:1px solid var(--line); border-radius:18px; padding:15px 16px; margin-bottom:10px; box-shadow:var(--sh-1); }
+.card .ti { font-weight:700; letter-spacing:-.02em; display:flex; align-items:center; gap:8px; }
+.card .sub { color:var(--text-muted); font-size:13.5px; margin-top:4px; }
+.card .ref { font-size:11px; font-weight:700; background:var(--bg-soft); color:var(--text-muted); padding:3px 9px; border-radius:var(--r-pill); }
+.card a { color:var(--accent); font-weight:600; }
+.kv { display:flex; justify-content:space-between; gap:16px; padding:9px 0; border-bottom:1px solid var(--line-soft); font-size:14px; }
+.kv:last-child { border-bottom:none; }
+.kv .k { color:var(--text-muted); }
+.kv .v { font-weight:600; text-align:right; }
+.muted { color:var(--text-muted); }
+.notes-card { background:var(--bg-elev); border:1px solid var(--line); border-radius:18px; padding:15px 16px; white-space:pre-wrap; font-size:14px; box-shadow:var(--sh-1); }
+footer.foot { margin-top:56px; padding-top:26px; border-top:1px solid var(--line-soft); color:var(--text-muted); font-size:12px; text-align:center; }
 a { color:var(--accent); text-decoration:none; }
 a:hover { text-decoration:underline; }
-.notes-card { background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); padding:14px 16px; white-space:pre-wrap; font-size:14px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration:.01ms !important; animation-duration:.01ms !important; } }
 </style>
 </head>
 <body>
+<div class="topbar" id="topbar"><div class="tb-in"><span class="tb-t">${titleEsc}</span></div></div>
 <main>
-  <div class="cover">
+  <div class="cover${safe.trip.cover_photo_url ? ' has-photo' : ''}">
     ${safe.trip.cover_photo_url ? `<img src="${escHtml(safe.trip.cover_photo_url)}" alt="" onerror="this.remove()">` : ''}
+    <div class="eyebrow">Itinerario</div>
     <h1>${titleEsc}</h1>
-    <div class="meta">${escHtml(dates)}${subtitle ? ' · ' + escHtml(subtitle) : ''}</div>
+    <div class="meta">${escHtml(dates)}</div>
+    ${subtitle ? `<div class="meta-2">${escHtml(subtitle)}</div>` : ''}
   </div>
+  <div class="stats" id="stats"></div>
   <div class="share-banner">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
     Solo lectura · viaje compartido por Rubén
@@ -13393,7 +13716,7 @@ a:hover { text-decoration:underline; }
   <div id="content"></div>
   <footer class="foot">Generado desde la app Viajes</footer>
 </main>
-${opts.includeMap ? '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></scr'+'ipt>' : ''}
+
 <script>
 ${viewerScript}
 </scr${''}ipt>
@@ -13404,10 +13727,11 @@ ${viewerScript}
   // Script JS del viewer standalone. Se devuelve como string concatenado para
   // que los ${...} y backticks de DENTRO no los interprete el template literal
   // del main script (problema clásico de templates anidados).
-  _viewerScript(dataJSON, optsJSON) {
+  _viewerScript(dataJSON, optsJSON, geoJSON) {
     const lines = [];
     lines.push('const DATA = ' + dataJSON + ';');
     lines.push('const OPTS = ' + optsJSON + ';');
+    lines.push('const CIUDAD_DIA = ' + geoJSON.cityByDay + ';');
     lines.push("function escHtml(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}");
     lines.push("function fmtDayLong(iso){if(!iso)return'';return new Date(iso+'T00:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});}");
     lines.push("function fmtDateShort(iso){if(!iso)return'';return new Date(iso+'T00:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});}");
@@ -13420,8 +13744,33 @@ ${viewerScript}
     lines.push("  return n;");
     lines.push("}");
     lines.push("");
+    lines.push("// Iconos de trazo, coherentes con los de la app (mismo grosor y redondeos).");
+    lines.push("const ICON = {");
+    lines.push("  pin:   '<path d=\\'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z\\'/><circle cx=\\'12\\' cy=\\'10\\' r=\\'2.6\\'/>',");
+    lines.push("  hotel: '<path d=\\'M3 20V7l9-4 9 4v13\\'/><path d=\\'M3 20h18\\'/><path d=\\'M9 20v-5h6v5\\'/>',");
+    lines.push("  plane: '<path d=\\'M10.2 3.6a1.5 1.5 0 0 1 2.6 0l2.6 5.3 5.4 1a1 1 0 0 1 .5 1.7l-3.9 3.5.9 5.5a1 1 0 0 1-1.5 1L12 18.8l-4.8 2.8a1 1 0 0 1-1.5-1l.9-5.5-3.9-3.5a1 1 0 0 1 .5-1.7l5.4-1z\\'/>',");
+    lines.push("  car:   '<path d=\\'M5 17h14M6.5 17V9.5L8 6h8l1.5 3.5V17\\'/><circle cx=\\'8\\' cy=\\'17\\' r=\\'1.6\\'/><circle cx=\\'16\\' cy=\\'17\\' r=\\'1.6\\'/>',");
+    lines.push("};");
+    lines.push("const ico = (k) => '<svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.8\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' aria-hidden=\\'true\\'>' + ICON[k] + '</svg>';");
+    lines.push("// Pastilla con icono + texto (el icono es decorativo, el texto lleva el dato).");
+    lines.push("function chip(cls, iconKey, txt) {");
+    lines.push("  const c = el('span', {class:'chip ' + cls});");
+    lines.push("  if (iconKey) c.appendChild(el('span', {class:'chip-ico', html: ico(iconKey)}));");
+    lines.push("  c.appendChild(el('span', {text: txt}));");
+    lines.push("  return c;");
+    lines.push("}");
+    lines.push("");
     lines.push("const root = document.getElementById('content');");
     lines.push("const trip = DATA.trip;");
+    lines.push("");
+    lines.push("// La barra superior aparece cuando la portada deja de verse.");
+    lines.push("(function(){");
+    lines.push("  const tb = document.getElementById('topbar');");
+    lines.push("  const cover = document.querySelector('.cover');");
+    lines.push("  if (!tb || !cover || !('IntersectionObserver' in window)) return;");
+    lines.push("  new IntersectionObserver(([e]) => tb.classList.toggle('show', !e.isIntersecting),");
+    lines.push("    { rootMargin:'-60px 0px 0px 0px' }).observe(cover);");
+    lines.push("})();");
     lines.push("");
     lines.push("// === Itinerario (acordeón por días) ===");
     lines.push("// Helpers de fechas y de etiquetado del día.");
@@ -13454,111 +13803,7 @@ ${viewerScript}
     lines.push("  const l = LEGS.find(x => (x.arrival_date || '') <= iso && (!x.departure_date || iso <= x.departure_date));");
     lines.push("  return l && l.city ? l.city : null;");
     lines.push("}");
-    lines.push("// --- Ciudad de cada día -------------------------------------------------");
-    lines.push("// Los lugares casi nunca traen dirección, pero sí coordenadas. Así que la");
-    lines.push("// ciudad de cada día se deduce votando entre unas candidatas con posición");
-    lines.push("// conocida. Nada se inventa: si un día no reúne ningún voto se queda sin");
-    lines.push("// pastilla (o hereda la del día anterior, que es donde se dormía).");
-    lines.push("const REGION_RE = /\\b(regi[oó]n|region|provincia|province|state|estado|departamento|department|metropolitan)\\b/i;");
-    lines.push("const norm0 = (x) => String(x || '').trim();");
-    lines.push("// 'MVD · Montevideo' -> 'Montevideo' (la parte con nombre, no el código).");
-    lines.push("const cityOfCode = (v) => { const q = String(v || '').split('·'); return q.length > 1 ? q[1].trim() : ''; };");
-    lines.push("");
-    lines.push("// 1) Candidatas: las ciudades del viaje, las de los tramos, las de las");
-    lines.push("//    direcciones y los destinos de los vuelos. Fuera provincias y regiones.");
-    lines.push("const CIUDADES_TRIP = (trip.city || '').split(',').map(norm0).filter(Boolean).filter(c => !REGION_RE.test(c));");
-    lines.push("const candSet = new Set(CIUDADES_TRIP);");
-    lines.push("LEGS.forEach(l => { if (l.city && !REGION_RE.test(l.city)) candSet.add(norm0(l.city)); });");
-    lines.push("DATA.planning.forEach(p => {");
-    lines.push("  const c = cityFromAddress(p.address);");
-    lines.push("  if (c && !REGION_RE.test(c)) candSet.add(c);");
-    lines.push("  const m = p.metadata || {};");
-    lines.push("  [cityOfCode(m.destino), cityOfCode(m.origen)].forEach(x => { if (x && !REGION_RE.test(x)) candSet.add(x); });");
-    lines.push("});");
-    lines.push("const CANDS = [...candSet];");
-    lines.push("");
-    lines.push("// 2) Posición de cada candidata: mediana de los puntos que la nombran. Mediana");
-    lines.push("//    y no media, para que un punto suelto lejano no arrastre el centro.");
-    lines.push("const mediana = (arr) => { const a = arr.slice().sort((x,y) => x-y); const n = a.length;");
-    lines.push("  return n % 2 ? a[(n-1)/2] : (a[n/2-1] + a[n/2]) / 2; };");
-    lines.push("const CEN = {};");
-    lines.push("CANDS.forEach(c => {");
-    lines.push("  const low = c.toLowerCase(); const la = [], ln = [];");
-    lines.push("  DATA.planning.forEach(p => {");
-    lines.push("    if (p.lat == null) return;");
-    lines.push("    const m = p.metadata || {};");
-    lines.push("    const txt = [p.title, p.place_name, p.address, m.destino, m.origen].filter(Boolean).join(' ').toLowerCase();");
-    lines.push("    if (txt.indexOf(low) !== -1) { la.push(p.lat); ln.push(p.lng); }");
-    lines.push("  });");
-    lines.push("  if (la.length) CEN[c] = [mediana(la), mediana(ln)];");
-    lines.push("});");
-    lines.push("const kmEntre = (a, b) => {");
-    lines.push("  const R = 6371, r = Math.PI/180;");
-    lines.push("  const p1 = a[0]*r, p2 = b[0]*r, dp = p2-p1, dl = (b[1]-a[1])*r;");
-    lines.push("  const h = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;");
-    lines.push("  return 2*R*Math.asin(Math.sqrt(h));");
-    lines.push("};");
-    lines.push("");
-    lines.push("// 3) Un barrio o una localidad pegada a una ciudad del viaje cuenta como esa");
-    lines.push("//    ciudad: Ñuñoa -> Santiago, San Carlos de Bariloche -> Bariloche.");
-    lines.push("const ALIAS = {};");
-    lines.push("CANDS.forEach(c => {");
-    lines.push("  if (CIUDADES_TRIP.indexOf(c) !== -1 || !CEN[c]) return;");
-    lines.push("  let mejor = null, dist = Infinity;");
-    lines.push("  CIUDADES_TRIP.forEach(m => { if (!CEN[m]) return; const d = kmEntre(CEN[c], CEN[m]); if (d < dist) { dist = d; mejor = m; } });");
-    lines.push("  if (mejor && dist < 25) ALIAS[c] = mejor;");
-    lines.push("});");
-    lines.push("const canon = (c) => ALIAS[c] || c;");
-    lines.push("");
-    lines.push("// 4) Voto por día. La dirección y el nombre pesan más que la cercanía porque");
-    lines.push("//    son explícitos; el radio es corto (30 km) para no saltar de ciudad.");
-    lines.push("const RADIO_KM = 30;");
-    lines.push("function votarCiudad(items, iso) {");
-    lines.push("  const v = {};");
-    lines.push("  const suma = (c, n) => { if (c) v[c] = (v[c] || 0) + n; };");
-    lines.push("  items.forEach(p => {");
-    lines.push("    const ca = cityFromAddress(p.address);");
-    lines.push("    if (ca && !REGION_RE.test(ca)) suma(canon(ca), 3);");
-    lines.push("    const txt = [p.title, p.place_name].filter(Boolean).join(' ').toLowerCase();");
-    lines.push("    CANDS.forEach(c => { if (txt.indexOf(c.toLowerCase()) !== -1) suma(canon(c), 3); });");
-    lines.push("    const m = p.metadata || {};");
-    lines.push("    if (p.type === 'vuelo') suma(canon(cityOfCode(m.destino)), 3);");
-    lines.push("    if (p.lat != null) {");
-    lines.push("      let mejor = null, dist = Infinity;");
-    lines.push("      Object.keys(CEN).forEach(c => { const d = kmEntre([p.lat, p.lng], CEN[c]); if (d < dist) { dist = d; mejor = c; } });");
-    lines.push("      if (mejor && dist < RADIO_KM) suma(canon(mejor), 1);");
-    lines.push("    }");
-    lines.push("  });");
-    lines.push("  const st = stayOn(iso);");
-    lines.push("  if (st) { const c = cityFromAddress(st.address); if (c && !REGION_RE.test(c)) suma(canon(c), 2); }");
-    lines.push("  const orden = Object.keys(v).sort((a,b) => v[b]-v[a]);");
-    lines.push("  return orden.length ? orden[0] : null;");
-    lines.push("}");
-    lines.push("");
-    lines.push("// 5) Resolver todos los días de una vez: voto -> tramo -> herencia del día");
-    lines.push("//    anterior -> y, para los días iniciales que quedan huérfanos, las ciudades");
-    lines.push("//    del viaje que no se han situado, emparejadas en orden.");
-    lines.push("function resolverCiudades(keys, byDayRef) {");
-    lines.push("  const out = {};");
-    lines.push("  keys.forEach(k => { out[k] = legOn(k) || votarCiudad(byDayRef[k] || [], k); });");
-    lines.push("  let prev = null;");
-    lines.push("  keys.forEach(k => { if (out[k]) prev = out[k]; else if (prev) out[k] = prev; });");
-    lines.push("  const huecos = [];");
-    lines.push("  let bloque = null;");
-    lines.push("  keys.forEach(k => {");
-    lines.push("    if (!out[k]) { if (bloque) bloque.push(k); else bloque = [k]; }");
-    lines.push("    else if (bloque) { huecos.push(bloque); bloque = null; }");
-    lines.push("  });");
-    lines.push("  if (bloque) huecos.push(bloque);");
-    lines.push("  const usadas = new Set(keys.map(k => out[k]).filter(Boolean));");
-    lines.push("  const libres = CIUDADES_TRIP.filter(c => !CEN[c] && !usadas.has(c));");
-    lines.push("  // Solo si la correspondencia es exacta. Con cualquier duda, sin pastilla:");
-    lines.push("  // una etiqueta equivocada es peor que ninguna.");
-    lines.push("  if (huecos.length && huecos.length === libres.length) {");
-    lines.push("    huecos.forEach((h, i) => h.forEach(k => { out[k] = libres[i]; }));");
-    lines.push("  }");
-    lines.push("  return out;");
-    lines.push("}");
+    lines.push("// La ciudad de cada día viene ya calculada por GeoCities en la app.");
     lines.push("");
     lines.push("// 'MVD · Montevideo' -> 'MVD'. Sin metadata, se cae al título del evento.");
     lines.push("const iata = (v) => String(v || '').split('·')[0].trim();");
@@ -13577,8 +13822,27 @@ ${viewerScript}
     lines.push("  while (d <= end) { const k = isoOf(d); if (!byDay[k]) byDay[k]=[]; d.setDate(d.getDate()+1); }");
     lines.push("}");
     lines.push("const dayKeys = Object.keys(byDay).sort();");
-    lines.push("const CIUDAD_DIA = resolverCiudades(Object.keys(byDay).sort(), byDay);");
+
     lines.push("const blocks = [];");
+    lines.push("");
+    lines.push("// Cifras de cabecera: dan la escala del viaje de un vistazo.");
+    lines.push("(function(){");
+    lines.push("  const cont = document.getElementById('stats');");
+    lines.push("  if (!cont) return;");
+    lines.push("  const ciudades = new Set(Object.values(CIUDAD_DIA).filter(Boolean));");
+    lines.push("  const paradas = DATA.planning.filter(p => !['hotel','vuelo','coche','transporte'].includes(p.type)).length;");
+    lines.push("  const vuelos = DATA.planning.filter(p => p.type === 'vuelo').length;");
+    lines.push("  const aloj = DATA.planning.filter(p => p.type === 'hotel').length;");
+    lines.push("  [[dayKeys.length, dayKeys.length === 1 ? 'Día' : 'Días'],");
+    lines.push("   [ciudades.size, ciudades.size === 1 ? 'Ciudad' : 'Ciudades'],");
+    lines.push("   [paradas, paradas === 1 ? 'Parada' : 'Paradas'],");
+    lines.push("   [vuelos, 'Vuelos'], [aloj, 'Alojam.']].filter(x => x[0] > 0).forEach(([n, lab]) => {");
+    lines.push("    const d = el('div', {class:'stat'});");
+    lines.push("    d.appendChild(el('b', {text: String(n)}));");
+    lines.push("    d.appendChild(el('span', {text: lab}));");
+    lines.push("    cont.appendChild(d);");
+    lines.push("  });");
+    lines.push("})();");
     lines.push("");
     lines.push("if (dayKeys.length) {");
     lines.push("  root.appendChild(el('h2', {class:'section', text:'Itinerario'}));");
@@ -13602,33 +13866,36 @@ ${viewerScript}
     lines.push("    const det = el('details', {class:'day-block'});");
     lines.push("    det.id = 'dia-' + k;");
     lines.push("    const head = el('summary', {class:'day-head'});");
-    lines.push("    head.appendChild(el('span', {class:'dh-caret', html:'<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 18l6-6-6-6\"/></svg>'}));");
+    lines.push("    if (dayNum) {");
+    lines.push("      const badge = el('span', {class:'dh-badge'});");
+    lines.push("      badge.appendChild(el('span', {text:'día'}));");
+    lines.push("      badge.appendChild(el('b', {text: String(dayNum)}));");
+    lines.push("      head.appendChild(badge);");
+    lines.push("    }");
     lines.push("    const main = el('div', {class:'dh-main'});");
-    lines.push("    const top = el('div', {class:'dh-top'});");
-    lines.push("    if (dayNum) top.appendChild(el('span', {class:'dh-num', text:'Día '+dayNum}));");
-    lines.push("    top.appendChild(el('span', {class:'dh-date', text: k==='sin-fecha' ? 'Sin fecha' : fmtDayLong(k)}));");
-    lines.push("    main.appendChild(top);");
+    lines.push("    main.appendChild(el('div', {class:'dh-date', text: k==='sin-fecha' ? 'Sin fecha' : fmtDayLong(k)}));");
     lines.push("");
     lines.push("    const chips = el('div', {class:'dh-chips'});");
     lines.push("    const ciudad = CIUDAD_DIA[k];");
-    lines.push("    if (ciudad) chips.appendChild(el('span', {class:'chip chip-place', text:'📍 ' + ciudad}));");
+    lines.push("    if (ciudad) chips.appendChild(chip('chip-place', 'pin', ciudad));");
     lines.push("    // El título que el usuario puso al día no se pierde: si dice algo distinto");
     lines.push("    // de la ciudad, va en su propia pastilla.");
     lines.push("    if (note && note.title && note.title !== ciudad) {");
     lines.push("      chips.appendChild(el('span', {class:'chip chip-count', text: note.title}));");
     lines.push("    }");
     lines.push("    const stay = stayOn(k);");
-    lines.push("    if (stay) chips.appendChild(el('span', {class:'chip chip-hotel', text:'🏨 ' + (stay.place_name || stay.title)}));");
+    lines.push("    if (stay) chips.appendChild(chip('chip-hotel', 'hotel', stay.place_name || stay.title));");
     lines.push("    items.filter(p => p.type === 'vuelo').forEach(p => {");
-    lines.push("      chips.appendChild(el('span', {class:'chip chip-flight', text:'✈️ ' + flightLabel(p)}));");
+    lines.push("      chips.appendChild(chip('chip-flight', 'plane', flightLabel(p)));");
     lines.push("    });");
     lines.push("    items.filter(p => p.type === 'coche').forEach(p => {");
-    lines.push("      chips.appendChild(el('span', {class:'chip chip-car', text:'🚗 ' + (p.place_name || p.title)}));");
+    lines.push("      chips.appendChild(chip('chip-car', 'car', p.place_name || p.title));");
     lines.push("    });");
     lines.push("    const paradas = items.filter(p => !['hotel','vuelo','coche'].includes(p.type)).length;");
     lines.push("    if (paradas) chips.appendChild(el('span', {class:'chip chip-count', text: paradas + (paradas===1?' parada':' paradas')}));");
     lines.push("    if (chips.children.length) main.appendChild(chips);");
     lines.push("    head.appendChild(main);");
+    lines.push("    head.appendChild(el('span', {class:'dh-caret', html:'<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 18l6-6-6-6\"/></svg>'}));");
     lines.push("    det.appendChild(head);");
     lines.push("");
     lines.push("    const bodyDiv = el('div', {class:'day-body'});");
@@ -13645,7 +13912,7 @@ ${viewerScript}
     lines.push("        if (it.address) tlItem.appendChild(el('div', {class:'tl-sub', text: it.address}));");
     lines.push("        if (it.notes) tlItem.appendChild(el('div', {class:'tl-sub', style:{whiteSpace:'pre-wrap'}, text: it.notes}));");
     lines.push("        const gm = OPTS.includeLinks ? gmapsUrl(it.lat, it.lng, it.place_name) : null;");
-    lines.push("        if (gm) tlItem.appendChild(el('a', {class:'tl-link', href: gm, target:'_blank', rel:'noopener', text:'Abrir en Google Maps'}));");
+    lines.push("        if (gm) tlItem.appendChild(el('a', {class:'tl-link', href: gm, target:'_blank', rel:'noopener', text:'Ver en el mapa ›'}));");
     lines.push("        tl.appendChild(tlItem);");
     lines.push("      });");
     lines.push("      bodyDiv.appendChild(tl);");
@@ -13658,80 +13925,6 @@ ${viewerScript}
     lines.push("  });");
     lines.push("}");
     lines.push("");
-    lines.push("// Abre un día y lo trae a la vista (lo usan los popups del mapa).");
-    lines.push("function abrirDia(iso) {");
-    lines.push("  const d = document.getElementById('dia-' + iso);");
-    lines.push("  if (!d) return;");
-    lines.push("  d.open = true;");
-    lines.push("  d.scrollIntoView({ behavior:'smooth', block:'start' });");
-    lines.push("}");
-    lines.push("window.abrirDia = abrirDia;");
-    lines.push("");
-    lines.push("// === Mapa de la ruta ===");
-    lines.push("// Puntos en orden cronológico: una línea por día con su color, y un tramo");
-    lines.push("// discontinuo entre el último punto de un día y el primero del siguiente.");
-    lines.push("if (OPTS.includeMap && typeof L !== 'undefined') {");
-    lines.push("  const porDia = [];");
-    lines.push("  dayKeys.forEach(k => {");
-    lines.push("    const pts = (byDay[k] || [])");
-    lines.push("      .filter(p => p.lat != null && p.lng != null)");
-    lines.push("      .map(p => ({ lat:p.lat, lng:p.lng, name:p.title, sub:p.place_name || p.address || '', iso:k, type:p.type }));");
-    lines.push("    if (pts.length) porDia.push({ iso:k, pts });");
-    lines.push("  });");
-    lines.push("  const sueltos = DATA.addresses.filter(a => a.lat != null && a.lng != null)");
-    lines.push("    .map(a => ({ lat:a.lat, lng:a.lng, name:a.label, sub:a.address || '', iso:null, type:'otro' }));");
-    lines.push("  const total = porDia.reduce((n,d) => n + d.pts.length, 0) + sueltos.length;");
-    lines.push("");
-    lines.push("  if (total) {");
-    lines.push("    root.appendChild(el('h2', {class:'section', text:'Mapa de la ruta'}));");
-    lines.push("    root.appendChild(el('p', {class:'map-hint', text: total + ' puntos · el color avanza con los días. Toca un punto para ir a su día.'}));");
-    lines.push("    const mapEl = el('div', {id:'map'}); root.appendChild(mapEl);");
-    lines.push("    setTimeout(() => {");
-    lines.push("      const m = L.map('map', { scrollWheelZoom:false });");
-    lines.push("      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(m);");
-    lines.push("      const capa = L.featureGroup().addTo(m);");
-    lines.push("      // Tono azul -> magenta según avanza el viaje: se ve la progresión.");
-    lines.push("      const colorDia = (i) => 'hsl(' + Math.round(212 + (porDia.length > 1 ? i*130/(porDia.length-1) : 0)) + ',72%,48%)';");
-    lines.push("      const num = (iso) => trip.start_date ? daysBetween(trip.start_date, iso)+1 : null;");
-    lines.push("      // Dos pasadas: primero TODAS las líneas y después los puntos. Si se");
-    lines.push("      // mezclan, la línea de un día tapa los marcadores de los días anteriores");
-    lines.push("      // que caen en la misma zona y el clic nunca llega al punto. Además las");
-    lines.push("      // líneas van con interactive:false para no robar el clic.");
-    lines.push("      porDia.forEach((d, i) => {");
-    lines.push("        const col = colorDia(i);");
-    lines.push("        if (d.pts.length > 1) {");
-    lines.push("          L.polyline(d.pts.map(x => [x.lat, x.lng]), { color:col, weight:3, opacity:.75, interactive:false }).addTo(capa);");
-    lines.push("        }");
-    lines.push("        if (i > 0) {");
-    lines.push("          const prev = porDia[i-1].pts[porDia[i-1].pts.length-1];");
-    lines.push("          L.polyline([[prev.lat, prev.lng], [d.pts[0].lat, d.pts[0].lng]],");
-    lines.push("            { color:'#94a3b8', weight:2, opacity:.6, dashArray:'5,7', interactive:false }).addTo(capa);");
-    lines.push("        }");
-    lines.push("      });");
-    lines.push("      porDia.forEach((d, i) => {");
-    lines.push("        const col = colorDia(i);");
-    lines.push("        d.pts.forEach(x => {");
-    lines.push("          const dn = num(x.iso);");
-    lines.push("          const mk = L.circleMarker([x.lat, x.lng], {");
-    lines.push("            radius: x.type === 'hotel' ? 8 : 6, color:'#fff', weight:2,");
-    lines.push("            fillColor: col, fillOpacity:1,");
-    lines.push("          }).addTo(capa);");
-    lines.push("          const cab = (dn ? 'Día ' + dn + ' · ' : '') + fmtDateShort(x.iso);");
-    lines.push("          mk.bindPopup('<div class=\"map-pop\"><b>' + escHtml(x.name) + '</b>' +");
-    lines.push("            (x.sub ? escHtml(x.sub) + '<br>' : '') +");
-    lines.push("            '<span class=\"muted\">' + escHtml(cab) + '</span><br>' +");
-    lines.push("            '<a href=\"#\" onclick=\"abrirDia(\\'' + x.iso + '\\');return false;\">Ver este día</a></div>');");
-    lines.push("        });");
-    lines.push("      });");
-    lines.push("      sueltos.forEach(x => {");
-    lines.push("        const mk = L.circleMarker([x.lat, x.lng], { radius:6, color:'#fff', weight:2, fillColor:'#64748b', fillOpacity:1 }).addTo(capa);");
-    lines.push("        mk.bindPopup('<div class=\"map-pop\"><b>' + escHtml(x.name) + '</b>' + escHtml(x.sub) + '</div>');");
-    lines.push("      });");
-    lines.push("      const b = capa.getBounds();");
-    lines.push("      if (b.isValid()) m.fitBounds(b.pad(0.15));");
-    lines.push("    }, 60);");
-    lines.push("  }");
-    lines.push("}");
     lines.push("");
     lines.push("// === Reservas ===");
     lines.push("if (DATA.bookings.length) {");
@@ -14105,6 +14298,53 @@ async function geocodeText(text) {
     _geoCache[key] = c; saveGeoCache();           // cachea resultado o ausencia
     return c;
   } catch (_) { return null; }
+}
+
+// ---- Geocodificación CON CONTEXTO ----
+// Buscar "Obelisco" a secas y quedarse con el primer resultado del mundo es
+// como acabas con el Obelisco en Italia y el Piano Staircase en Los Ángeles.
+// Aquí se acota por ciudad/país y, sobre todo, por un rectángulo alrededor de
+// donde debería estar; luego se valida la distancia. Si nada encaja devuelve
+// null: mejor sin coordenada que con una equivocada.
+async function _geoQuery(q, near) {
+  const key = 'ctx:' + q.toLowerCase() + (near ? '@' + near[0].toFixed(2) + ',' + near[1].toFixed(2) : '');
+  if (key in _geoCache) return _geoCache[key] || [];
+  if (!navigator.onLine) return [];
+  const wait = 1100 - (Date.now() - _geoLast);   // 1 req/seg (política de Nominatim)
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _geoLast = Date.now();
+  try {
+    let url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`;
+    if (near) {
+      const d = 0.7;  // ~75 km de lado; suficiente para una ciudad y su entorno
+      url += `&viewbox=${(near[1]-d).toFixed(3)},${(near[0]+d).toFixed(3)},${(near[1]+d).toFixed(3)},${(near[0]-d).toFixed(3)}&bounded=1`;
+    }
+    const res = await fetch(url, { headers: { 'Accept-Language':'es', 'User-Agent': CFG.appName } });
+    if (!res.ok) return [];                        // error temporal: no cachear
+    const data = await res.json();
+    const out = (data || []).map(x => ({ lat: parseFloat(x.lat), lng: parseFloat(x.lon), label: x.display_name }));
+    _geoCache[key] = out; saveGeoCache();
+    return out;
+  } catch (_) { return []; }
+}
+
+// ctx: { city, country, near:[lat,lng], maxKm }
+async function geocodeInContext(text, ctx = {}) {
+  const base = String(text || '').trim();
+  if (!base) return null;
+  const near = ctx.near || null;
+  const maxKm = ctx.maxKm || 60;
+  const intentos = [];
+  if (ctx.city) intentos.push([base + ', ' + ctx.city + (ctx.country ? ', ' + ctx.country : ''), true]);
+  if (ctx.country) intentos.push([base + ', ' + ctx.country, true]);
+  intentos.push([base, true]);
+  if (ctx.city) intentos.push([base + ', ' + ctx.city, false]);  // último recurso, sin recuadro
+  for (const [q, bounded] of intentos) {
+    const res = await _geoQuery(q, bounded ? near : null);
+    const ok = res.find(c => !near || GeoCities.km([c.lat, c.lng], near) <= maxKm);
+    if (ok) return ok;
+  }
+  return null;
 }
 
 // ---- Búsqueda de lugares/negocios por nombre ----
