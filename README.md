@@ -233,6 +233,15 @@ datos. El archivo no lleva la clave de Supabase.
 - **Itinerario plegable.** Un `<details>` por día, cerrados de entrada, con un botón *Desplegar
   todo*. La cabecera de cada día lleva pastillas: 📍 lugar, 🏨 alojamiento de esa noche,
   ✈️ cada vuelo, 🚗 cada coche y el número de paradas.
+- **Sin horas.** Unos eventos las tenían y otros no, y la mezcla se leía peor que no ponerlas
+  (el orden del día ya lo da la lista). Los horarios siguen en la app.
+- **El alojamiento va solo en la pastilla.** Salía además como una parada más del día, repitiendo
+  el nombre sin añadir nada. Se quitan de la lista únicamente las *noches* (entrada ≤ día <
+  salida): una fila de salida en su propio día sí se conserva.
+- **Tres niveles de color** para que se distinga cabecera de contenido: cabecera al color de la
+  tarjeta, cuerpo del día sobre una bandeja `--bg-soft` y cada parada como tarjeta `--bg-elev`
+  encima. Antes la cabecera y las paradas compartían fondo y la cabecera parecía una parada más;
+  la nota del día iba en azul de acento y teñía el bloque entero.
 - **De dónde sale la ciudad de cada día.** Los lugares casi nunca traen dirección, pero sí
   coordenadas, así que se deduce por votación (`resolverCiudades`):
   1. **Candidatas**: las ciudades de `trip.city`, las de `trip_legs`, las de las direcciones
