@@ -191,15 +191,112 @@ function legOn(iso) {
   const l = LEGS.find(x => (x.arrival_date || '') <= iso && (!x.departure_date || iso <= x.departure_date));
   return l && l.city ? l.city : null;
 }
-// Nombre del lugar del día, en cascada: título del día -> tramo -> ciudad del
-// alojamiento de esa noche. Si nada cuadra, el día va sin pastilla de lugar.
-function placeOf(iso, note) {
-  if (note && note.title) return note.title;
-  const leg = legOn(iso); if (leg) return leg;
+// --- Ciudad de cada día -------------------------------------------------
+// Los lugares casi nunca traen dirección, pero sí coordenadas. Así que la
+// ciudad de cada día se deduce votando entre unas candidatas con posición
+// conocida. Nada se inventa: si un día no reúne ningún voto se queda sin
+// pastilla (o hereda la del día anterior, que es donde se dormía).
+const REGION_RE = /\b(regi[oó]n|region|provincia|province|state|estado|departamento|department|metropolitan)\b/i;
+const norm0 = (x) => String(x || '').trim();
+// 'MVD · Montevideo' -> 'Montevideo' (la parte con nombre, no el código).
+const cityOfCode = (v) => { const q = String(v || '').split('·'); return q.length > 1 ? q[1].trim() : ''; };
+
+// 1) Candidatas: las ciudades del viaje, las de los tramos, las de las
+//    direcciones y los destinos de los vuelos. Fuera provincias y regiones.
+const CIUDADES_TRIP = (trip.city || '').split(',').map(norm0).filter(Boolean).filter(c => !REGION_RE.test(c));
+const candSet = new Set(CIUDADES_TRIP);
+LEGS.forEach(l => { if (l.city && !REGION_RE.test(l.city)) candSet.add(norm0(l.city)); });
+DATA.planning.forEach(p => {
+  const c = cityFromAddress(p.address);
+  if (c && !REGION_RE.test(c)) candSet.add(c);
+  const m = p.metadata || {};
+  [cityOfCode(m.destino), cityOfCode(m.origen)].forEach(x => { if (x && !REGION_RE.test(x)) candSet.add(x); });
+});
+const CANDS = [...candSet];
+
+// 2) Posición de cada candidata: mediana de los puntos que la nombran. Mediana
+//    y no media, para que un punto suelto lejano no arrastre el centro.
+const mediana = (arr) => { const a = arr.slice().sort((x,y) => x-y); const n = a.length;
+  return n % 2 ? a[(n-1)/2] : (a[n/2-1] + a[n/2]) / 2; };
+const CEN = {};
+CANDS.forEach(c => {
+  const low = c.toLowerCase(); const la = [], ln = [];
+  DATA.planning.forEach(p => {
+    if (p.lat == null) return;
+    const m = p.metadata || {};
+    const txt = [p.title, p.place_name, p.address, m.destino, m.origen].filter(Boolean).join(' ').toLowerCase();
+    if (txt.indexOf(low) !== -1) { la.push(p.lat); ln.push(p.lng); }
+  });
+  if (la.length) CEN[c] = [mediana(la), mediana(ln)];
+});
+const kmEntre = (a, b) => {
+  const R = 6371, r = Math.PI/180;
+  const p1 = a[0]*r, p2 = b[0]*r, dp = p2-p1, dl = (b[1]-a[1])*r;
+  const h = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+};
+
+// 3) Un barrio o una localidad pegada a una ciudad del viaje cuenta como esa
+//    ciudad: Ñuñoa -> Santiago, San Carlos de Bariloche -> Bariloche.
+const ALIAS = {};
+CANDS.forEach(c => {
+  if (CIUDADES_TRIP.indexOf(c) !== -1 || !CEN[c]) return;
+  let mejor = null, dist = Infinity;
+  CIUDADES_TRIP.forEach(m => { if (!CEN[m]) return; const d = kmEntre(CEN[c], CEN[m]); if (d < dist) { dist = d; mejor = m; } });
+  if (mejor && dist < 25) ALIAS[c] = mejor;
+});
+const canon = (c) => ALIAS[c] || c;
+
+// 4) Voto por día. La dirección y el nombre pesan más que la cercanía porque
+//    son explícitos; el radio es corto (30 km) para no saltar de ciudad.
+const RADIO_KM = 30;
+function votarCiudad(items, iso) {
+  const v = {};
+  const suma = (c, n) => { if (c) v[c] = (v[c] || 0) + n; };
+  items.forEach(p => {
+    const ca = cityFromAddress(p.address);
+    if (ca && !REGION_RE.test(ca)) suma(canon(ca), 3);
+    const txt = [p.title, p.place_name].filter(Boolean).join(' ').toLowerCase();
+    CANDS.forEach(c => { if (txt.indexOf(c.toLowerCase()) !== -1) suma(canon(c), 3); });
+    const m = p.metadata || {};
+    if (p.type === 'vuelo') suma(canon(cityOfCode(m.destino)), 3);
+    if (p.lat != null) {
+      let mejor = null, dist = Infinity;
+      Object.keys(CEN).forEach(c => { const d = kmEntre([p.lat, p.lng], CEN[c]); if (d < dist) { dist = d; mejor = c; } });
+      if (mejor && dist < RADIO_KM) suma(canon(mejor), 1);
+    }
+  });
   const st = stayOn(iso);
-  if (st) return cityFromAddress(st.address) || st.place_name || st.title;
-  return null;
+  if (st) { const c = cityFromAddress(st.address); if (c && !REGION_RE.test(c)) suma(canon(c), 2); }
+  const orden = Object.keys(v).sort((a,b) => v[b]-v[a]);
+  return orden.length ? orden[0] : null;
 }
+
+// 5) Resolver todos los días de una vez: voto -> tramo -> herencia del día
+//    anterior -> y, para los días iniciales que quedan huérfanos, las ciudades
+//    del viaje que no se han situado, emparejadas en orden.
+function resolverCiudades(keys, byDayRef) {
+  const out = {};
+  keys.forEach(k => { out[k] = legOn(k) || votarCiudad(byDayRef[k] || [], k); });
+  let prev = null;
+  keys.forEach(k => { if (out[k]) prev = out[k]; else if (prev) out[k] = prev; });
+  const huecos = [];
+  let bloque = null;
+  keys.forEach(k => {
+    if (!out[k]) { if (bloque) bloque.push(k); else bloque = [k]; }
+    else if (bloque) { huecos.push(bloque); bloque = null; }
+  });
+  if (bloque) huecos.push(bloque);
+  const usadas = new Set(keys.map(k => out[k]).filter(Boolean));
+  const libres = CIUDADES_TRIP.filter(c => !CEN[c] && !usadas.has(c));
+  // Solo si la correspondencia es exacta. Con cualquier duda, sin pastilla:
+  // una etiqueta equivocada es peor que ninguna.
+  if (huecos.length && huecos.length === libres.length) {
+    huecos.forEach((h, i) => h.forEach(k => { out[k] = libres[i]; }));
+  }
+  return out;
+}
+
 // 'MVD · Montevideo' -> 'MVD'. Sin metadata, se cae al título del evento.
 const iata = (v) => String(v || '').split('·')[0].trim();
 function flightLabel(p) {
@@ -217,6 +314,7 @@ if (trip.start_date && trip.end_date) {
   while (d <= end) { const k = isoOf(d); if (!byDay[k]) byDay[k]=[]; d.setDate(d.getDate()+1); }
 }
 const dayKeys = Object.keys(byDay).sort();
+const CIUDAD_DIA = resolverCiudades(Object.keys(byDay).sort(), byDay);
 const blocks = [];
 
 if (dayKeys.length) {
@@ -249,8 +347,13 @@ if (dayKeys.length) {
     main.appendChild(top);
 
     const chips = el('div', {class:'dh-chips'});
-    const lugar = placeOf(k, note);
-    if (lugar) chips.appendChild(el('span', {class:'chip chip-place', text:'📍 ' + lugar}));
+    const ciudad = CIUDAD_DIA[k];
+    if (ciudad) chips.appendChild(el('span', {class:'chip chip-place', text:'📍 ' + ciudad}));
+    // El título que el usuario puso al día no se pierde: si dice algo distinto
+    // de la ciudad, va en su propia pastilla.
+    if (note && note.title && note.title !== ciudad) {
+      chips.appendChild(el('span', {class:'chip chip-count', text: note.title}));
+    }
     const stay = stayOn(k);
     if (stay) chips.appendChild(el('span', {class:'chip chip-hotel', text:'🏨 ' + (stay.place_name || stay.title)}));
     items.filter(p => p.type === 'vuelo').forEach(p => {
