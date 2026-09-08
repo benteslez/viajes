@@ -5,7 +5,7 @@
 
 // Subir el sufijo cuando se quiere forzar la invalidación de la versión cacheada
 // (ej. tras cambios en index.html o en las CDNs declaradas más abajo).
-const CACHE = 'viajes-shell-v84';
+const CACHE = 'viajes-shell-v85';
 
 // Caché SEPARADO para imágenes (portadas de viaje, miniaturas de tarjetas…).
 // No lleva el sufijo del shell a propósito: así las imágenes ya descargadas
@@ -97,7 +97,13 @@ function handleImage(req) {
 const isApi = (url) =>
   url.hostname.includes('supabase.co') ||
   url.hostname.includes('nominatim.openstreetmap.org') ||
-  url.hostname.includes('exchangerate.host');
+  url.hostname.includes('exchangerate.host') ||
+  // API de GitHub (publicar enlaces de viajes compartidos). Va aquí porque el
+  // fallback genérico de abajo es cache-first y, si falla la red, devuelve
+  // index.html: el código haría res.json() sobre HTML y el error sería
+  // incomprensible. Además la caché ignora las cabeceras, así que podría servir
+  // la respuesta de otro token o un `sha` viejo (y provocar un 409 al subir).
+  url.hostname === 'api.github.com';
 
 // Documento HTML (index.html y "./") → network-first.
 // Si hay red, siempre se sirve la versión más reciente; si no, fallback al cache.

@@ -12842,7 +12842,8 @@ const ShareLinks = {
     const c = this.cfg();
     const row = (id, label, value, ph, hint, type='text') => el('div', { class:'form-row' }, [
       el('label', { text: label }),
-      el('input', { id, type, value: value || '', placeholder: ph }),
+      el('input', { id, type, value: value || '', placeholder: ph,
+        autocomplete:'off', autocapitalize:'off', autocorrect:'off', spellcheck:'false' }),
       hint ? el('div', { class:'field-hint', text: hint }) : null,
     ].filter(Boolean));
     const body = el('div', {}, [
@@ -12857,14 +12858,44 @@ const ShareLinks = {
       ]),
       row('gh-pages', 'URL base de Pages', c.pagesBase, `https://${c.owner || 'usuario'}.github.io/${c.repo || 'repo'}`,
           'Déjalo vacío para usar la de por defecto. Cámbialo si tienes dominio propio.'),
-      row('gh-token', 'Token de GitHub', c.token, 'github_pat_…',
+      row('gh-token', 'Token de GitHub', '',
+          c.token ? 'Hay un token guardado — escribe uno nuevo para reemplazarlo' : 'github_pat_…',
           'Token fine-grained con acceso SOLO a este repo y permiso "Contents: Read and write". Se guarda en este dispositivo (localStorage), nunca dentro del archivo compartido. Quien tenga acceso a este navegador podrá escribir en el repo.',
           'password'),
       el('div', { class:'readonly-banner', style:{marginTop:'12px'} }, [
         el('span', { class:'ico', html: svg('warn') }),
         el('span', { text:'Si el repo es público, la carpeta de enlaces la puede listar cualquiera: la URL no es un secreto. Para enlaces privados usa un repo privado con Pages o un hosting aparte.' }),
       ]),
+      el('div', { id:'gh-test-out', class:'field-hint', style:{marginTop:'10px', whiteSpace:'pre-wrap'} }),
     ]);
+    const test = el('button', { class:'btn', onclick: async () => {
+      const owner = ($('#gh-owner').value || '').trim();
+      const repo  = ($('#gh-repo').value  || '').trim();
+      const token = ($('#gh-token').value || '').trim() || c.token || '';
+      const out = $('#gh-test-out');
+      if (!owner || !repo || !token) { UI.toast('Pon usuario, repo y token'); return; }
+      out.textContent = 'Probando…';
+      try {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+          headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json',
+                     'X-GitHub-Api-Version': '2022-11-28' },
+        });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok) {
+          const perms = j.permissions || {};
+          out.textContent = perms.push
+            ? `OK · ${j.full_name} · permiso de escritura correcto`
+            : `El token ve ${j.full_name} pero NO puede escribir: falta "Contents: Read and write".`;
+        } else {
+          out.textContent = `GitHub responde ${res.status}: ${j.message || 'sin detalle'}`
+            + (res.status === 401 ? ' — el token no vale (mal copiado, revocado o caducado).' : '')
+            + (res.status === 404 ? ' — repo inexistente, o el token no tiene acceso A ESE repo.' : '');
+        }
+      } catch (err) {
+        out.textContent = 'No se pudo conectar con GitHub: ' + (err?.message || '');
+      }
+    }}, [ el('span', { html: svg('shield') }), 'Probar' ]);
+
     const save = el('button', { class:'btn btn-primary', onclick: () => {
       const c2 = {
         owner: ($('#gh-owner').value || '').trim(),
@@ -12872,7 +12903,7 @@ const ShareLinks = {
         branch: ($('#gh-branch').value || '').trim() || 'main',
         dir: ($('#gh-dir').value || '').trim() || 'compartir',
         pagesBase: ($('#gh-pages').value || '').trim(),
-        token: ($('#gh-token').value || '').trim(),
+        token: ($('#gh-token').value || '').trim() || c.token || '',
       };
       if (!c2.owner || !c2.repo || !c2.token) { UI.toast('Faltan usuario, repo o token'); return; }
       ShareLinks.saveCfg(c2);
@@ -12889,7 +12920,7 @@ const ShareLinks = {
     UI.openSheet({
       title:'Enlaces para compartir',
       body,
-      footer:[forget, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean),
+      footer:[forget, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), test, save].filter(Boolean),
     });
   },
 
