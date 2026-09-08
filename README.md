@@ -231,6 +231,12 @@ datos. El archivo no lleva la clave de Supabase.
 - **Diseño**: barra superior que aparece al pasar la portada, portada con degradado de marca,
   cifras del viaje (días, ciudades, paradas, vuelos, alojamientos), número de día en un disco,
   pastillas sin borde e iconos de trazo. Claro y oscuro.
+- **Movimiento**: al abrir un día, sus entradas aparecen escalonadas de derecha a izquierda
+  (42 ms entre una y otra, cortado a los 12 elementos: con 20 paradas, esperar al último sería lo
+  contrario de ágil). Los bloques de día aparecen al alcanzarlos en el scroll, una sola vez, y la
+  portada y las cifras entran al cargar. Con `prefers-reduced-motion: reduce` se anulan **duración
+  y retardo** — solo la duración no basta: con el escalonado, el último elemento seguía tardando
+  medio segundo en verse.
 
 **Qué se publica y qué no** (`Exporter._buildShareHtml`). Interruptores: precios, localizadores y
 documentos, enlaces externos y notas.

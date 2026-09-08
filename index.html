@@ -13718,6 +13718,27 @@ details[open] .dh-caret { transform:rotate(90deg); }
 .chip-flight { background:var(--c-flight-bg); color:var(--c-flight); }
 .chip-car    { background:var(--c-car-bg);    color:var(--c-car); }
 .chip-count  { background:var(--bg-soft); color:var(--text-muted); font-weight:600; padding:4px 11px; }
+/* --- Movimiento ---------------------------------------------------------
+   Al abrir un día, sus entradas entran escalonadas de derecha a izquierda. El
+   escalonado se corta a los 12 elementos: con 20 paradas, esperar el último
+   sería lo contrario de ágil. */
+@keyframes entra-item {
+  from { opacity:0; transform:translateX(18px); }
+  to   { opacity:1; transform:none; }
+}
+@keyframes entra-suave {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:none; }
+}
+details[open] .day-note,
+details[open] .timeline .tl-item { animation:entra-item .34s cubic-bezier(.22,.8,.3,1) both; }
+details[open] .timeline .tl-item { animation-delay:calc(var(--i, 0) * 42ms); }
+details[open] .day-note { animation-delay:0ms; }
+/* Los bloques de día aparecen al alcanzarlos en el scroll. */
+.day-block.reveal { opacity:0; transform:translateY(12px); }
+.day-block.reveal.in { animation:entra-suave .42s cubic-bezier(.22,.8,.3,1) both; }
+.stat { animation:entra-suave .4s cubic-bezier(.22,.8,.3,1) both; animation-delay:calc(var(--i, 0) * 55ms); }
+.cover { animation:entra-suave .5s cubic-bezier(.22,.8,.3,1) both; }
 .day-body { padding:2px 16px 16px; }
 .day-empty { color:var(--text-muted); font-size:13.5px; padding:0 16px 18px; }
 .timeline { position:relative; margin-left:5px; padding-left:22px; border-left:1.5px solid var(--line); }
@@ -13752,7 +13773,12 @@ details[open] .dh-caret { transform:rotate(90deg); }
 footer.foot { margin-top:56px; padding-top:26px; border-top:1px solid var(--line-soft); color:var(--text-muted); font-size:12px; text-align:center; }
 a { color:var(--accent); text-decoration:none; }
 a:hover { text-decoration:underline; }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration:.01ms !important; animation-duration:.01ms !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration:.01ms !important; transition-delay:0ms !important;
+    animation-duration:.01ms !important; animation-delay:0ms !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -13894,6 +13920,7 @@ ${viewerScript}
     lines.push("   [paradas, paradas === 1 ? 'Parada' : 'Paradas'],");
     lines.push("   [vuelos, 'Vuelos'], [aloj, 'Alojam.']].filter(x => x[0] > 0).forEach(([n, lab]) => {");
     lines.push("    const d = el('div', {class:'stat'});");
+    lines.push("    d.style.setProperty('--i', cont.children.length);");
     lines.push("    d.appendChild(el('b', {text: String(n)}));");
     lines.push("    d.appendChild(el('span', {text: lab}));");
     lines.push("    cont.appendChild(d);");
@@ -13958,8 +13985,9 @@ ${viewerScript}
     lines.push("    if (note && note.text) bodyDiv.appendChild(el('div', {class:'day-note', text: note.text}));");
     lines.push("    if (items.length) {");
     lines.push("      const tl = el('div', {class:'timeline'});");
-    lines.push("      items.forEach(it => {");
+    lines.push("      items.forEach((it, idx) => {");
     lines.push("        const tlItem = el('div', {class:'tl-item'});");
+    lines.push("        tlItem.style.setProperty('--i', Math.min(idx, 12));");
     lines.push("        const titleDiv = el('div', {class:'tl-title'});");
     lines.push("        if (it.time) titleDiv.appendChild(el('span', {class:'tl-time', text: it.time}));");
     lines.push("        titleDiv.appendChild(document.createTextNode(it.title));");
@@ -13975,11 +14003,26 @@ ${viewerScript}
     lines.push("      bodyDiv.appendChild(el('div', {class:'day-empty', text:'Día libre'}));");
     lines.push("    }");
     lines.push("    det.appendChild(bodyDiv);");
+    lines.push("    det.classList.add('reveal');");
     lines.push("    root.appendChild(det);");
     lines.push("    blocks.push(det);");
     lines.push("  });");
     lines.push("}");
     lines.push("");
+    lines.push("");
+    lines.push("// Cada bloque de día aparece cuando se llega a él; una sola vez.");
+    lines.push("(function(){");
+    lines.push("  const bloques = document.querySelectorAll('.day-block.reveal');");
+    lines.push("  if (!bloques.length) return;");
+    lines.push("  if (!('IntersectionObserver' in window)) {");
+    lines.push("    bloques.forEach(b => b.classList.add('in'));   // sin soporte, todo visible");
+    lines.push("    return;");
+    lines.push("  }");
+    lines.push("  const io = new IntersectionObserver((es) => {");
+    lines.push("    es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });");
+    lines.push("  }, { rootMargin:'0px 0px -8% 0px' });");
+    lines.push("  bloques.forEach(b => io.observe(b));");
+    lines.push("})();");
     lines.push("");
     lines.push("// === Reservas ===");
     lines.push("if (DATA.bookings.length) {");
