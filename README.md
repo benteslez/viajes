@@ -209,33 +209,13 @@ datos. El archivo no lleva la clave de Supabase.
   algo distinto de la ciudad, se muestra en una pastilla aparte.
 - **Alojamiento de la noche**: `consultation_planned_d1 <= día < consultation_planned_d2`, así que
   el día del check-out ya no lo muestra.
-- **Mapa de la ruta**: los puntos van en orden cronológico, con el color avanzando de azul a
-  magenta según el día; línea continua dentro de cada día y discontinua entre días. Cada punto
-  abre un popup con su día y un enlace *Ver este día* que despliega ese día del itinerario.
-  Las líneas se dibujan antes que los puntos y con `interactive:false` — si no, la línea de un día
-  tapa los marcadores de los días anteriores que caen en la misma zona y el clic no llega.
-- **Puntos incoherentes**: las coordenadas salen de geocodificar el nombre del sitio y eso falla a
-  menudo (un "Obelisco" acaba en Italia, un "Piano Staircase" en Los Ángeles). El mapa descarta el
-  punto que esté a más de 200 km de donde transcurre su día — el centro de la ciudad deducida, o
-  la mediana del propio día si esa ciudad no está situada — y dice cuántos ha omitido en vez de
-  callárselo. **Es un parche del visor: los datos del viaje siguen con las coordenadas malas.**
-
-Interruptores de qué incluir: precios, localizadores y documentos, enlaces externos, mapa y notas.
-
-**Cómo filtra** (`Exporter._buildShareHtml`):
-
-1. Campos estructurados: `bookings.structured_data` y `planning_items.metadata` — se borran las
-   claves de `DOC_FIELDS` / `MONEY_FIELDS`, más `consultation_price` / `consultation_url`.
-2. Texto libre (`trip.notes`, `day_notes.text`, `planning_items.notes`): se tacha **la línea
-   entera** que contenga un localizador, un "Reserva bajo…"/"Para Nombre Apellido" o un importe,
-   y se sustituye por `[dato omitido]`. El resto de la nota se conserva.
-3. Campo *Ocultar además*: términos literales que el usuario escribe (nombre completo, teléfono,
-   matrícula) y que se sustituyen en todo el archivo, incluidos títulos y direcciones. Estos
-   términos **no** se embeben en `OPTS` — escribirlos en el archivo sería la fuga que se quería
-   evitar.
-
-> El tachado por patrones **no es una garantía**: cubre los formatos habituales, no texto libre
-> arbitrario. Para datos delicados, usa el campo *Ocultar además* y revisa el HTML generado.
+- **Sin mapa.** Se quitó: las coordenadas guardadas venían mal geocodificadas y el mapa era ruido.
+  El archivo tampoco publica ya `lat`/`lng`, y el enlace de cada parada se arma con el nombre del
+  sitio, que acierta más que una coordenada equivocada. La ciudad de cada día se calcula **antes**
+  de vaciar las coordenadas, porque son su señal principal.
+- **Diseño**: barra superior que aparece al pasar la portada, portada con degradado de marca,
+  cifras del viaje (días, ciudades, paradas, vuelos, alojamientos), número de día en un disco,
+  pastillas sin borde e iconos de trazo. Claro y oscuro.
 
 ### Enlace en vez de archivo
 
