@@ -228,6 +228,11 @@ datos. El archivo no lleva la clave de Supabase.
   que acertaba. El archivo tampoco publica ya `lat`/`lng`. La ciudad de cada día se calcula
   **antes** de vaciar las coordenadas, porque son su señal principal. El interruptor de enlaces
   ahora solo afecta a las URLs escritas dentro de las notas, y así lo dice su etiqueta.
+- **Tipografía**: la pila empieza por la fuente del sistema (`-apple-system`), así que en iPhone y
+  Mac se ve **San Francisco**; **Inter** cubre Android y Windows. Escala al gusto de iOS: cuerpo de
+  16 px, títulos con tracking negativo y pesos intermedios (590/640) en vez de 700/800. Los números
+  tabulares se piden solo donde hay cifras — en texto corrido desalinean el espaciado.
+  *(La app sigue con Manrope: sus tokens `--font-ui` son independientes.)*
 - **Diseño**: barra superior que aparece al pasar la portada, portada con degradado de marca,
   cifras del viaje (días, ciudades, paradas, vuelos, alojamientos), número de día en un disco,
   pastillas sin borde e iconos de trazo. Claro y oscuro.
