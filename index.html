@@ -13431,7 +13431,12 @@ const Exporter = {
     // evento y, sobre todo, escritos a mano dentro de `notes` ("# de confirmación:
     // ABC123", "Reserva bajo Fulano"). Sin esto se colaban al HTML compartido aunque
     // el interruptor estuviera apagado.
-    const DOC_RE = /(#\s*de\s*confirmaci|n[uú]mero\s+de\s+confirmaci|confirmation|localizador|c[oó]digo\s+de\s+reserva|booking\s+ref|reserva\s+bajo|reserva\s+a\s+nombre|titular|matr[ií]cula|p[oó]liza|\bpara\s+[A-ZÁÉÍÓÚÑ][^\s]+\s+[A-ZÁÉÍÓÚÑ])/i;
+    const DOC_RE = /(#\s*de\s*confirmaci|n[uú]mero\s+de\s+confirmaci|confirmation|localizador|c[oó]digo\s+de\s+reserva|booking\s+ref|reserva\s+bajo|reserva\s+a\s+nombre|titular|matr[ií]cula|p[oó]liza)/i;
+    // "Para Nombre Apellido" (el titular de una reserva) va en su propia regla y
+    // SIN la bandera `i`: con ella, [A-Z] casa también con minúsculas y se tachaba
+    // cualquier frase con "para ..." — "para llegar", "para comer viendo las
+    // cataratas". Exige dos palabras capitalizadas seguidas.
+    const TITULAR_RE = /\bPara\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+/;
     const MONEY_RE = /(\d[\d.,]*\s*(€|eur\b|us\s*\$|usd\b|clp\b|ars\b|\$))|((€|\$)\s*\d)/i;
     // Redacción por líneas: se tacha solo la línea con el dato, no la nota entera,
     // para no perder lo útil ("Incluye desayuno", "Probar el kuchen"…).
@@ -13448,7 +13453,7 @@ const Exporter = {
     const redact = (txt) => {
       if (!txt) return txt;
       const byLine = String(txt).split('\n').map(ln => {
-        if (!opts.includeDocs  && DOC_RE.test(ln))   return '[dato omitido]';
+        if (!opts.includeDocs  && (DOC_RE.test(ln) || TITULAR_RE.test(ln))) return '[dato omitido]';
         if (!opts.includeMoney && MONEY_RE.test(ln)) return '[dato omitido]';
         return ln;
       }).join('\n');
