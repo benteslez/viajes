@@ -121,7 +121,30 @@ Dos avisos:
 
 - Los archivos traen `profile: "ruben"`, así que los viajes aparecen con ese perfil.
 - `DB.importProfile` escribe directo en IndexedDB **sin pasar por la cola `_pending`**, de modo que
-  lo importado **no sube a Supabase**: hay que importar el archivo en cada dispositivo.
+  lo importado **no sube a Supabase** por sí solo. Para eso está *Subir este viaje a la nube* (abajo):
+  importa el JSON en un dispositivo y súbelo desde ahí; en los demás aparece solo.
+
+## Subir un viaje a la nube
+
+En el menú del viaje. Mete el viaje **y todos sus hijos** en la cola `_pending`, que es la misma vía
+por la que viaja cualquier cambio hecho dentro de la app. A partir de ahí `SYNC` los envía a Supabase
+y el resto de dispositivos se los descarga en su siguiente pull, sin importar nada allí.
+
+Existe porque *Importar JSON* **no encola**: un viaje traído de un archivo se queda en el dispositivo
+donde se importó. Y el import general seguirá sin encolar a propósito — restaurar un backup viejo
+subiría filas caducas que pisarían con `upsert` lo que hubiera más nuevo en el servidor. Aquí no hay
+ese riesgo, porque se sube un viaje concreto y porque lo pides tú.
+
+- El panel lista **cuántas filas** se van a subir, desglosadas por tabla, antes de tocar nada.
+- El viaje va **siempre primero** en la cola: en Supabase los hijos tienen FK contra `trips` y la cola
+  se vacía en orden de entrada.
+- Se suben también las filas de la **papelera** (`deleted_at`), para que lo remoto quede igual que lo
+  local y un borrado no reaparezca en el siguiente pull.
+- Cada fila se escribe **por su id**, así que repetir la operación es inofensivo.
+- Las tablas se derivan de `DB.STORES`, de modo que una tabla por viaje nueva entra sola. Quedan fuera
+  las que van por perfil y `media`, que es local y no sincroniza.
+- Sin Supabase configurado o sin conexión, las filas se quedan en cola y el panel lo dice; salen solas
+  cuando vuelve la red.
 
 ## "Explorar opciones" (planificador externo)
 
