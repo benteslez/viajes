@@ -877,6 +877,11 @@ h2.section-title {
 .sd-title { flex:1; min-width:0; font:inherit; font-size:14px; font-weight:600; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
 .sd-notes { width:100%; margin-top:6px; font:inherit; font-size:13px; padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); resize:vertical; }
 .sd-item.sd-off .sd-title, .sd-item.sd-off .sd-notes { text-decoration:line-through; }
+.sd-time { flex:none; width:auto; max-width:120px; font:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
+.sd-item.sd-new .sd-title { border-color:var(--accent); }
+.sd-add { margin-top:10px; width:100%; justify-content:center; gap:6px; color:var(--accent); font-size:13px; }
+.sd-add svg { width:16px; height:16px; }
+.icon-btn.btn-danger-ghost { color:var(--danger); }
 .timeline-item.list-item .icon-btn svg { width:16px; height:16px; }
 .timeline-item.list-item .li-actions .btn.btn-sm { height:28px; padding:0 9px; font-size:12px; }
 /* Sub-texto en 1-2 líneas máximo con ellipsis para que no expanda la card */
@@ -13205,21 +13210,33 @@ const ShareLinks = {
      Capa de cambios que se aplica SOLO al generar el HTML compartido. Los datos
      del viaje no se tocan: aquí se decide qué se enseña y con qué palabras.
      Vive en `trip.settings.share_draft`, así que sincroniza y viaja en el export.
-       { items: { <id>: { title?, notes?, hidden? } }, days: { <iso>: { text? } } } */
+       { items: { <id>: { title?, notes?, hidden? } },
+         days:  { <iso>: { text? } },
+         added: { <iso>: [ { id, title, notes?, time? } ] } }
+     `items[id].hidden` quita del enlace una parada real del viaje (reversible);
+     `added[iso]` son paradas que existen solo en el enlace. */
   shareDraft(t) {
     const d = tripSettings(t).share_draft;
-    return (d && typeof d === 'object') ? d : { items: {}, days: {} };
+    return (d && typeof d === 'object') ? d : { items: {}, days: {}, added: {} };
   },
   _draftMut(t) {
     const st = tripSettingsMut(t);
-    if (!st.share_draft || typeof st.share_draft !== 'object') st.share_draft = { items: {}, days: {} };
+    if (!st.share_draft || typeof st.share_draft !== 'object') st.share_draft = {};
     if (!st.share_draft.items) st.share_draft.items = {};
     if (!st.share_draft.days) st.share_draft.days = {};
+    if (!st.share_draft.added) st.share_draft.added = {};
     return st.share_draft;
+  },
+  // Paradas añadidas de un día, ya saneadas (sin título no se muestran).
+  _draftAdded(t, iso) {
+    const a = (this.shareDraft(t).added || {})[iso];
+    return Array.isArray(a) ? a : [];
   },
   _draftCount(t) {
     const d = this.shareDraft(t);
-    return Object.keys(d.items || {}).length + Object.keys(d.days || {}).length;
+    const nAdd = Object.keys(d.added || {})
+      .reduce((n, k) => n + (Array.isArray(d.added[k]) ? d.added[k].length : 0), 0);
+    return Object.keys(d.items || {}).length + Object.keys(d.days || {}).length + nAdd;
   },
 
   async openShareDraft(t) {
@@ -13235,10 +13252,18 @@ const ShareLinks = {
     const porDia = {};
     planning.forEach(i => { const k = i.day_date || 'sin-fecha'; (porDia[k] = porDia[k] || []).push(i); });
     Object.keys(notaDe).forEach(k => { if (!porDia[k]) porDia[k] = []; });
+    // Todos los días del viaje, aunque estén vacíos: así se puede añadir una
+    // parada al enlace en un día que en el viaje no tiene nada.
+    if (t.start_date && t.end_date) {
+      const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      let d = parseDate(t.start_date); const fin = parseDate(t.end_date); let guard = 0;
+      while (d && fin && d <= fin && guard++ < 1200) { const k = iso(d); if (!porDia[k]) porDia[k] = []; d.setDate(d.getDate() + 1); }
+    }
+    Object.keys(ShareLinks.shareDraft(t).added || {}).forEach(k => { if (!porDia[k]) porDia[k] = []; });
     const dias = Object.keys(porDia).sort();
 
     const body = el('div', {}, [
-      el('p', { class:'muted', style:{marginTop:0}, text:'Lo que escribas aquí se usa solo en el enlace compartido. Tu viaje no cambia: si vacías un campo, vuelve a mostrarse el texto original.' }),
+      el('p', { class:'muted', style:{marginTop:0}, text:'Lo que hagas aquí se aplica solo al enlace compartido; tu viaje no cambia. Puedes reescribir títulos y notas, quitar paradas con el ojo (reversible) y añadir paradas que existan solo en el enlace.' }),
       el('div', { id:'sd-list' }),
     ]);
 
@@ -13250,7 +13275,7 @@ const ShareLinks = {
 
     const guardar = async () => { try { await DB.put('trips', t); } catch (e) { console.error('share draft', e); } marcaCambio(); };
 
-    const filaItem = (it) => {
+    const filaItem = (it, onCambio) => {
       const d = ShareLinks._draftMut(t);
       const o = d.items[it.id] || {};
       const wrap = el('div', { class:'sd-item' + (o.hidden ? ' sd-off' : '') });
@@ -13266,7 +13291,7 @@ const ShareLinks = {
             if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
             await guardar();
           } }),
-        el('button', { class:'icon-btn' + (o.hidden ? ' btn-note-on' : ''), title: o.hidden ? 'Volver a mostrarla' : 'Ocultar en el enlace',
+        el('button', { class:'icon-btn' + (o.hidden ? ' btn-note-on' : ''), title: o.hidden ? 'Volver a incluirla en el enlace' : 'Quitar del enlace',
           html: svg('eye'),
           onclick: async (e) => {
             const dd = ShareLinks._draftMut(t);
@@ -13276,6 +13301,8 @@ const ShareLinks = {
             if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
             wrap.classList.toggle('sd-off', oculto);
             e.currentTarget.classList.toggle('btn-note-on', oculto);
+            e.currentTarget.title = oculto ? 'Volver a incluirla en el enlace' : 'Quitar del enlace';
+            if (onCambio) onCambio();
             await guardar();
           } }),
       ]);
@@ -13293,6 +13320,33 @@ const ShareLinks = {
       return wrap;
     };
 
+    // Parada que existe solo en el enlace: se guarda en `added[iso]` y nunca
+    // llega a `planning_items`. Aquí sí hay borrado real (de la versión compartida).
+    const filaNueva = (k, entry, onBorrar) => {
+      const wrap = el('div', { class:'sd-item sd-new' });
+      const cab = el('div', { class:'sd-cab' }, [
+        el('span', { class:'sd-tipo', text:'✨' }),
+        el('input', { class:'sd-title', type:'text', value: entry.title || '', placeholder:'Nombre del lugar',
+          autocomplete:'off',
+          onchange: async (e) => { entry.title = e.target.value.trim(); await guardar(); } }),
+        el('input', { class:'sd-time', type:'time', value: entry.time || '', title:'Hora (opcional)',
+          onchange: async (e) => { entry.time = e.target.value || ''; await guardar(); } }),
+        el('button', { class:'icon-btn btn-danger-ghost', title:'Eliminar esta parada del enlace', html: svg('trash'),
+          onclick: async () => {
+            const lista = ShareLinks._draftMut(t).added[k] || [];
+            const i = lista.indexOf(entry);
+            if (i >= 0) lista.splice(i, 1);
+            if (!lista.length) delete ShareLinks._draftMut(t).added[k];
+            wrap.remove(); onBorrar();
+            await guardar();
+          } }),
+      ]);
+      const ta = el('textarea', { class:'sd-notes', rows:'2', placeholder:'Nota (opcional)',
+        onchange: async (e) => { entry.notes = e.target.value; await guardar(); } }, entry.notes || '');
+      wrap.appendChild(cab); wrap.appendChild(ta);
+      return wrap;
+    };
+
     const render = () => {
       const cont = document.getElementById('sd-list');
       if (!cont) return;
@@ -13301,9 +13355,18 @@ const ShareLinks = {
         const det = el('details', { class:'sd-day' });
         const n = notaDe[k];
         const dr = ShareLinks.shareDraft(t);
+        const cuenta = el('span', { class:'sd-day-n' });
+        const refrescaCuenta = () => {
+          const vis = porDia[k].filter(i => {
+            const o = (ShareLinks.shareDraft(t).items || {})[i.id];
+            return !(o && o.hidden);
+          }).length + ShareLinks._draftAdded(t, k).length;
+          cuenta.textContent = vis + (vis === 1 ? ' parada' : ' paradas');
+        };
+        refrescaCuenta();
         det.appendChild(el('summary', { class:'sd-day-head' }, [
           el('span', { class:'sd-day-t', text: k === 'sin-fecha' ? 'Sin fecha' : fmtDate(k, {weekday:'long', day:'numeric', month:'long'}) }),
-          el('span', { class:'sd-day-n', text: (porDia[k].length || 0) + (porDia[k].length === 1 ? ' parada' : ' paradas') }),
+          cuenta,
         ]));
         const cuerpo = el('div', { class:'sd-day-body' });
         cuerpo.appendChild(el('label', { class:'sd-lab', text:'Nota del día' }));
@@ -13317,11 +13380,25 @@ const ShareLinks = {
             if (!Object.keys(dd.days[k]).length) delete dd.days[k];
             await guardar();
           } }, (dr.days[k] && dr.days[k].text != null) ? dr.days[k].text : ((n && n.text) || '')));
+        const anadir = el('button', { class:'btn btn-ghost sd-add', html: svg('plus') + '<span>Añadir parada</span>',
+          onclick: async () => {
+            const dd = ShareLinks._draftMut(t);
+            const lista = dd.added[k] = Array.isArray(dd.added[k]) ? dd.added[k] : [];
+            const entry = { id: 'sd-' + uuid(), title:'', notes:'', time:'' };
+            lista.push(entry);
+            const fila = filaNueva(k, entry, refrescaCuenta);
+            cuerpo.insertBefore(fila, anadir);
+            refrescaCuenta();
+            const inp = fila.querySelector('.sd-title'); if (inp) inp.focus();
+            await guardar();
+          } });
         det.addEventListener('toggle', () => {
           if (!det.open || det._montado) return;
           det._montado = true;
-          porDia[k].forEach(it => cuerpo.appendChild(filaItem(it)));
+          porDia[k].forEach(it => cuerpo.insertBefore(filaItem(it, refrescaCuenta), anadir));
+          ShareLinks._draftAdded(t, k).forEach(e => cuerpo.insertBefore(filaNueva(k, e, refrescaCuenta), anadir));
         });
+        cuerpo.appendChild(anadir);
         det.appendChild(cuerpo);
         cont.appendChild(det);
       });
@@ -13690,6 +13767,20 @@ const Exporter = {
       if (!o) return;
       if (o.title != null) p.title = o.title;
       if (o.notes != null) p.notes = o.notes;
+    });
+    // Paradas que existen solo en el enlace (nunca en planning_items).
+    const dAdded = draft.added || {};
+    Object.keys(dAdded).forEach(iso => {
+      (Array.isArray(dAdded[iso]) ? dAdded[iso] : []).forEach((a, i) => {
+        if (!a || !String(a.title || '').trim()) return;
+        safe.planning.push({
+          id: a.id || ('sd-' + iso + '-' + i), trip_id: t.id, leg_id: null,
+          type: 'lugar', title: String(a.title).trim(), notes: a.notes || '',
+          day_date: iso === 'sin-fecha' ? null : iso, end_date: null,
+          time: a.time || null, order_index: 9000 + i,
+          lat: null, lng: null, gmaps_url: null, metadata: {}, visited: false,
+        });
+      });
     });
     Object.keys(dDays).forEach(iso => {
       if (dDays[iso].text == null) return;

@@ -272,12 +272,18 @@ Paso previo a publicar: *Compartir viaje → **Versión para compartir***. Es un
 se aplica **solo al generar el HTML**; los datos del viaje no se tocan.
 
 - Título y nota propios para el enlace, por parada, y nota propia por día.
-- **Ocultar** paradas que no se quieran enseñar.
+- **Quitar** paradas del enlace (icono de ojo). Es reversible y no borra nada del viaje.
+- **Añadir** paradas que existan solo en el enlace (`+ Añadir parada`): nombre, hora opcional y
+  nota. La papelera las elimina de la versión compartida. Nunca llegan a `planning_items`.
+- La cuenta de paradas de cada día refleja lo que verá quien abra el enlace (quitadas fuera,
+  añadidas dentro).
+- Se listan **todos los días del viaje**, incluso los vacíos, para poder añadir en cualquiera.
 - Vaciar un campo devuelve el texto original del viaje. *Restablecer* descarta la capa entera.
 - El botón muestra cuántos cambios hay.
 
 Vive en `trip.settings.share_draft` (`{ items: { <id>: { title?, notes?, hidden? } },
-days: { <iso>: { text? } } }`), así que sincroniza por Supabase y viaja en el export.
+days: { <iso>: { text? } }, added: { <iso>: [ { id, title, notes?, time? } ] } }`), así que
+sincroniza por Supabase y viaja en el export.
 
 Las filas de cada día se montan **al abrir ese día**: con 24 días y 144 paradas, construir todos
 los campos de golpe deja la pantalla pesada en el móvil.
