@@ -97,6 +97,25 @@ Desde el icono de perfil arriba a la derecha:
 - **Importar JSON** → restaura desde backup (sobrescribe IDs iguales).
 - **PDF** desde la pantalla de un viaje → itinerario imprimible.
 
+### Viajes preparados en `datos/`
+
+`datos/` guarda viajes ya montados en ese mismo formato, listos para *Importar JSON*. Los ids son
+deterministas (UUID v5), así que reimportar el mismo archivo **actualiza** las filas en vez de
+duplicarlas.
+
+| Archivo | Viaje | Fechas |
+| --- | --- | --- |
+| `datos/viaje-peru-2025.json` | Perú (Lima · Paracas · Huacachina · Cusco · Valle Sagrado · Machu Picchu · Arequipa · Colca · Puno) | 28 jun – 14 jul 2025 |
+
+Cómo importarlo: descarga el `.json` (desde GitHub o desde la propia URL de Pages,
+`…/datos/viaje-peru-2025.json`) → icono de perfil → **Importar JSON**.
+
+Dos avisos:
+
+- El archivo trae `profile: "ruben"`, así que el viaje aparece con ese perfil.
+- `DB.importProfile` escribe directo en IndexedDB **sin pasar por la cola `_pending`**, de modo que
+  lo importado **no sube a Supabase**: hay que importar el archivo en cada dispositivo.
+
 ## "Explorar opciones" (planificador externo)
 
 Si tienes un HTML aparte con tu listado de opciones futuras, pon su ruta en `CFG.externalPlannerUrl`.
