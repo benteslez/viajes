@@ -152,6 +152,9 @@ Supabase** que el resto de la app.
 ## Nota rápida de una parada
 
 Cada evento del planning tiene un botón de **nota** (icono de nota) junto a "visto" y "editar".
+Los tres solo aparecen con un perfil que pueda editar: con `sergio` o `invitado`, `canEdit()` es
+`false` y la fila de acciones queda vacía. El archivo compartido es otra cosa distinta — HTML
+estático, sin IndexedDB, sin formularios y sin red — así que ahí no hay nada que proteger.
 Abre solo un campo de texto y guarda directo, sin pasar por el editor completo del evento — que es
 lo que se quería el 90 % de las veces. El botón se resalta cuando la parada ya tiene nota, y
 aparece un **Borrar** cuando hay algo que borrar. La nota se ve en la app y, debajo del nombre del

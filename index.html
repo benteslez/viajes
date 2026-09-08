@@ -8567,8 +8567,8 @@ const TripDetail = {
           html: svg('note'),
           onclick: (e) => { e.stopPropagation(); TripDetail.openQuickNote(t, it); }
         }) : null,
-        el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
-          title: isVirtual ? 'Editar el hotel' : 'Editar' }),
+        canEdit() ? el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
+          title: isVirtual ? 'Editar el hotel' : 'Editar' }) : null,
       ].filter(Boolean)),
     ].filter(Boolean));
     if (customColor) node.style.setProperty('--card-color', customColor);
