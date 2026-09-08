@@ -149,6 +149,17 @@ Supabase** que el resto de la app.
   `schema.sql` o `schema-wardrobe.sql`** (idempotentes; incluyen los `alter table … add column`).
 - **Offline:** funciona sin red como el resto (los datos van primero a IndexedDB).
 
+## Nota rápida de una parada
+
+Cada evento del planning tiene un botón de **nota** (icono de nota) junto a "visto" y "editar".
+Los tres solo aparecen con un perfil que pueda editar: con `sergio` o `invitado`, `canEdit()` es
+`false` y la fila de acciones queda vacía. El archivo compartido es otra cosa distinta — HTML
+estático, sin IndexedDB, sin formularios y sin red — así que ahí no hay nada que proteger.
+Abre solo un campo de texto y guarda directo, sin pasar por el editor completo del evento — que es
+lo que se quería el 90 % de las veces. El botón se resalta cuando la parada ya tiene nota, y
+aparece un **Borrar** cuando hay algo que borrar. La nota se ve en la app y, debajo del nombre del
+sitio, en el viaje compartido.
+
 ## Ubicaciones y geocodificación
 
 Las coordenadas de cada parada salen de geocodificar su nombre con Nominatim. Buscar el nombre a
@@ -196,9 +207,12 @@ datos. El archivo no lleva la clave de Supabase.
      punto suelto lejano desplaza el centro.
   3. **Alias**: una candidata que no está en `trip.city` y cae a menos de 25 km de una que sí lo
      está se funde en ella (Ñuñoa → Santiago, San Carlos de Bariloche → Bariloche).
-  4. **Votos por día**: dirección del evento +3, nombre de la ciudad en el título +3, destino del
-     vuelo +3, alojamiento de esa noche +2 y cercanía a menos de 30 km +1. El radio es corto a
-     propósito: con 60 km, Colonia del Sacramento votaba a Buenos Aires.
+  4. **Votos por día**: dirección del evento +3, nombre de la ciudad en el título +3, vuelo +3,
+     alojamiento de esa noche +2 y cercanía a menos de 30 km +1. El radio es corto a propósito:
+     con 60 km, Colonia del Sacramento votaba a Buenos Aires. El vuelo vota por su **destino** solo
+     si aterriza antes de las 18:00; si llega de noche vota por el **origen**, porque el día se ha
+     vivido allí (el día de las cataratas de Brasil, con vuelo a las 20:20, salía como "Buenos
+     Aires", y el último día del viaje como "Bogotá").
   5. Sin votos, se **hereda** la ciudad del día anterior (que es donde se dormía).
   6. Los días iniciales que quedan huérfanos se emparejan **en orden** con las ciudades de
      `trip.city` que no se han podido situar, y **solo si el número coincide exactamente**: una
@@ -209,13 +223,43 @@ datos. El archivo no lleva la clave de Supabase.
   algo distinto de la ciudad, se muestra en una pastilla aparte.
 - **Alojamiento de la noche**: `consultation_planned_d1 <= día < consultation_planned_d2`, así que
   el día del check-out ya no lo muestra.
-- **Sin mapa.** Se quitó: las coordenadas guardadas venían mal geocodificadas y el mapa era ruido.
-  El archivo tampoco publica ya `lat`/`lng`, y el enlace de cada parada se arma con el nombre del
-  sitio, que acierta más que una coordenada equivocada. La ciudad de cada día se calcula **antes**
-  de vaciar las coordenadas, porque son su señal principal.
+- **Sin mapa y sin enlaces a Google Maps.** Las coordenadas guardadas venían mal geocodificadas,
+  así que el mapa era ruido y el enlace de cada parada mandaba al sitio equivocado más veces de las
+  que acertaba. El archivo tampoco publica ya `lat`/`lng`. La ciudad de cada día se calcula
+  **antes** de vaciar las coordenadas, porque son su señal principal. El interruptor de enlaces
+  ahora solo afecta a las URLs escritas dentro de las notas, y así lo dice su etiqueta.
 - **Diseño**: barra superior que aparece al pasar la portada, portada con degradado de marca,
   cifras del viaje (días, ciudades, paradas, vuelos, alojamientos), número de día en un disco,
   pastillas sin borde e iconos de trazo. Claro y oscuro.
+- **Notas largas recortadas**: las notas (las del día y las de cada parada) se cortan a dos líneas
+  con un *Ver más*. El botón solo aparece si el texto se corta de verdad, y eso se mide **al abrir
+  el día**: dentro de un `<details>` cerrado todo mide 0 y saldría el botón hasta en una nota de
+  tres palabras. Si cabe entera, se le quita el recorte y no se ofrece nada.
+- **Movimiento**: al abrir un día, sus entradas aparecen escalonadas de derecha a izquierda
+  (42 ms entre una y otra, cortado a los 12 elementos: con 20 paradas, esperar al último sería lo
+  contrario de ágil). Los bloques de día aparecen al alcanzarlos en el scroll, una sola vez, y la
+  portada y las cifras entran al cargar. Con `prefers-reduced-motion: reduce` se anulan **duración
+  y retardo** — solo la duración no basta: con el escalonado, el último elemento seguía tardando
+  medio segundo en verse.
+
+**Qué se publica y qué no** (`Exporter._buildShareHtml`). Interruptores: precios, localizadores y
+documentos, enlaces externos y notas.
+
+1. Campos estructurados: `bookings.structured_data` y `planning_items.metadata` — se borran las
+   claves de `DOC_FIELDS` / `MONEY_FIELDS`, más `consultation_price` y `consultation_url`.
+2. Texto libre (`trip.notes`, `day_notes.text`, `planning_items.notes`): se tacha **la línea
+   entera** que contenga un localizador, un "Reserva bajo…" o un importe, sustituyéndola por
+   `[dato omitido]`. El resto de la nota se conserva.
+   El patrón del titular (`TITULAR_RE`) va **sin la bandera `i`** y exige dos palabras
+   capitalizadas seguidas: con `i`, `[A-Z]` casa también con minúsculas y degeneraba en "para" +
+   dos palabras cualesquiera, tachando frases normales ("para llegar", "para comer viendo las
+   cataratas").
+3. Campo *Ocultar además*: términos literales del usuario (nombre completo, teléfono, matrícula),
+   sustituidos en todo el archivo, incluidos títulos y direcciones. **No** se embeben en `OPTS`:
+   escribirlos ahí sería la fuga que se quería evitar.
+
+> El tachado por patrones **no es una garantía**: cubre los formatos habituales, no texto libre
+> arbitrario. Para datos delicados, usa *Ocultar además* y revisa el HTML antes de mandarlo.
 
 ### Enlace en vez de archivo
 
