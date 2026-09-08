@@ -194,6 +194,21 @@ a evento y un resumen con los que no ha podido verificar.
   menciona esa ciudad, se usa como respaldo la **mediana de los puntos de ese mismo día** (con
   tres o más), para que ningún día se quede sin revisar.
 
+### Saber qué versión estás ejecutando
+
+*Ajustes → Aplicación* muestra dos líneas: la **versión de la pantalla** (`APP_VERSION` en
+`index.html`) y la **caché que sirve el service worker** (`CACHE` en `service-worker.js`), que se
+le pregunta por `postMessage`. Si no coinciden, lo que se está ejecutando es una copia cacheada
+vieja: el problema está en el navegador, no en el servidor. Al desplegar hay que subir **las dos**.
+
+*Vaciar caché y recargar*, al lado de *Buscar actualizaciones*, borra las cachés y desregistra el
+service worker cuando un dispositivo se queda anclado a una versión vieja. **No toca IndexedDB**:
+los viajes están en la base de datos del navegador, no en la caché.
+
+El documento HTML se pide con `cache: 'no-cache'`. GitHub Pages sirve `index.html` con
+`max-age=600`, así que sin eso el navegador devolvía su copia durante diez minutos tras cada
+despliegue sin llegar a preguntar al servidor, y la app parecía no actualizarse.
+
 ### Buscar duplicados
 
 En el menú del viaje. Agrupa **paradas** por tipo + día + nombre, y **reservas** por tipo +
@@ -218,6 +233,15 @@ datos. El archivo no lleva la clave de Supabase.
 - **Itinerario plegable.** Un `<details>` por día, cerrados de entrada, con un botón *Desplegar
   todo*. La cabecera de cada día lleva pastillas: 📍 lugar, 🏨 alojamiento de esa noche,
   ✈️ cada vuelo, 🚗 cada coche y el número de paradas.
+- **Sin horas.** Unos eventos las tenían y otros no, y la mezcla se leía peor que no ponerlas
+  (el orden del día ya lo da la lista). Los horarios siguen en la app.
+- **El alojamiento va solo en la pastilla.** Salía además como una parada más del día, repitiendo
+  el nombre sin añadir nada. Se quitan de la lista únicamente las *noches* (entrada ≤ día <
+  salida): una fila de salida en su propio día sí se conserva.
+- **Tres niveles de color** para que se distinga cabecera de contenido: cabecera al color de la
+  tarjeta, cuerpo del día sobre una bandeja `--bg-soft` y cada parada como tarjeta `--bg-elev`
+  encima. Antes la cabecera y las paradas compartían fondo y la cabecera parecía una parada más;
+  la nota del día iba en azul de acento y teñía el bloque entero.
 - **De dónde sale la ciudad de cada día.** Los lugares casi nunca traen dirección, pero sí
   coordenadas, así que se deduce por votación (`resolverCiudades`):
   1. **Candidatas**: las ciudades de `trip.city`, las de `trip_legs`, las de las direcciones
@@ -331,7 +355,14 @@ repo y permiso *Contents: Read and write*.
   Pages configurada.
 - **Actualizar** reutiliza la misma ruta: la URL que ya mandaste no cambia.
 - **Revocar** borra el archivo del repo; el enlace deja de funcionar.
-- GitHub Pages tarda ~1 minuto en publicar el archivo nuevo.
+- GitHub Pages tarda ~1 minuto en publicar el archivo nuevo. La hoja del enlace **sondea la URL**
+  (HEAD cada 3 s, hasta 2 min) y mantiene *Abrir* deshabilitado hasta que responde: antes daba un
+  404 desconcertante justo después de publicar, cuando en realidad la subida había ido bien.
+- El sondeo pide **siempre** `?_=<timestamp>`, nunca la URL limpia. Pedir la URL antes de que el
+  archivo exista hace que la CDN de GitHub Pages **guarde ese 404** y lo siga sirviendo un rato
+  aunque el despliegue ya haya terminado; sondear la URL limpia dejaría el enlace roto para quien
+  lo abriera después. Si aun así alguien se topa con el 404 cacheado, el botón *Abrir sin caché*
+  (aparece cuando el sondeo se agota) añade el parámetro y salta la caché.
 
 > En un repo **público** la carpeta de enlaces la puede listar cualquiera: la URL no es un
 > secreto, solo evita que se adivine. Para enlaces realmente privados hace falta un repo privado

@@ -5,7 +5,7 @@
 
 // Subir el sufijo cuando se quiere forzar la invalidación de la versión cacheada
 // (ej. tras cambios en index.html o en las CDNs declaradas más abajo).
-const CACHE = 'viajes-shell-v102';
+const CACHE = 'viajes-shell-v106';
 
 // Caché SEPARADO para imágenes (portadas de viaje, miniaturas de tarjetas…).
 // No lleva el sufijo del shell a propósito: así las imágenes ya descargadas
@@ -133,7 +133,11 @@ self.addEventListener('fetch', (event) => {
   // Documento HTML → network-first
   if (isHtml(url, req)) {
     event.respondWith(
-      fetch(req)
+      // `cache: 'no-cache'` obliga a revalidar contra el servidor. Sin esto,
+      // GitHub Pages sirve index.html con max-age=600 y durante diez minutos
+      // tras un despliegue el navegador devuelve la copia vieja de su caché HTTP
+      // sin llegar a preguntar: la app parecía no actualizarse.
+      fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' })
         .then((resp) => {
           if (resp && resp.status === 200) {
             const copy = resp.clone();
@@ -178,4 +182,8 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+  // Ajustes pregunta qué versión está sirviendo realmente el service worker.
+  if (event.data === 'VERSION' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage(CACHE);
+  }
 });
