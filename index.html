@@ -12948,7 +12948,16 @@ const GeoCities = {
         if (ca && !RE.test(ca)) add(canon(ca), 3);
         const txt = [p.title, p.place_name].filter(Boolean).join(' ').toLowerCase();
         cities.forEach(c => { if (txt.indexOf(c.toLowerCase()) !== -1) add(canon(c), 3); });
-        if (p.type === 'vuelo') add(canon(this.cityOfCode((p.metadata || {}).destino)), 3);
+        // Un vuelo que aterriza de día deja el día en el destino; uno que sale por
+        // la tarde, no: ese día se ha vivido en el origen. Sin esto, el día de las
+        // cataratas de Brasil (vuelo a las 20:20) salía como "Buenos Aires" y el
+        // último día del viaje como "Bogotá".
+        if (p.type === 'vuelo') {
+          const m = p.metadata || {};
+          const llegada = p.consultation_planned_t2 || p.consultation_planned_t1 || p.time || '';
+          const deDia = llegada ? llegada < '18:00' : true;
+          add(canon(this.cityOfCode(deDia ? m.destino : m.origen)), 3);
+        }
         if (p.lat != null) {
           let best = null, dist = Infinity;
           Object.keys(centers).forEach(c => { const d = this.km([p.lat, p.lng], centers[c]); if (d < dist) { dist = d; best = c; } });
@@ -13319,7 +13328,7 @@ const Exporter = {
       el('label', { class:'switch', style:{padding:'6px 0', width:'100%'} }, [
         el('input', { id:'sh-links', type:'checkbox', checked: true }),
         el('span', { class:'switch-track' }),
-        el('span', { text:'Enlaces externos (Google Maps, webs)' }),
+        el('span', { text:'Enlaces escritos en las notas' }),
       ]),
       el('label', { class:'switch', style:{padding:'6px 0', width:'100%'} }, [
         el('input', { id:'sh-notes', type:'checkbox', checked: true }),
@@ -13741,7 +13750,6 @@ ${viewerScript}
     lines.push("function fmtDayLong(iso){if(!iso)return'';return new Date(iso+'T00:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});}");
     lines.push("function fmtDateShort(iso){if(!iso)return'';return new Date(iso+'T00:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});}");
     lines.push("function daysBetween(a,b){if(!a||!b)return 0;return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/(24*3600*1000));}");
-    lines.push("function gmapsUrl(lat,lng,q){if(lat!=null&&lng!=null)return 'https://www.google.com/maps/search/?api=1&query='+lat+','+lng;if(q)return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q);return null;}");
     lines.push("function el(tag, attrs, children) {");
     lines.push("  const n = document.createElement(tag);");
     lines.push("  if (attrs) for (const k in attrs) { if (k==='class') n.className = attrs[k]; else if (k==='text') n.textContent = attrs[k]; else if (k==='html') n.innerHTML = attrs[k]; else if (k.startsWith('on')) n.addEventListener(k.slice(2), attrs[k]); else if (k==='style') Object.assign(n.style, attrs[k]); else n.setAttribute(k, attrs[k]); }");
@@ -13916,8 +13924,7 @@ ${viewerScript}
     lines.push("        if (it.place_name && it.place_name !== it.title) tlItem.appendChild(el('div', {class:'tl-sub', text: it.place_name}));");
     lines.push("        if (it.address) tlItem.appendChild(el('div', {class:'tl-sub', text: it.address}));");
     lines.push("        if (it.notes) tlItem.appendChild(el('div', {class:'tl-sub', style:{whiteSpace:'pre-wrap'}, text: it.notes}));");
-    lines.push("        const gm = OPTS.includeLinks ? gmapsUrl(it.lat, it.lng, it.place_name) : null;");
-    lines.push("        if (gm) tlItem.appendChild(el('a', {class:'tl-link', href: gm, target:'_blank', rel:'noopener', text:'Ver en el mapa ›'}));");
+
     lines.push("        tl.appendChild(tlItem);");
     lines.push("      });");
     lines.push("      bodyDiv.appendChild(tl);");
@@ -13965,8 +13972,7 @@ ${viewerScript}
     lines.push("    c.appendChild(el('div', {class:'ti', text: a.label}));");
     lines.push("    if (a.address) c.appendChild(el('div', {class:'sub', text: a.address}));");
     lines.push("    if (a.notes) c.appendChild(el('div', {class:'sub', text: a.notes}));");
-    lines.push("    const gm = OPTS.includeLinks ? gmapsUrl(a.lat, a.lng, a.address) : null;");
-    lines.push("    if (gm) { const w = el('div', {style:{marginTop:'8px'}}); w.appendChild(el('a', {href: gm, target:'_blank', rel:'noopener', text:'Abrir en Google Maps'})); c.appendChild(w); }");
+
     lines.push("    root.appendChild(c);");
     lines.push("  });");
     lines.push("}");
