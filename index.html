@@ -2480,6 +2480,20 @@ body.readonly .timeline-item { cursor:default; }
 .profile-name { font-weight:600; font-size:16px; }
 .profile-sub { font-size:13px; color:var(--text-muted); }
 
+.login-form { display:flex; flex-direction:column; gap:10px; width:100%; }
+.login-form input {
+  width:100%; padding:14px 16px; font:inherit;
+  font-size:16px;                 /* por debajo de 16px, iOS hace zoom al enfocar */
+  background:var(--bg-elev); color:var(--text);
+  border:1px solid var(--line); border-radius:var(--r-md);
+}
+.login-form input:focus-visible { outline:2px solid var(--focus); outline-offset:1px; }
+.login-submit { width:100%; height:48px; font-size:15px; margin-top:4px; }
+.login-error {
+  min-height:18px; text-align:center; color:var(--danger);
+  font-size:13.5px; line-height:1.35;
+}
+
 /* ========================================================================
    Misc — dividers, etc.
    ====================================================================== */
@@ -2705,11 +2719,16 @@ const CFG = {
 };
 
 const PROFILES = [
-  // id ASCII puro — viaja como cabecera HTTP x-app-profile en Supabase, no puede llevar tildes.
-  // El nombre visible "Rubén" se muestra desde el campo .name, no desde el id.
-  { id: 'ruben',    name: 'Rubén',    cls: 'avatar-r', initial: 'R', tag: 'Personal', readonly: false },
-  { id: 'sergio',   name: 'Sergio',   cls: 'avatar-s', initial: 'S', tag: 'Solo lectura',         readonly: true },
-  { id: 'invitado', name: 'Invitado', cls: 'avatar-i', initial: 'I', tag: 'Solo lectura',         readonly: true },
+  // id ASCII puro — es el valor de la columna `profile` de cada fila y el que
+  // guarda `app_users`. El nombre visible "Rubén" sale de .name, no del id.
+  //
+  // 'invitado' ya no existe. Era un perfil sin credencial, y como el servidor
+  // asumía 'invitado' cuando no llegaba cabecera, cualquiera en internet leía
+  // los datos con un curl. Ahora cada perfil es una cuenta de Supabase Auth
+  // (ver schema-auth.sql); compartir un viaje se hace con el enlace HTML, que
+  // sale ya redactado y no da acceso a la base.
+  { id: 'ruben',  name: 'Rubén',  cls: 'avatar-r', initial: 'R', tag: 'Personal',     readonly: false },
+  { id: 'sergio', name: 'Sergio', cls: 'avatar-s', initial: 'S', tag: 'Solo lectura', readonly: true  },
 ];
 // Helper global: ¿puede el perfil activo modificar datos?
 const canEdit = () => {
@@ -2729,8 +2748,11 @@ const dataProfile = () => {
   return (me === 'sergio') ? OWNER_PROFILE : me;
 };
 
-// Restricciones de Invitado: no ve precios, ni enlaces, ni documentos.
-// Sergio sí ve todo, pero en read-only.
+// Restricciones del antiguo perfil Invitado: no veía precios, ni enlaces, ni
+// documentos. Se quedan como puntos de enganche —hoy siempre dan true, porque
+// 'invitado' ya no existe— para no dispersar la decisión por 30 sitios el día
+// que haya otro perfil limitado. Nunca fueron una barrera de seguridad: los
+// datos llegaban enteros al navegador y esto solo dejaba de pintarlos.
 const canSeeMoney = () => STATE.profile !== 'invitado';
 const canSeeLinks = () => STATE.profile !== 'invitado';
 const canSeeDocs  = () => STATE.profile !== 'invitado';
@@ -3692,6 +3714,96 @@ const DB = {
 };
 
 /* ============================================================
+   AUTH — sesión de Supabase
+   ============================================================
+   El perfil activo ya no lo declara el cliente. Sale de la tabla `app_users`,
+   que solo se puede consultar con el JWT de una sesión real: ese JWT lo firma
+   el servidor y no se puede inventar desde el navegador. Antes se mandaba una
+   cabecera `x-app-profile` que elegía el propio cliente y que, junto con la
+   anonKey publicada en este archivo, dejaba la base abierta a cualquiera.
+   La contraparte de servidor está en schema-auth.sql.
+   ============================================================ */
+const AUTH = {
+  client: null,
+  PROFILE_KEY: 'viajes_profile',
+
+  // Cliente único de Supabase, compartido con SYNC. Dos clientes sobre el
+  // mismo almacenamiento de sesión se pisan (GoTrue avisa por consola).
+  init() {
+    if (this.client) return this.client;
+    if (!CFG.supabaseUrl || !CFG.supabaseAnonKey || !window.supabase) return null;
+    this.client = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, storageKey: 'viajes_auth' },
+    });
+    return this.client;
+  },
+
+  // Sesión guardada. Sale de localStorage, así que responde sin conexión.
+  async session() {
+    const c = this.init();
+    if (!c) return null;
+    try { const { data } = await c.auth.getSession(); return data?.session || null; }
+    catch (e) { console.warn('getSession', e); return null; }
+  },
+
+  async signIn(email, password) {
+    const c = this.init();
+    if (!c) throw new Error('Supabase no está configurado en este dispositivo.');
+    const { error } = await c.auth.signInWithPassword({
+      email: String(email || '').trim(), password: password || '',
+    });
+    if (error) throw new Error(this._msg(error));
+    const profile = await this.fetchProfile();
+    if (!profile) {
+      // Cuenta válida sin fila en app_users: no sabemos de quién son los datos
+      // que vería. Se cierra la sesión en vez de dejarla a medias.
+      await this.signOut();
+      throw new Error('La cuenta existe pero no tiene perfil asignado. Añádela a la tabla app_users (ver schema-auth.sql).');
+    }
+    return profile;
+  },
+
+  async signOut() {
+    try { await this.client?.auth.signOut(); } catch (e) { console.warn('signOut', e); }
+    try { localStorage.removeItem(this.PROFILE_KEY); } catch (_) {}
+  },
+
+  // El perfil vive en el servidor y se cachea: la app es local-first y tiene
+  // que arrancar en un avión, donde no hay a quién preguntar.
+  async fetchProfile() {
+    const c = this.init();
+    if (!c) return null;
+    try {
+      const { data, error } = await c.from('app_users').select('profile').maybeSingle();
+      if (error) throw error;
+      const p = data?.profile || null;
+      if (p) localStorage.setItem(this.PROFILE_KEY, p);
+      return p;
+    } catch (e) {
+      console.warn('app_users', e);
+      return this.cachedProfile();
+    }
+  },
+
+  cachedProfile() {
+    try {
+      const p = localStorage.getItem(this.PROFILE_KEY);
+      return PROFILES.some(x => x.id === p) ? p : null;
+    } catch (_) { return null; }
+  },
+
+  // Los mensajes crudos de GoTrue van en inglés y no dicen qué hacer.
+  _msg(error) {
+    const m = String(error?.message || '');
+    if (/invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
+    if (/email not confirmed/i.test(m))       return 'La cuenta está sin confirmar. Márcala como confirmada en Supabase → Authentication → Users.';
+    if (/too many requests|rate limit/i.test(m)) return 'Demasiados intentos seguidos. Espera un minuto.';
+    if (/failed to fetch|networkerror|load failed/i.test(m)) return 'Sin conexión. La primera entrada en cada dispositivo necesita internet.';
+    return m || 'No se pudo iniciar sesión.';
+  },
+};
+
+/* ============================================================
    SYNC — Supabase + cola
    ============================================================ */
 const SYNC = {
@@ -3713,10 +3825,11 @@ const SYNC = {
       this.enabled = false;
       return;
     }
-    this.client = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
-      global: { headers: { 'x-app-profile': STATE.profile || 'invitado' } },
-      auth: { persistSession: false }
-    });
+    // El cliente lo crea AUTH y es el mismo para toda la app. Ya no viaja la
+    // cabecera `x-app-profile`: el servidor deduce el perfil del JWT de la
+    // sesión, que es lo único que no puede falsificarse desde aquí.
+    this.client = AUTH.init();
+    if (!this.client) { this.enabled = false; return; }
     this.enabled = true;
     this.lastError = null;
     this._setStatus(navigator.onLine ? 'idle' : 'offline');
@@ -4635,21 +4748,55 @@ const ProfilePicker = {
   mount() {
     const list = $('#profile-list');
     list.innerHTML = '';
-    PROFILES.forEach(p => {
-      const btn = el('button', { class:'profile-btn', onclick: () => ProfilePicker.choose(p.id) }, [
-        el('div', { class:`profile-avatar ${p.cls}`, text: p.initial }),
-        el('div', { class:'profile-info' }, [
-          el('div', { class:'profile-name', text: p.name }),
-          el('div', { class:'profile-sub', text: p.tag }),
-        ]),
-      ]);
-      list.appendChild(btn);
-    });
+    const hero = document.querySelector('.profile-hero p');
+    // Con Supabase detrás hay datos que proteger, así que entrar es iniciar
+    // sesión y el perfil lo decide el servidor. Sin Supabase la app es local
+    // pura: no hay nada remoto a lo que autenticarse y los botones siguen
+    // teniendo sentido.
+    if (CFG.supabaseUrl && CFG.supabaseAnonKey) {
+      if (hero) hero.textContent = 'Inicia sesión para entrar y sincronizar.';
+      list.appendChild(ProfilePicker._loginForm());
+    } else {
+      if (hero) hero.textContent = 'Elige el perfil con el que quieres entrar.';
+      PROFILES.forEach(p => {
+        const btn = el('button', { class:'profile-btn', onclick: () => ProfilePicker.choose(p.id) }, [
+          el('div', { class:`profile-avatar ${p.cls}`, text: p.initial }),
+          el('div', { class:'profile-info' }, [
+            el('div', { class:'profile-name', text: p.name }),
+            el('div', { class:'profile-sub', text: p.tag }),
+          ]),
+        ]);
+        list.appendChild(btn);
+      });
+    }
     const stat = $('#profile-status');
     const t = stat.querySelector('.t');
     const d = stat.querySelector('.dot');
     if (CFG.supabaseUrl) { t.textContent = 'Supabase configurado'; d.style.background = '#10b981'; }
     else { t.textContent = 'Modo local'; d.style.background = '#f59e0b'; }
+  },
+
+  _loginForm() {
+    const err  = el('div', { class:'login-error', role:'alert', 'aria-live':'polite' });
+    // 16px de fuente en los campos: por debajo, iOS hace zoom al enfocarlos.
+    const mail = el('input', { type:'email', placeholder:'Correo', autocomplete:'username',
+      inputmode:'email', autocapitalize:'off', autocorrect:'off', spellcheck:'false', required:true });
+    const pass = el('input', { type:'password', placeholder:'Contraseña',
+      autocomplete:'current-password', required:true });
+    const btn  = el('button', { class:'btn btn-primary login-submit', type:'submit' }, 'Entrar');
+    return el('form', { class:'login-form', onsubmit: async (ev) => {
+      ev.preventDefault();
+      err.textContent = '';
+      btn.disabled = true; btn.textContent = 'Entrando…';
+      try {
+        const profile = await AUTH.signIn(mail.value, pass.value);
+        pass.value = '';
+        await ProfilePicker.choose(profile);
+      } catch (e) {
+        err.textContent = e?.message || 'No se pudo iniciar sesión.';
+        btn.disabled = false; btn.textContent = 'Entrar';
+      }
+    }}, [ mail, pass, btn, err ]);
   },
 
   async choose(profileId) {
@@ -13046,13 +13193,19 @@ const PerfilView = {
     ].filter(Boolean));
     root.appendChild(dataBtns);
 
-    // Cambiar perfil
+    // Salir. Con servidor detrás esto cierra la sesión de verdad: no basta con
+    // olvidar el perfil, porque el JWT seguiría guardado y valdría para leer.
+    const remoto = !!(CFG.supabaseUrl && CFG.supabaseAnonKey);
     root.appendChild(el('div', { class:'divider' }));
-    root.appendChild(el('button', { class:'btn btn-ghost', onclick: () => {
-      STATE.profile = null; localStorage.removeItem('viajes_profile');
+    root.appendChild(el('button', { class:'btn btn-ghost', onclick: async () => {
+      if (remoto) await AUTH.signOut();
+      try { localStorage.removeItem('viajes_profile'); } catch (_) {}
+      STATE.profile = null;
       STATE.filter = null; STATE.currentTripId = null;
-      Router.go('profile');
-    }}, 'Cambiar de perfil'));
+      SYNC.enabled = false;
+      await Router.go('profile');
+      ProfilePicker.mount();      // repintar: deja los campos en blanco
+    }}, remoto ? 'Cerrar sesión' : 'Cambiar de perfil'));
   },
 
   openDoc(existing=null) {
@@ -15413,9 +15566,18 @@ async function boot() {
   // 5) Auto-login con el perfil guardado, si lo hay y la BD está OK.
   if (dbOk) {
     try {
-      const saved = localStorage.getItem('viajes_profile');
-      if (saved && PROFILES.some(p => p.id === saved)) {
-        await ProfilePicker.choose(saved);
+      // Entrar exige sesión cuando hay servidor detrás: el perfil sale de
+      // `app_users`, no de lo que este dispositivo tenga guardado. El caché
+      // local evita pedir la red en cada arranque (y permite abrir la app sin
+      // cobertura, que es media gracia de un diario de viaje).
+      let entrar = null;
+      if (CFG.supabaseUrl && CFG.supabaseAnonKey) {
+        if (await AUTH.session()) entrar = AUTH.cachedProfile() || await AUTH.fetchProfile();
+      } else {
+        entrar = AUTH.cachedProfile();
+      }
+      if (entrar) {
+        await ProfilePicker.choose(entrar);
       } else {
         STATE.view = 'profile';
         Router.render();
