@@ -13305,7 +13305,8 @@ h3.day { font-weight:600; letter-spacing:-.01em; font-size:17px; margin:16px 0 8
 .tl-item::before { content:''; position:absolute; left:-37px; top:14px; width:14px; height:14px; border-radius:50%; background:var(--bg-elev); border:2px solid var(--accent); box-shadow:0 0 0 3px var(--bg); }
 .tl-time { display:inline-block; font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; font-size:11px; background:var(--bg-soft); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-pill); margin-right:6px; }
 .tl-title { font-weight:600; }
-.tl-sub { color:var(--text-muted); font-size:13.5px; margin-top:4px; }
+.tl-sub { color:var(--text-muted); font-size:13.5px; margin-top:4px; overflow-wrap:anywhere; }
+.tl-title, .day-note, .card p, main { overflow-wrap:anywhere; }
 .tl-link { display:inline-block; margin-top:6px; font-size:13px; }
 .day-note {
   background:color-mix(in srgb, var(--accent-bg) 30%, var(--bg-elev));
