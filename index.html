@@ -14172,10 +14172,15 @@ const Exporter = {
   --bg:#fbfcfe; --bg-elev:#fff; --bg-soft:#f4f6fa;
   --text:#0b1220; --text-muted:#68738a;
   --line:#e8ecf3; --line-soft:#f1f4f9;
-  --accent:#2563eb; --accent-2:#06b6d4; --accent-bg:#eaf1ff;
-  --c-hotel:#0d9488;  --c-hotel-bg:#e6fbf7;
-  --c-flight:#7c3aed; --c-flight-bg:#f2ecff;
-  --c-car:#c2760a;    --c-car-bg:#fff5e0;
+  --accent:#2563eb; --accent-2:#06b6d4; --accent-bg:#eaf1ff; --on-accent:#fff;
+  /* Cabecera del día: banda propia. Sin ella, cabecera y contenido eran la
+     misma superficie blanca con el mismo azul y no se distinguían. */
+  --head-bg:#e8eef8; --head-line:#d3ddef; --head-ink:#16233b;
+  --c-hotel:#0d9488;
+  --c-flight:#7c3aed;
+  --c-car:#b06f0c;
+  /* Nota del día: tono papel, no azul de cabecera. */
+  --c-note:#8a6410; --c-note-bg:#fdf6e4; --c-note-line:#e0bf6b;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -14185,10 +14190,12 @@ const Exporter = {
     --bg:#0a0f1a; --bg-elev:#131b2b; --bg-soft:#1a2436;
     --text:#f2f5fa; --text-muted:#95a1b8;
     --line:#26324a; --line-soft:#1a2436;
-    --accent:#7aa7ff; --accent-2:#3ddbf0; --accent-bg:#17263f;
-    --c-hotel:#5eead4;  --c-hotel-bg:#10352f;
-    --c-flight:#c9b6ff; --c-flight-bg:#291f45;
-    --c-car:#fbc858;    --c-car-bg:#3a2a0c;
+    --accent:#7aa7ff; --accent-2:#3ddbf0; --accent-bg:#17263f; --on-accent:#08111f;
+    --head-bg:#1d2a45; --head-line:#33425f; --head-ink:#e7edf9;
+    --c-hotel:#5eead4;
+    --c-flight:#c9b6ff;
+    --c-car:#fbc858;
+    --c-note:#e9c46a; --c-note-bg:#2c2412; --c-note-line:#6b5620;
   }
 }
 * { box-sizing:border-box; }
@@ -14201,7 +14208,7 @@ body {
   font-optical-sizing:auto;
   -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
 }
-.dh-badge b, .stat b, .tl-time, .kv .v, .card .ref { font-variant-numeric:tabular-nums; }
+.dh-badge b, .stat b, .kv .v, .card .ref { font-variant-numeric:tabular-nums; }
 main { max-width:760px; margin:0 auto; padding:0 16px 72px; }
 /* Barra superior: aparece cuando la portada deja de verse, como en iOS. */
 .topbar {
@@ -14258,42 +14265,49 @@ details.day-block {
   margin-bottom:10px; box-shadow:var(--sh-1); overflow:hidden;
   transition:box-shadow .2s ease, border-color .2s ease;
 }
-details.day-block[open] { box-shadow:var(--sh-2); border-color:color-mix(in srgb, var(--accent) 22%, var(--line)); }
+details.day-block[open] { box-shadow:var(--sh-2); border-color:var(--head-line); }
+/* Cabecera y contenido eran los dos blancos y con el mismo azul de relleno: se
+   fundían en un bloque sin jerarquía. Ahora la cabecera es una banda propia
+   (fondo teñido, número del día en sólido) y el cuerpo va limpio: el azul se
+   reserva para el número del día y para los enlaces. */
 summary.day-head {
   list-style:none; cursor:pointer; padding:14px; display:flex; gap:13px; align-items:center;
+  background:var(--head-bg); color:var(--head-ink);
   -webkit-tap-highlight-color:transparent; transition:background .15s ease;
 }
 summary.day-head::-webkit-details-marker { display:none; }
-summary.day-head:hover, summary.day-head:active { background:var(--bg-soft); }
-/* Abierto, cabecera y contenido eran los dos blancos y se fundían en un bloque
-   sin lectura. La cabecera pasa a fondo suave con una línea debajo. */
-details[open] > summary.day-head {
-  background:var(--bg-soft);
-  border-bottom:1px solid var(--line);
-}
+summary.day-head:hover, summary.day-head:active { background:color-mix(in srgb, var(--head-bg) 90%, var(--accent)); }
+details[open] > summary.day-head { border-bottom:1px solid var(--head-line); }
 .dh-badge {
-  flex:none; width:38px; height:38px; border-radius:13px; background:var(--accent-bg); color:var(--accent);
+  flex:none; width:38px; height:38px; border-radius:13px; color:var(--on-accent);
+  background:linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent-2) 45%, var(--accent)));
+  box-shadow:0 2px 6px color-mix(in srgb, var(--accent) 28%, transparent);
   display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1;
 }
-.dh-badge span { font-size:8.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; opacity:.7; margin-bottom:2px; }
-.dh-badge b { font-size:17px; font-weight:640; letter-spacing:-.03em; }
+.dh-badge span { font-size:8.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; opacity:.8; margin-bottom:2px; }
+.dh-badge b { font-size:17px; font-weight:700; letter-spacing:-.03em; }
 .dh-main { flex:1; min-width:0; }
-.dh-date { font-weight:590; font-size:17px; letter-spacing:-.022em; }
+.dh-date { font-weight:640; font-size:16.5px; letter-spacing:-.022em; }
+.dh-date::first-letter { text-transform:uppercase; }
 .dh-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
 .dh-caret { flex:none; width:16px; height:16px; color:var(--text-muted); opacity:.5; transition:transform .22s cubic-bezier(.4,0,.2,1); }
 details[open] .dh-caret { transform:rotate(90deg); }
 .chip {
   display:inline-flex; align-items:center; gap:5px; white-space:nowrap; max-width:100%;
-  font-size:12.5px; font-weight:590; letter-spacing:-.006em; padding:4.5px 11px 4.5px 8px;
+  font-size:12.5px; font-weight:640; letter-spacing:-.006em; padding:4.5px 11px 4.5px 8px;
   border-radius:var(--r-pill); border:none; overflow:hidden; text-overflow:ellipsis;
+  /* Sobre la banda de la cabecera un fondo claro solo no se lee: cada pastilla
+     lleva su aro del color de su tipo. */
+  background:var(--bg-elev);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, currentColor 26%, transparent);
 }
 .chip-ico { display:inline-flex; flex:none; }
 .chip-ico svg { width:13px; height:13px; opacity:.9; }
-.chip-place  { background:var(--accent-bg); color:var(--accent); }
-.chip-hotel  { background:var(--c-hotel-bg);  color:var(--c-hotel); }
-.chip-flight { background:var(--c-flight-bg); color:var(--c-flight); }
-.chip-car    { background:var(--c-car-bg);    color:var(--c-car); }
-.chip-count  { background:var(--bg-soft); color:var(--text-muted); font-weight:600; padding:4px 11px; }
+.chip-place  { background:color-mix(in srgb, var(--accent) 10%, var(--bg-elev));   color:var(--accent); }
+.chip-hotel  { background:color-mix(in srgb, var(--c-hotel) 10%, var(--bg-elev));  color:var(--c-hotel); }
+.chip-flight { background:color-mix(in srgb, var(--c-flight) 10%, var(--bg-elev)); color:var(--c-flight); }
+.chip-car    { background:color-mix(in srgb, var(--c-car) 10%, var(--bg-elev));    color:var(--c-car); }
+.chip-count  { background:var(--bg-elev); color:var(--text-muted); font-weight:600; padding:4px 11px; }
 /* --- Movimiento ---------------------------------------------------------
    Al abrir un día, sus entradas entran escalonadas de derecha a izquierda. El
    escalonado se corta a los 12 elementos: con 20 paradas, esperar el último
@@ -14328,25 +14342,24 @@ details[open] /* Notas largas: se recortan a dos líneas y se despliegan a petic
 .stat { animation:entra-suave .4s cubic-bezier(.22,.8,.3,1) both; animation-delay:calc(var(--i, 0) * 55ms); }
 .cover { animation:entra-suave .5s cubic-bezier(.22,.8,.3,1) both; }
 .day-body { padding:16px 16px 18px; }
-.day-empty { color:var(--text-muted); font-size:13.5px; padding:0 16px 18px; }
+.day-empty { color:var(--text-muted); font-size:13.5px; }
 .timeline { position:relative; margin-left:5px; padding-left:22px; border-left:1.5px solid var(--line); }
 .tl-item { position:relative; padding:12px 14px; background:var(--bg-soft); border-radius:15px; margin-bottom:8px; }
 .tl-item::before {
   content:''; position:absolute; left:-27px; top:18px; width:8px; height:8px; border-radius:50%;
-  background:var(--accent); opacity:.5; box-shadow:0 0 0 4px var(--bg-elev);
-}
-.tl-time {
-  display:inline-block; font-size:11.5px; font-weight:700;
-  background:var(--bg-elev); color:var(--accent); padding:2px 8px; border-radius:var(--r-pill); margin-right:7px;
+  background:var(--text-muted); opacity:.42; box-shadow:0 0 0 4px var(--bg-elev);
 }
 .tl-title { font-weight:590; letter-spacing:-.017em; font-size:16px; line-height:1.32; }
 .tl-sub { color:var(--text-muted); font-size:14.5px; line-height:1.42; margin-top:6px; letter-spacing:-.006em; overflow-wrap:anywhere; }
 .tl-title, .day-note, .card p, main { overflow-wrap:anywhere; }
 .tl-link { display:inline-block; margin-top:8px; font-size:12.5px; font-weight:700; }
+/* La nota del día iba en el mismo azul que la cabecera y parecía parte de ella.
+   Va en tono nota (papel), que es lo que es. */
 .day-note {
-  background:var(--accent-bg); border:none; border-left:3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background:var(--c-note-bg); color:var(--text); border:none; border-left:3px solid var(--c-note-line);
   border-radius:12px; padding:12px 14px; margin-bottom:10px; font-size:14.5px; line-height:1.42;
 }
+.day-note .nota-mas { color:var(--c-note); }
 .card { background:var(--bg-elev); border:1px solid var(--line); border-radius:18px; padding:15px 16px; margin-bottom:10px; box-shadow:var(--sh-1); }
 .card .ti { font-weight:700; letter-spacing:-.02em; display:flex; align-items:center; gap:8px; }
 .card .sub { color:var(--text-muted); font-size:13.5px; margin-top:4px; }
@@ -14418,7 +14431,7 @@ ${viewerScript}
     lines.push("const ICON = {");
     lines.push("  pin:   '<path d=\\'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z\\'/><circle cx=\\'12\\' cy=\\'10\\' r=\\'2.6\\'/>',");
     lines.push("  hotel: '<path d=\\'M3 20V7l9-4 9 4v13\\'/><path d=\\'M3 20h18\\'/><path d=\\'M9 20v-5h6v5\\'/>',");
-    lines.push("  plane: '<path d=\\'M10.2 3.6a1.5 1.5 0 0 1 2.6 0l2.6 5.3 5.4 1a1 1 0 0 1 .5 1.7l-3.9 3.5.9 5.5a1 1 0 0 1-1.5 1L12 18.8l-4.8 2.8a1 1 0 0 1-1.5-1l.9-5.5-3.9-3.5a1 1 0 0 1 .5-1.7l5.4-1z\\'/>',");
+    lines.push("  plane: '<path d=\\'M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.2.6-.6.5-1.1z\\'/>',");
     lines.push("  car:   '<path d=\\'M5 17h14M6.5 17V9.5L8 6h8l1.5 3.5V17\\'/><circle cx=\\'8\\' cy=\\'17\\' r=\\'1.6\\'/><circle cx=\\'16\\' cy=\\'17\\' r=\\'1.6\\'/>',");
     lines.push("};");
     lines.push("const ico = (k) => '<svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.8\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' aria-hidden=\\'true\\'>' + ICON[k] + '</svg>';");
@@ -14594,13 +14607,17 @@ ${viewerScript}
     lines.push("");
     lines.push("    const bodyDiv = el('div', {class:'day-body'});");
     lines.push("    if (note && note.text) bodyDiv.appendChild(notaRecortable(note.text, 'day-note'));");
-    lines.push("    if (items.length) {");
+    lines.push("    // El alojamiento ya sale como pastilla en la cabecera del día; repetirlo");
+    lines.push("    // dentro del itinerario era la misma información dos veces.");
+    lines.push("    const visibles = items.filter(p => p.type !== 'hotel');");
+    lines.push("    if (visibles.length) {");
     lines.push("      const tl = el('div', {class:'timeline'});");
-    lines.push("      items.forEach((it, idx) => {");
+    lines.push("      visibles.forEach((it, idx) => {");
     lines.push("        const tlItem = el('div', {class:'tl-item'});");
     lines.push("        tlItem.style.setProperty('--i', Math.min(idx, 12));");
+    lines.push("        // Sin horas: solo las tenía una parte de las paradas y la mezcla de");
+    lines.push("        // unas con hora y otras sin ella se leía a saltos.");
     lines.push("        const titleDiv = el('div', {class:'tl-title'});");
-    lines.push("        if (it.time) titleDiv.appendChild(el('span', {class:'tl-time', text: it.time}));");
     lines.push("        titleDiv.appendChild(document.createTextNode(it.title));");
     lines.push("        tlItem.appendChild(titleDiv);");
     lines.push("        if (it.place_name && it.place_name !== it.title) tlItem.appendChild(el('div', {class:'tl-sub', text: it.place_name}));");
