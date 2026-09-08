@@ -861,6 +861,7 @@ h2.section-title {
 .timeline-item.list-item .item-emoji { width:40px; height:40px; font-size:20px; border:none; border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
 .timeline-item.list-item .drag-handle { padding:2px; }
 .timeline-item.list-item .icon-btn { width:28px; height:28px; }
+.icon-btn.btn-note-on { color:var(--accent); background:var(--accent-bg); }
 .timeline-item.list-item .icon-btn svg { width:16px; height:16px; }
 .timeline-item.list-item .li-actions .btn.btn-sm { height:28px; padding:0 9px; font-size:12px; }
 /* Sub-texto en 1-2 líneas máximo con ellipsis para que no expanda la card */
@@ -5725,6 +5726,40 @@ const TripDetail = {
     });
   },
 
+  // Editor de nota de una parada, sin pasar por el editor completo del evento.
+  openQuickNote(t, it) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const body = el('div', {}, [
+      el('div', { class:'form-row' }, [
+        el('label', { htmlFor:'qn-text', text:'Nota' }),
+        el('textarea', { id:'qn-text', style:{minHeight:'180px'},
+          placeholder:'Lo que quieras recordar de este sitio: recomendaciones, horarios, con quién fuiste…' }, it.notes || ''),
+      ]),
+      el('div', { class:'field-hint', text:'Se ve en la app y en el viaje compartido, debajo del nombre del sitio.' }),
+    ]);
+    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+      try {
+        it.notes = ($('#qn-text')?.value || '').trim();
+        await DB.put('planning_items', it);
+        UI.toast('Nota guardada');
+      } catch (e) { console.error('quick note', e); UI.toast('No se pudo guardar'); }
+      finally { UI.closeSheet(); Router.renderKeepScroll(); }
+    }}, 'Guardar');
+    const clear = (it.notes && it.notes.trim()) ? el('button', { class:'btn btn-danger', onclick: async () => {
+      const ok = await UI.confirm('¿Borrar la nota de esta parada?');
+      if (!ok) return;
+      try { it.notes = ''; await DB.put('planning_items', it); UI.toast('Nota borrada'); }
+      catch (e) { console.error('quick note', e); }
+      finally { UI.closeSheet(); Router.renderKeepScroll(); }
+    }}, 'Borrar') : null;
+    UI.openSheet({
+      title: it.title || 'Nota',
+      body,
+      footer: [clear, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), save].filter(Boolean),
+    });
+    setTimeout(() => $('#qn-text')?.focus(), 120);
+  },
+
   // Menú "..." de acciones del viaje (Editar, PDF, Compartir, etc.).
   // Se abre desde el botón hamburguesa del topbar.
   _openActionsMenu(t) {
@@ -8524,6 +8559,14 @@ const TripDetail = {
         }) : null,
         gm ? el('a', { class:'icon-btn', href: gm, target:'_blank', title:'Abrir en Google Maps', html: svg('map'),
           onclick: (e) => e.stopPropagation() }) : null,
+        // Nota rápida: el 90 % de las veces lo único que se quiere tocar de una
+        // parada es su nota, y abrir el editor completo para eso es un rodeo.
+        (canEdit() && !isVirtual) ? el('button', {
+          class: 'icon-btn' + (it.notes && it.notes.trim() ? ' btn-note-on' : ''),
+          title: it.notes && it.notes.trim() ? 'Editar la nota' : 'Añadir una nota',
+          html: svg('note'),
+          onclick: (e) => { e.stopPropagation(); TripDetail.openQuickNote(t, it); }
+        }) : null,
         el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
           title: isVirtual ? 'Editar el hotel' : 'Editar' }),
       ].filter(Boolean)),
