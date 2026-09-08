@@ -877,6 +877,17 @@ h2.section-title {
 .sd-title { flex:1; min-width:0; font:inherit; font-size:14px; font-weight:600; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
 .sd-notes { width:100%; margin-top:6px; font:inherit; font-size:13px; padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); resize:vertical; }
 .sd-item.sd-off .sd-title, .sd-item.sd-off .sd-notes { text-decoration:line-through; }
+.dup-list { margin-top:10px; }
+.dup-grp { border:1px solid var(--line); border-radius:12px; margin-bottom:8px; overflow:hidden; }
+.dup-cab { display:flex; justify-content:space-between; gap:10px; align-items:baseline; padding:8px 12px; background:var(--bg-soft); }
+.dup-tit { font-weight:600; font-size:14px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dup-dia { color:var(--text-muted); font-size:12px; flex:none; }
+.dup-row { display:flex; align-items:center; gap:10px; padding:8px 12px; border-top:1px solid var(--line-soft); font-size:13px; cursor:pointer; }
+.dup-row.dup-keep { cursor:default; }
+.dup-badge { font-size:11px; font-weight:600; color:var(--accent); background:var(--accent-bg); border-radius:999px; padding:2px 8px; flex:none; }
+.dup-det { color:var(--text-muted); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sd-city { width:100%; font:inherit; font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
+.sd-hint { font-size:11px; color:var(--text-muted); margin:4px 0 2px; }
 .sd-time { flex:none; width:auto; max-width:120px; font:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
 .sd-item.sd-new .sd-title { border-color:var(--accent); }
 .sd-add { margin-top:10px; width:100%; justify-content:center; gap:6px; color:var(--accent); font-size:13px; }
@@ -5668,10 +5679,23 @@ const TripDetail = {
     const GEO_TYPES = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
     const conNombre = geo.planning.filter(i => GEO_TYPES.includes(i.type) && (i.address || i.place_name || i.title));
 
+    // Centro de respaldo por día: mediana de los puntos de ese mismo día. Hace
+    // falta porque el centro de una ciudad sale de los puntos que la NOMBRAN, y
+    // si ningún evento del viaje lleva el nombre de la ciudad en su dirección esa
+    // ciudad se queda sin centro y sus días no se podían revisar.
+    const porDia = {};
+    conNombre.forEach(i => { if (i.lat != null && i.day_date) (porDia[i.day_date] = porDia[i.day_date] || []).push(i); });
+    const centroDia = {};
+    Object.keys(porDia).forEach(d => {
+      const g = porDia[d];
+      if (g.length < 3) return;   // con dos puntos no se sabe cuál es el raro
+      centroDia[d] = [GeoCities._median(g.map(x => x.lat)), GeoCities._median(g.map(x => x.lng))];
+    });
+
     const malos = [], sinUbicar = [];
     conNombre.forEach(i => {
       const c = geo.cityByDay[i.day_date];
-      const cen = c && geo.centers[c];
+      const cen = (c && geo.centers[c]) || centroDia[i.day_date];
       if (i.lat == null || i.lng == null) { if (c) sinUbicar.push(i); return; }
       if (cen && GeoCities.km([i.lat, i.lng], cen) > TOPE_KM) malos.push(i);
     });
@@ -5685,6 +5709,8 @@ const TripDetail = {
     const body = el('div', {}, [
       el('p', { class:'muted', style:{marginTop:0}, text:'Se comparan las coordenadas de cada evento con la ciudad en la que transcurre su día. Los que se salgan más de ' + TOPE_KM + ' km se vuelven a buscar acotando por esa ciudad.' }),
       resumen,
+      el('div', { class:'field-hint', style:{marginTop:'2px'},
+        text: malos.length ? 'Si solo quieres que dejen de estropear los trayectos, «Quitar ubicación» borra las coordenadas de esas ' + malos.length + ' paradas al instante, sin consultar nada.' : '' }),
       el('label', { class:'switch', style:{padding:'8px 0', width:'100%'} }, [
         el('input', { id:'ga-clear', type:'checkbox' }),
         el('span', { class:'switch-track' }),
@@ -5735,14 +5761,194 @@ const TripDetail = {
       Router.render();
     };
 
+    // Borrado directo, sin red: quita la ubicación de los que no encajan con su
+    // ciudad. Es lo que hace falta cuando una coordenada disparatada mete un
+    // trayecto de miles de km y dispara el aviso de "quizá no dé tiempo".
+    const limpiarMalos = async () => {
+      const ok = await UI.confirm(`¿Quitar la ubicación de ${malos.length} ` +
+        (malos.length === 1 ? 'parada que no encaja' : 'paradas que no encajan') +
+        ' con la ciudad de su día?\n\nNo se borra la parada, solo sus coordenadas: dejarán de contar para los trayectos y el mapa.');
+      if (!ok) return;
+      let n = 0;
+      for (const it of malos) {
+        const fresh = await DB.get('planning_items', it.id);
+        if (!fresh || fresh.lat == null) continue;
+        fresh.lat = null; fresh.lng = null; fresh.gmaps_url = null;
+        try { await DB.put('planning_items', fresh); n++; } catch (_) {}
+      }
+      UI.toast(n + (n === 1 ? ' ubicación quitada' : ' ubicaciones quitadas'));
+      Router.render();
+      UI.closeSheet();
+      setTimeout(() => TripDetail.openGeoAudit(t), 280);
+    };
+
     const runBtn = el('button', { class:'btn btn-primary', id:'ga-run', onclick: run },
       [ el('span', { html: svg('refresh') }), cola.length ? `Revisar ${cola.length}` : 'Nada que revisar' ]);
     if (!cola.length) runBtn.disabled = true;
+    const limpiarBtn = malos.length
+      ? el('button', { class:'btn btn-danger', onclick: limpiarMalos }, `Quitar ubicación (${malos.length})`)
+      : null;
 
     UI.openSheet({
       title:'Revisar ubicaciones',
       body,
-      footer:[ el('button', { class:'btn btn-ghost', onclick: () => { abortado = true; UI.closeSheet(); } }, 'Cerrar'), runBtn ],
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => { abortado = true; UI.closeSheet(); } }, 'Cerrar'),
+               limpiarBtn, runBtn ].filter(Boolean),
+    });
+  },
+
+  // Busca paradas y reservas repetidas dentro del viaje. Aparecen sobre todo al
+  // importar dos archivos que traen lo mismo con ids distintos: `importProfile`
+  // escribe por id, así que dos ids distintos son dos filas, aunque el contenido
+  // sea idéntico. El borrado es blando: todo se puede recuperar desde la Papelera.
+  async openDupes(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+    const planning = await DB.listByTrip('planning_items', t.id);
+    const bookings = await DB.listByTrip('bookings', t.id);
+    const budget   = await DB.listByTrip('budget_items', t.id);
+
+    // Cuánta información lleva una fila: al deduplicar se conserva la más completa.
+    // Un gasto vinculado pesa mucho: borrar esa fila se llevaría por delante un
+    // gasto real, así que esa copia es siempre la que se conserva.
+    const conGasto = new Set(budget.filter(x => x.planning_item_id).map(x => x.planning_item_id));
+    const peso = (i) => ['notes','address','place_name','gmaps_url','consultation_url','consultation_price','status']
+        .reduce((n, k) => n + (i[k] ? 1 : 0), 0)
+      + (i.lat != null ? 1 : 0) + Object.keys(i.metadata || {}).length
+      + (conGasto.has(i.id) ? 50 : 0);
+
+    // --- Paradas: misma clase, mismo día y mismo título ---
+    const firma = (i) => [i.time || '', i.consultation_planned_t1 || '', i.consultation_planned_d2 || '',
+                          i.consultation_planned_t2 || '', norm(i.notes)].join('|');
+    const porClave = {};
+    planning.forEach(i => {
+      const dia = i.day_date || i.consultation_planned_d1 || '';
+      const k = [i.type, dia, norm(i.title)].join('|');
+      (porClave[k] = porClave[k] || []).push(i);
+    });
+    const grupos = [];
+    Object.keys(porClave).sort().forEach(k => {
+      const g = porClave[k];
+      if (g.length < 2) return;
+      g.sort((a, b) => peso(b) - peso(a) || String(a.id).localeCompare(String(b.id)));
+      const base = firma(g[0]);
+      grupos.push({
+        tabla:'planning_items', titulo: g[0].title || '(sin título)',
+        dia: g[0].day_date || g[0].consultation_planned_d1 || '',
+        filas: g.map((i, n) => ({
+          row: i, keep: n === 0, exacto: n > 0 && firma(i) === base,
+          detalle: [ (i.consultation_planned_t1 || i.time || 'sin hora'),
+                     (i.consultation_planned_t2 ? '→ ' + i.consultation_planned_t2 : ''),
+                     (i.notes ? 'con nota' : '') ].filter(Boolean).join(' · '),
+        })),
+      });
+    });
+
+    // --- Reservas: mismo tipo, mismo identificador y misma fecha ---
+    const bFirma = (b) => {
+      const d = b.structured_data || {};
+      return [b.type, norm(d.numero || d.nombre || d.localizador || b.doc_name || ''),
+              d.fecha_salida || d.checkin || d.recogida || b.ref_date || '',
+              d.hora_salida || b.ref_time || ''].join('|');
+    };
+    const bPeso = (b) => Object.keys(b.structured_data || {}).length + (b.doc_url ? 2 : 0);
+    const porFirmaB = {};
+    bookings.forEach(b => { (porFirmaB[bFirma(b)] = porFirmaB[bFirma(b)] || []).push(b); });
+    Object.keys(porFirmaB).sort().forEach(k => {
+      const g = porFirmaB[k];
+      if (g.length < 2) return;
+      g.sort((a, b) => bPeso(b) - bPeso(a) || String(a.id).localeCompare(String(b.id)));
+      const d0 = g[0].structured_data || {};
+      grupos.push({
+        tabla:'bookings', titulo: d0.nombre || d0.numero || g[0].doc_name || 'Reserva',
+        dia: d0.fecha_salida || d0.checkin || d0.recogida || g[0].ref_date || '',
+        filas: g.map((b, n) => ({ row: b, keep: n === 0, exacto: n > 0,
+          detalle: [ (TYPES_BOOKING.find(x => x.id === b.type) || {}).label || b.type,
+                     (b.structured_data || {}).localizador || '' ].filter(Boolean).join(' · ') })),
+      });
+    });
+
+    const sobran = grupos.reduce((n, g) => n + g.filas.filter(f => f.exacto).length, 0);
+    const dudosos = grupos.reduce((n, g) => n + g.filas.filter(f => !f.keep && !f.exacto).length, 0);
+
+    const body = el('div', {});
+    body.appendChild(el('p', { class:'muted', style:{marginTop:0}, text: grupos.length
+      ? 'Se agrupa por tipo, día y nombre. Las copias idénticas vienen marcadas; las que difieren en hora o nota, no: repásalas antes de borrar.'
+      : 'No hay paradas ni reservas repetidas en este viaje.' }));
+    if (grupos.length) {
+      body.appendChild(el('div', { class:'card' }, [
+        el('div', { class:'kv' }, [ el('span', {class:'k', text:'Grupos con repetidos'}), el('span', {class:'v', text:String(grupos.length)}) ]),
+        el('div', { class:'kv' }, [ el('span', {class:'k', text:'Copias idénticas'}), el('span', {class:'v', text:String(sobran)}) ]),
+        el('div', { class:'kv' }, [ el('span', {class:'k', text:'Parecidas (revisar)'}), el('span', {class:'v', text:String(dudosos)}) ]),
+      ]));
+    }
+    const lista = el('div', { class:'dup-list' });
+    body.appendChild(lista);
+
+    const marcados = new Set();
+    const actualiza = () => {
+      const b = document.getElementById('dup-del');
+      if (!b) return;
+      b.disabled = !marcados.size;
+      b.textContent = marcados.size ? `Eliminar ${marcados.size}` : 'Nada marcado';
+    };
+
+    grupos.forEach(g => {
+      const caja = el('div', { class:'dup-grp' });
+      caja.appendChild(el('div', { class:'dup-cab' }, [
+        el('span', { class:'dup-tit', text: g.titulo }),
+        el('span', { class:'dup-dia', text: g.dia ? fmtDate(g.dia, {day:'numeric', month:'short'}) : 'sin fecha' }),
+      ]));
+      g.filas.forEach(f => {
+        const marcar = f.exacto;
+        if (marcar) marcados.add(f);
+        const fila = el('label', { class:'dup-row' + (f.keep ? ' dup-keep' : '') }, [
+          f.keep ? el('span', { class:'dup-badge', text:'se queda' })
+                 : el('input', { type:'checkbox', checked: marcar, onchange: (e) => {
+                     if (e.target.checked) marcados.add(f); else marcados.delete(f);
+                     actualiza();
+                   } }),
+          el('span', { class:'dup-det', text: f.detalle || '—' }),
+        ]);
+        caja.appendChild(fila);
+      });
+      lista.appendChild(caja);
+    });
+
+    const borrar = async () => {
+      const sel = [...marcados];
+      const ok = await UI.confirm(`¿Eliminar ${sel.length} ` + (sel.length === 1 ? 'copia' : 'copias') +
+        '?\n\nVan a la Papelera del viaje, así que se pueden recuperar. Los gastos vinculados a esas paradas se eliminan con ellas.');
+      if (!ok) return;
+      let n = 0, gastos = 0;
+      for (const f of sel) {
+        const tabla = grupos.find(g => g.filas.includes(f)).tabla;
+        try {
+          await DB.remove(tabla, f.row.id); n++;
+          if (tabla === 'planning_items') {
+            for (const b of budget.filter(x => x.planning_item_id === f.row.id)) {
+              await DB.remove('budget_items', b.id); gastos++;
+            }
+          }
+        } catch (e) { console.error('dupes', e); }
+      }
+      UI.toast(n + (n === 1 ? ' copia eliminada' : ' copias eliminadas') +
+        (gastos ? ` · ${gastos} gastos` : '') + ' — están en la Papelera');
+      marcados.clear();
+      Router.render();
+      // UI.confirm cierra la hoja para preguntar, así que la volvemos a abrir ya
+      // recalculada: se ve lo que queda (o que no queda nada).
+      UI.closeSheet();
+      setTimeout(() => TripDetail.openDupes(t), 280);
+    };
+
+    const delBtn = el('button', { class:'btn btn-danger', id:'dup-del', onclick: borrar }, 'Nada marcado');
+    setTimeout(actualiza, 0);
+    UI.openSheet({
+      title:'Buscar duplicados',
+      body,
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'),
+               grupos.length ? delBtn : null ].filter(Boolean),
     });
   },
 
@@ -5804,6 +6010,10 @@ const TripDetail = {
       items.push({
         icon: svg('map'), label: 'Revisar ubicaciones',
         onclick: () => { UI.closeSheet(); TripDetail.openGeoAudit(t); }
+      });
+      items.push({
+        icon: svg('search'), label: 'Buscar duplicados',
+        onclick: () => { UI.closeSheet(); TripDetail.openDupes(t); }
       });
       items.push({
         icon: svg('copy'), label: 'Duplicar viaje',
@@ -13248,6 +13458,10 @@ const ShareLinks = {
                    || (a.order_index || 0) - (b.order_index || 0));
     const dayNotes = await DB.listByTrip('day_notes', t.id);
     const notaDe = {}; dayNotes.forEach(n => { notaDe[n.date] = n; });
+    // Ciudad deducida de cada día: es la que sale en la pastilla del enlace y la
+    // que el usuario puede sobrescribir aquí.
+    const legs = await DB.listByTrip('trip_legs', t.id);
+    const ciudadDe = GeoCities.deduce({ trip: t, planning, legs, dayNotes }).cityByDay || {};
 
     const porDia = {};
     planning.forEach(i => { const k = i.day_date || 'sin-fecha'; (porDia[k] = porDia[k] || []).push(i); });
@@ -13369,6 +13583,19 @@ const ShareLinks = {
           cuenta,
         ]));
         const cuerpo = el('div', { class:'sd-day-body' });
+        cuerpo.appendChild(el('label', { class:'sd-lab', text:'Ciudad (pastilla del día)' }));
+        cuerpo.appendChild(el('input', { class:'sd-city', type:'text', autocomplete:'off',
+          placeholder: ciudadDe[k] ? ciudadDe[k] + ' (deducida)' : 'Sin ciudad',
+          value: (dr.days[k] && dr.days[k].city != null) ? dr.days[k].city : '',
+          onchange: async (e) => {
+            const v = e.target.value.trim();
+            const dd = ShareLinks._draftMut(t);
+            dd.days[k] = dd.days[k] || {};
+            if (!v || v === (ciudadDe[k] || '')) delete dd.days[k].city; else dd.days[k].city = v;
+            if (!Object.keys(dd.days[k]).length) delete dd.days[k];
+            await guardar();
+          } }));
+        cuerpo.appendChild(el('div', { class:'sd-hint', text:'Vacío = la deducida. Escribe «-» para no mostrar ninguna pastilla.' }));
         cuerpo.appendChild(el('label', { class:'sd-lab', text:'Nota del día' }));
         cuerpo.appendChild(el('textarea', { class:'sd-notes', rows:'2',
           placeholder: n && n.text ? 'Nota original: ' + n.text.slice(0, 60) + '…' : 'Sin nota',
@@ -13412,7 +13639,8 @@ const ShareLinks = {
       const st = tripSettingsMut(t); delete st.share_draft;
       await DB.put('trips', t);
       UI.toast('Versión compartida restablecida');
-      render();
+      UI.closeSheet();
+      setTimeout(async () => ShareLinks.openShareDraft(await DB.get('trips', t.id)), 280);
     }}, 'Restablecer');
 
     UI.openSheet({
@@ -13913,6 +14141,14 @@ const Exporter = {
     // Coherencia con "Ocultar además": si el usuario tapó un nombre, tampoco debe
     // asomar como etiqueta de ciudad.
     Object.keys(geo.cityByDay).forEach(k => { geo.cityByDay[k] = stripTerms(geo.cityByDay[k]); });
+    // La ciudad escrita a mano en la versión para compartir manda sobre la deducida.
+    // '-' significa "sin pastilla" en ese día.
+    Object.keys(dDays).forEach(iso => {
+      const c = dDays[iso].city;
+      if (c == null) return;
+      const v = String(c).trim();
+      geo.cityByDay[iso] = (!v || v === '-') ? null : stripTerms(v);
+    });
     const viewerScript = Exporter._viewerScript(payload, JSON.stringify(viewerOpts),
       { cityByDay: JSON.stringify(geo.cityByDay) });
 

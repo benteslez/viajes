@@ -187,6 +187,25 @@ a evento y un resumen con los que no ha podido verificar.
   cancelar cerrándolo.
 - Un evento que no se pueda verificar **se queda como está**, salvo que se marque *Quitar la
   ubicación de los que no se puedan verificar*.
+- **Quitar ubicación (N)** borra de golpe las coordenadas de los que no encajan, sin consultar
+  nada. Es la salida rápida cuando una coordenada disparatada mete un trayecto de miles de km y
+  dispara el aviso de *quizá no dé tiempo*. No borra la parada, solo su posición.
+- El centro de una ciudad sale de los puntos que la **nombran**. Si ninguna dirección del viaje
+  menciona esa ciudad, se usa como respaldo la **mediana de los puntos de ese mismo día** (con
+  tres o más), para que ningún día se quede sin revisar.
+
+### Buscar duplicados
+
+En el menú del viaje. Agrupa **paradas** por tipo + día + nombre, y **reservas** por tipo +
+identificador + fecha.
+
+- Las copias **idénticas** (misma hora y misma nota) vienen marcadas para borrar; las que difieren
+  en algo se listan sin marcar, para revisarlas a mano.
+- Se conserva siempre la copia con más información, y una parada con un **gasto vinculado** nunca
+  se propone para borrar (borrarla se llevaría el gasto por delante).
+- El borrado es blando: todo va a la **Papelera** del viaje y se puede recuperar.
+- Los duplicados aparecen sobre todo al **importar dos archivos con el mismo contenido y distinto
+  id**: `importProfile` escribe por id, así que dos ids distintos son dos filas.
 
 ## Compartir un viaje en solo lectura
 
@@ -272,6 +291,8 @@ Paso previo a publicar: *Compartir viaje → **Versión para compartir***. Es un
 se aplica **solo al generar el HTML**; los datos del viaje no se tocan.
 
 - Título y nota propios para el enlace, por parada, y nota propia por día.
+- **Ciudad del día**: la pastilla del visor se puede reescribir por día. Vacío = la deducida por
+  `GeoCities`; «-» = ningún pastilla en ese día.
 - **Quitar** paradas del enlace (icono de ojo). Es reversible y no borra nada del viaje.
 - **Añadir** paradas que existan solo en el enlace (`+ Añadir parada`): nombre, hora opcional y
   nota. La papelera las elimina de la versión compartida. Nunca llegan a `planning_items`.
@@ -282,7 +303,7 @@ se aplica **solo al generar el HTML**; los datos del viaje no se tocan.
 - El botón muestra cuántos cambios hay.
 
 Vive en `trip.settings.share_draft` (`{ items: { <id>: { title?, notes?, hidden? } },
-days: { <iso>: { text? } }, added: { <iso>: [ { id, title, notes?, time? } ] } }`), así que
+days: { <iso>: { text?, city? } }, added: { <iso>: [ { id, title, notes?, time? } ] } }`), así que
 sincroniza por Supabase y viaja en el export.
 
 Las filas de cada día se montan **al abrir ese día**: con 24 días y 144 paradas, construir todos
