@@ -1,1 +1,6 @@
 .DS_Store
+
+# Backups y viajes exportados: contienen localizadores y datos personales,
+# no deben acabar en un repo público.
+data/
+*.export.json
