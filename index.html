@@ -13009,6 +13009,24 @@ const PerfilView = {
       }
     }}, [ el('span', { html: svg('refresh') }), 'Buscar actualizaciones' ]));
 
+    // Salida de emergencia cuando un dispositivo se queda anclado a una versión
+    // vieja: borra las cachés y desregistra el service worker. NO toca IndexedDB,
+    // así que los viajes no se pierden.
+    root.appendChild(el('button', { class:'btn btn-sm', style:{marginLeft:'8px'}, onclick: async (e) => {
+      const btn = e.currentTarget;   // UI.confirm reutiliza la hoja: después ya no está
+      const ok = await UI.confirm('Se borrará la caché de la app y se volverá a descargar todo.\n\nTus viajes NO se tocan: están en la base de datos del navegador, no en la caché.', 'Sí, vaciar');
+      if (!ok) return;
+      if (btn) btn.disabled = true;
+      try {
+        if ('caches' in window) for (const k of await caches.keys()) await caches.delete(k);
+        if (navigator.serviceWorker) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) await r.unregister();
+        }
+      } catch (err) { console.warn('vaciar caché', err); }
+      window.location.reload();
+    }}, [ el('span', { html: svg('trash') }), 'Vaciar caché y recargar' ]));
+
     // === Notificaciones ===
     if ('Notification' in window) {
       root.appendChild(el('h2', { class:'section-title', text:'Notificaciones' }));

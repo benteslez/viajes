@@ -201,6 +201,10 @@ a evento y un resumen con los que no ha podido verificar.
 le pregunta por `postMessage`. Si no coinciden, lo que se está ejecutando es una copia cacheada
 vieja: el problema está en el navegador, no en el servidor. Al desplegar hay que subir **las dos**.
 
+*Vaciar caché y recargar*, al lado de *Buscar actualizaciones*, borra las cachés y desregistra el
+service worker cuando un dispositivo se queda anclado a una versión vieja. **No toca IndexedDB**:
+los viajes están en la base de datos del navegador, no en la caché.
+
 El documento HTML se pide con `cache: 'no-cache'`. GitHub Pages sirve `index.html` con
 `max-age=600`, así que sin eso el navegador devolvía su copia durante diez minutos tras cada
 despliegue sin llegar a preguntar al servidor, y la app parecía no actualizarse.
