@@ -1,10 +1,11 @@
 // Service worker — cache de app shell para uso offline.
-// Estrategia: cache-first para shell + CDN, network-first para tiles de mapa.
+// Estrategia: network-first para documentos HTML, cache-first para el resto del
+// shell y las CDN, network-first para tiles de mapa.
 // El bump del CACHE invalida cualquier versión previa.
 
 // Subir el sufijo cuando se quiere forzar la invalidación de la versión cacheada
 // (ej. tras cambios en index.html o en las CDNs declaradas más abajo).
-const CACHE = 'viajes-shell-v83';
+const CACHE = 'viajes-shell-v84';
 
 // Caché SEPARADO para imágenes (portadas de viaje, miniaturas de tarjetas…).
 // No lleva el sufijo del shell a propósito: así las imágenes ya descargadas
