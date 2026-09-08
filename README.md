@@ -160,10 +160,25 @@ datos. El archivo no lleva la clave de Supabase.
 - **Itinerario plegable.** Un `<details>` por día, cerrados de entrada, con un botón *Desplegar
   todo*. La cabecera de cada día lleva pastillas: 📍 lugar, 🏨 alojamiento de esa noche,
   ✈️ cada vuelo, 🚗 cada coche y el número de paradas.
-- **De dónde sale el lugar del día**, en cascada: título del día (`day_notes.title`) → ciudad del
-  tramo vigente (`trip_legs`) → ciudad deducida de la dirección del alojamiento de esa noche
-  (`cityFromAddress`: segundo segmento de la dirección sin el código postal). Si nada cuadra, el
-  día va sin pastilla en vez de inventarse una.
+- **De dónde sale la ciudad de cada día.** Los lugares casi nunca traen dirección, pero sí
+  coordenadas, así que se deduce por votación (`resolverCiudades`):
+  1. **Candidatas**: las ciudades de `trip.city`, las de `trip_legs`, las de las direcciones
+     (`cityFromAddress`) y los destinos de los vuelos. Se descartan provincias y regiones.
+  2. **Posición** de cada candidata: la *mediana* de los puntos que la nombran — con la media, un
+     punto suelto lejano desplaza el centro.
+  3. **Alias**: una candidata que no está en `trip.city` y cae a menos de 25 km de una que sí lo
+     está se funde en ella (Ñuñoa → Santiago, San Carlos de Bariloche → Bariloche).
+  4. **Votos por día**: dirección del evento +3, nombre de la ciudad en el título +3, destino del
+     vuelo +3, alojamiento de esa noche +2 y cercanía a menos de 30 km +1. El radio es corto a
+     propósito: con 60 km, Colonia del Sacramento votaba a Buenos Aires.
+  5. Sin votos, se **hereda** la ciudad del día anterior (que es donde se dormía).
+  6. Los días iniciales que quedan huérfanos se emparejan **en orden** con las ciudades de
+     `trip.city` que no se han podido situar, y **solo si el número coincide exactamente**: una
+     etiqueta equivocada es peor que ninguna.
+
+  Medido contra un viaje real de 26 días sin títulos de día ni tramos, con solo 9 de 144 eventos
+  con dirección: **26 de 26 días etiquetados correctamente**. El título del día, si lo hay y dice
+  algo distinto de la ciudad, se muestra en una pastilla aparte.
 - **Alojamiento de la noche**: `consultation_planned_d1 <= día < consultation_planned_d2`, así que
   el día del check-out ya no lo muestra.
 - **Mapa de la ruta**: los puntos van en orden cronológico, con el color avanzando de azul a
