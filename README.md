@@ -186,6 +186,11 @@ datos. El archivo no lleva la clave de Supabase.
   abre un popup con su día y un enlace *Ver este día* que despliega ese día del itinerario.
   Las líneas se dibujan antes que los puntos y con `interactive:false` — si no, la línea de un día
   tapa los marcadores de los días anteriores que caen en la misma zona y el clic no llega.
+- **Puntos incoherentes**: las coordenadas salen de geocodificar el nombre del sitio y eso falla a
+  menudo (un "Obelisco" acaba en Italia, un "Piano Staircase" en Los Ángeles). El mapa descarta el
+  punto que esté a más de 200 km de donde transcurre su día — el centro de la ciudad deducida, o
+  la mediana del propio día si esa ciudad no está situada — y dice cuántos ha omitido en vez de
+  callárselo. **Es un parche del visor: los datos del viaje siguen con las coordenadas malas.**
 
 Interruptores de qué incluir: precios, localizadores y documentos, enlaces externos, mapa y notas.
 

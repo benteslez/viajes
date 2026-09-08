@@ -13238,7 +13238,13 @@ const Exporter = {
 
     const payload = JSON.stringify(safe).replace(/<\/script>/g, '<\\/script>');
     const titleEsc = escHtml(t.name);
-    const subtitle = [t.city, t.country].filter(Boolean).join(', ');
+    // El subtítulo repetía ciudades y países y ocupaba media portada. Fechas y
+    // duración arriba; debajo, unas pocas ciudades.
+    const _ciu = (t.city || '').split(',').map(x => x.trim()).filter(Boolean);
+    const subtitle = _ciu.length > 4
+      ? _ciu.slice(0, 4).join(' · ') + ' y ' + (_ciu.length - 4) + ' más'
+      : (_ciu.join(' · ') || t.country || '');
+    const _nd = (t.start_date && t.end_date) ? daysBetween(t.start_date, t.end_date) + 1 : 0;
     const dates = (t.start_date && t.end_date)
       ? `${fmtDateShort(t.start_date)} – ${fmtDateShort(t.end_date)}`
       : 'Sin fechas';
@@ -13290,15 +13296,17 @@ ${opts.includeMap ? '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.
 body { margin:0; font-family:'Manrope',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; line-height:1.5; }
 main { max-width:900px; margin:0 auto; padding:24px 18px 60px; }
 .cover {
-  position:relative; height:240px; border-radius:var(--r-lg); overflow:hidden;
-  background:linear-gradient(135deg, var(--accent-bg), var(--bg-soft));
+  position:relative; min-height:190px; border-radius:22px; overflow:hidden;
+  background:linear-gradient(145deg, var(--accent), var(--accent-2));
   display:flex; flex-direction:column; justify-content:flex-end; padding:22px;
 }
 .cover img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-.cover::after { content:''; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.55), transparent 60%); }
+/* El velo oscuro solo tiene sentido sobre una foto; sobre el degradado ensucia. */
+.cover.has-photo::after { content:''; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.55), transparent 60%); }
 .cover > * { position:relative; z-index:1; }
-.cover h1 { color:#fff; font-weight:800; letter-spacing:-.02em; font-size:28px; margin:0; text-shadow:0 1px 3px rgba(0,0,0,.4); }
-.cover .meta { color:rgba(255,255,255,.92); margin-top:6px; font-weight:500; text-shadow:0 1px 2px rgba(0,0,0,.3); }
+.cover h1 { color:#fff; font-weight:800; letter-spacing:-.035em; font-size:30px; line-height:1.12; margin:0; text-shadow:0 1px 3px rgba(0,0,0,.4); }
+.cover .meta { color:rgba(255,255,255,.95); margin-top:8px; font-weight:600; font-size:14px; letter-spacing:-.01em; text-shadow:0 1px 2px rgba(0,0,0,.25); }
+.cover .meta-2 { color:rgba(255,255,255,.78); margin-top:3px; font-weight:500; font-size:13px; text-shadow:0 1px 2px rgba(0,0,0,.25); }
 .share-banner {
   display:flex; align-items:center; gap:10px;
   background:var(--accent-bg); color:var(--text);
@@ -13306,17 +13314,17 @@ main { max-width:900px; margin:0 auto; padding:24px 18px 60px; }
   font-size:13px;
 }
 .share-banner svg { width:16px; height:16px; stroke:var(--accent); }
-h2.section { font-weight:600; letter-spacing:-.02em; font-size:22px; margin:36px 0 12px; }
+h2.section { font-weight:700; letter-spacing:-.035em; font-size:23px; margin:40px 0 14px; }
 h3.day { font-weight:600; letter-spacing:-.01em; font-size:17px; margin:16px 0 8px; }
 .day-num { font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; font-size:12px; color:var(--text-muted); margin-right:8px; }
-.timeline { position:relative; margin-left:8px; padding-left:30px; border-left:2px solid var(--line-soft); }
-.tl-item { position:relative; padding:10px 14px; background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); margin-bottom:10px; box-shadow:var(--sh-1); }
-.tl-item::before { content:''; position:absolute; left:-37px; top:14px; width:14px; height:14px; border-radius:50%; background:var(--bg-elev); border:2px solid var(--accent); box-shadow:0 0 0 3px var(--bg); }
-.tl-time { display:inline-block; font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; font-size:11px; background:var(--bg-soft); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-pill); margin-right:6px; }
+.timeline { position:relative; margin-left:6px; padding-left:26px; border-left:1.5px solid var(--line-soft); }
+.tl-item { position:relative; padding:11px 14px; background:var(--bg-soft); border:none; border-radius:14px; margin-bottom:8px; }
+.tl-item::before { content:''; position:absolute; left:-31px; top:16px; width:9px; height:9px; border-radius:50%; background:var(--accent); opacity:.55; box-shadow:0 0 0 3px var(--bg-elev); }
+.tl-time { display:inline-block; font-feature-settings:"tnum","ss01"; font-size:11.5px; font-weight:600; background:var(--bg-elev); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-pill); margin-right:7px; }
 .tl-title { font-weight:600; }
 .tl-sub { color:var(--text-muted); font-size:13.5px; margin-top:4px; overflow-wrap:anywhere; }
 .tl-title, .day-note, .card p, main { overflow-wrap:anywhere; }
-.tl-link { display:inline-block; margin-top:6px; font-size:13px; }
+.tl-link { display:inline-block; margin-top:7px; font-size:12.5px; font-weight:600; opacity:.85; }
 .day-note {
   background:color-mix(in srgb, var(--accent-bg) 30%, var(--bg-elev));
   border:1px dashed color-mix(in srgb, var(--accent) 35%, var(--line));
@@ -13333,46 +13341,57 @@ h3.day { font-weight:600; letter-spacing:-.01em; font-size:17px; margin:16px 0 8
 .kv .k { color:var(--text-muted); }
 .kv .v { font-family:'Manrope',system-ui,sans-serif; font-feature-settings:"tnum","ss01"; }
 .muted { color:var(--text-muted); }
-#map { height:380px; border-radius:var(--r-lg); border:1px solid var(--line); overflow:hidden; }
+#map { height:420px; border-radius:18px; border:1px solid var(--line); overflow:hidden; }
 /* --- Itinerario plegable --- */
-.itin-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 14px; }
+.itin-tools { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 16px; }
 .btn-mini {
-  font:inherit; font-size:13px; font-weight:600; cursor:pointer;
-  background:var(--bg-elev); color:var(--text); border:1px solid var(--line);
-  border-radius:var(--r-pill); padding:6px 14px;
+  font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; letter-spacing:-.01em;
+  background:var(--bg-soft); color:var(--accent); border:none;
+  border-radius:var(--r-pill); padding:8px 16px;
+  transition:background .15s ease, transform .12s ease;
+  -webkit-tap-highlight-color:transparent;
 }
-.btn-mini:hover { background:var(--bg-soft); }
+.btn-mini:hover { background:color-mix(in srgb, var(--accent) 12%, var(--bg-soft)); }
+.btn-mini:active { transform:scale(.97); }
 .itin-count { color:var(--text-muted); font-size:13px; }
 details.day-block {
-  background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md);
-  margin-bottom:10px; box-shadow:var(--sh-1); overflow:hidden;
+  background:var(--bg-elev); border:1px solid var(--line); border-radius:18px;
+  margin-bottom:8px; box-shadow:var(--sh-1); overflow:hidden;
+  transition:box-shadow .18s ease, border-color .18s ease;
 }
-details.day-block[open] { box-shadow:var(--sh-2); border-color:color-mix(in srgb, var(--accent) 30%, var(--line)); }
-summary.day-head { list-style:none; cursor:pointer; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; }
+details.day-block[open] { box-shadow:var(--sh-2); }
+summary.day-head {
+  list-style:none; cursor:pointer; padding:14px 16px; display:flex; gap:12px; align-items:flex-start;
+  -webkit-tap-highlight-color:transparent; transition:background .15s ease;
+}
 summary.day-head::-webkit-details-marker { display:none; }
 summary.day-head:hover { background:var(--bg-soft); }
-.dh-caret { flex:none; width:16px; height:16px; margin-top:3px; color:var(--text-muted); transition:transform .18s ease; }
+summary.day-head:active { background:var(--bg-soft); }
+.dh-caret { flex:none; width:15px; height:15px; margin-top:5px; color:var(--text-muted); opacity:.65; transition:transform .22s cubic-bezier(.4,0,.2,1); }
 details[open] .dh-caret { transform:rotate(90deg); }
 .dh-main { flex:1; min-width:0; }
-.dh-top { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
-.dh-num { font-feature-settings:"tnum","ss01"; font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
-.dh-date { font-weight:600; font-size:15.5px; letter-spacing:-.01em; }
-.dh-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.dh-top { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+.dh-num { font-feature-settings:"tnum","ss01"; font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
+.dh-date { font-weight:600; font-size:16px; letter-spacing:-.02em; }
+.dh-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .chip {
-  display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
-  font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:var(--r-pill);
-  border:1px solid transparent;
+  display:inline-flex; align-items:center; gap:5px; white-space:nowrap; max-width:100%;
+  font-size:12px; font-weight:600; letter-spacing:-.01em; padding:4px 11px 4px 8px;
+  border-radius:var(--r-pill); border:none; overflow:hidden; text-overflow:ellipsis;
 }
-.chip-place  { background:var(--accent-bg); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 25%, transparent); }
-.chip-hotel  { background:var(--c-hotel-bg);  color:var(--c-hotel);  border-color:color-mix(in srgb, var(--c-hotel) 25%, transparent); }
-.chip-flight { background:var(--c-flight-bg); color:var(--c-flight); border-color:color-mix(in srgb, var(--c-flight) 25%, transparent); }
-.chip-car    { background:var(--c-car-bg);    color:var(--c-car);    border-color:color-mix(in srgb, var(--c-car) 25%, transparent); }
-.chip-count  { background:var(--bg-soft); color:var(--text-muted); font-weight:500; }
-.day-body { padding:2px 14px 14px; }
-.day-empty { color:var(--text-muted); font-size:13.5px; padding:0 14px 16px; }
-.map-hint { color:var(--text-muted); font-size:13px; margin:0 0 10px; }
+.chip-ico { display:inline-flex; flex:none; }
+.chip-ico svg { width:13px; height:13px; opacity:.85; }
+.chip-place  { background:var(--accent-bg); color:var(--accent); }
+.chip-hotel  { background:var(--c-hotel-bg);  color:var(--c-hotel); }
+.chip-flight { background:var(--c-flight-bg); color:var(--c-flight); }
+.chip-car    { background:var(--c-car-bg);    color:var(--c-car); }
+.chip-count  { background:var(--bg-soft); color:var(--text-muted); font-weight:500; padding:4px 11px; }
+.day-body { padding:4px 16px 16px; }
+.day-empty { color:var(--text-muted); font-size:13.5px; padding:0 16px 18px; }
+.map-hint { color:var(--text-muted); font-size:13px; margin:0 0 12px; }
 .map-pop b { display:block; margin-bottom:2px; }
 .map-pop a { font-size:12.5px; }
+@media (prefers-reduced-motion: reduce) { * { transition-duration:.01ms !important; } }
 footer.foot { margin-top:48px; padding-top:24px; border-top:1px solid var(--line-soft); color:var(--text-muted); font-size:12px; text-align:center; }
 a { color:var(--accent); text-decoration:none; }
 a:hover { text-decoration:underline; }
@@ -13381,10 +13400,11 @@ a:hover { text-decoration:underline; }
 </head>
 <body>
 <main>
-  <div class="cover">
+  <div class="cover${safe.trip.cover_photo_url ? ' has-photo' : ''}">
     ${safe.trip.cover_photo_url ? `<img src="${escHtml(safe.trip.cover_photo_url)}" alt="" onerror="this.remove()">` : ''}
     <h1>${titleEsc}</h1>
-    <div class="meta">${escHtml(dates)}${subtitle ? ' · ' + escHtml(subtitle) : ''}</div>
+    <div class="meta">${escHtml(dates)}${_nd ? ' · ' + _nd + ' días' : ''}</div>
+    ${subtitle ? `<div class="meta-2">${escHtml(subtitle)}</div>` : ''}
   </div>
   <div class="share-banner">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -13418,6 +13438,22 @@ ${viewerScript}
     lines.push("  if (attrs) for (const k in attrs) { if (k==='class') n.className = attrs[k]; else if (k==='text') n.textContent = attrs[k]; else if (k==='html') n.innerHTML = attrs[k]; else if (k.startsWith('on')) n.addEventListener(k.slice(2), attrs[k]); else if (k==='style') Object.assign(n.style, attrs[k]); else n.setAttribute(k, attrs[k]); }");
     lines.push("  if (children) (Array.isArray(children)?children:[children]).forEach(c => { if (c==null||c===false) return; if (typeof c === 'string') n.appendChild(document.createTextNode(c)); else n.appendChild(c); });");
     lines.push("  return n;");
+    lines.push("}");
+    lines.push("");
+    lines.push("// Iconos de trazo, coherentes con los de la app (mismo grosor y redondeos).");
+    lines.push("const ICON = {");
+    lines.push("  pin:   '<path d=\\'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z\\'/><circle cx=\\'12\\' cy=\\'10\\' r=\\'2.6\\'/>',");
+    lines.push("  hotel: '<path d=\\'M3 20V7l9-4 9 4v13\\'/><path d=\\'M3 20h18\\'/><path d=\\'M9 20v-5h6v5\\'/>',");
+    lines.push("  plane: '<path d=\\'M10.2 3.6a1.5 1.5 0 0 1 2.6 0l2.6 5.3 5.4 1a1 1 0 0 1 .5 1.7l-3.9 3.5.9 5.5a1 1 0 0 1-1.5 1L12 18.8l-4.8 2.8a1 1 0 0 1-1.5-1l.9-5.5-3.9-3.5a1 1 0 0 1 .5-1.7l5.4-1z\\'/>',");
+    lines.push("  car:   '<path d=\\'M5 17h14M6.5 17V9.5L8 6h8l1.5 3.5V17\\'/><circle cx=\\'8\\' cy=\\'17\\' r=\\'1.6\\'/><circle cx=\\'16\\' cy=\\'17\\' r=\\'1.6\\'/>',");
+    lines.push("};");
+    lines.push("const ico = (k) => '<svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.8\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' aria-hidden=\\'true\\'>' + ICON[k] + '</svg>';");
+    lines.push("// Pastilla con icono + texto (el icono es decorativo, el texto lleva el dato).");
+    lines.push("function chip(cls, iconKey, txt) {");
+    lines.push("  const c = el('span', {class:'chip ' + cls});");
+    lines.push("  if (iconKey) c.appendChild(el('span', {class:'chip-ico', html: ico(iconKey)}));");
+    lines.push("  c.appendChild(el('span', {text: txt}));");
+    lines.push("  return c;");
     lines.push("}");
     lines.push("");
     lines.push("const root = document.getElementById('content');");
@@ -13611,19 +13647,19 @@ ${viewerScript}
     lines.push("");
     lines.push("    const chips = el('div', {class:'dh-chips'});");
     lines.push("    const ciudad = CIUDAD_DIA[k];");
-    lines.push("    if (ciudad) chips.appendChild(el('span', {class:'chip chip-place', text:'📍 ' + ciudad}));");
+    lines.push("    if (ciudad) chips.appendChild(chip('chip-place', 'pin', ciudad));");
     lines.push("    // El título que el usuario puso al día no se pierde: si dice algo distinto");
     lines.push("    // de la ciudad, va en su propia pastilla.");
     lines.push("    if (note && note.title && note.title !== ciudad) {");
     lines.push("      chips.appendChild(el('span', {class:'chip chip-count', text: note.title}));");
     lines.push("    }");
     lines.push("    const stay = stayOn(k);");
-    lines.push("    if (stay) chips.appendChild(el('span', {class:'chip chip-hotel', text:'🏨 ' + (stay.place_name || stay.title)}));");
+    lines.push("    if (stay) chips.appendChild(chip('chip-hotel', 'hotel', stay.place_name || stay.title));");
     lines.push("    items.filter(p => p.type === 'vuelo').forEach(p => {");
-    lines.push("      chips.appendChild(el('span', {class:'chip chip-flight', text:'✈️ ' + flightLabel(p)}));");
+    lines.push("      chips.appendChild(chip('chip-flight', 'plane', flightLabel(p)));");
     lines.push("    });");
     lines.push("    items.filter(p => p.type === 'coche').forEach(p => {");
-    lines.push("      chips.appendChild(el('span', {class:'chip chip-car', text:'🚗 ' + (p.place_name || p.title)}));");
+    lines.push("      chips.appendChild(chip('chip-car', 'car', p.place_name || p.title));");
     lines.push("    });");
     lines.push("    const paradas = items.filter(p => !['hotel','vuelo','coche'].includes(p.type)).length;");
     lines.push("    if (paradas) chips.appendChild(el('span', {class:'chip chip-count', text: paradas + (paradas===1?' parada':' paradas')}));");
@@ -13645,7 +13681,7 @@ ${viewerScript}
     lines.push("        if (it.address) tlItem.appendChild(el('div', {class:'tl-sub', text: it.address}));");
     lines.push("        if (it.notes) tlItem.appendChild(el('div', {class:'tl-sub', style:{whiteSpace:'pre-wrap'}, text: it.notes}));");
     lines.push("        const gm = OPTS.includeLinks ? gmapsUrl(it.lat, it.lng, it.place_name) : null;");
-    lines.push("        if (gm) tlItem.appendChild(el('a', {class:'tl-link', href: gm, target:'_blank', rel:'noopener', text:'Abrir en Google Maps'}));");
+    lines.push("        if (gm) tlItem.appendChild(el('a', {class:'tl-link', href: gm, target:'_blank', rel:'noopener', text:'Ver en el mapa ›'}));");
     lines.push("        tl.appendChild(tlItem);");
     lines.push("      });");
     lines.push("      bodyDiv.appendChild(tl);");
@@ -13671,20 +13707,40 @@ ${viewerScript}
     lines.push("// Puntos en orden cronológico: una línea por día con su color, y un tramo");
     lines.push("// discontinuo entre el último punto de un día y el primero del siguiente.");
     lines.push("if (OPTS.includeMap && typeof L !== 'undefined') {");
-    lines.push("  const porDia = [];");
+    lines.push("  // Las coordenadas vienen de geocodificar el nombre del sitio, y eso falla más");
+    lines.push("  // de lo que parece: un 'Obelisco' acaba en Italia y un 'Piano Staircase' en");
+    lines.push("  // Los Ángeles. Pintarlos convierte el mapa en ruido, así que se descarta el");
+    lines.push("  // punto que no encaja con el sitio donde transcurre su día.");
+    lines.push("  const TOPE_KM = 200;");
+    lines.push("  const refDelDia = (k, pts) => {");
+    lines.push("    const c = CIUDAD_DIA[k];");
+    lines.push("    if (c && CEN[c]) return CEN[c];");
+    lines.push("    if (!pts.length) return null;");
+    lines.push("    return [medianaNum(pts.map(x => x.lat)), medianaNum(pts.map(x => x.lng))];");
+    lines.push("  };");
+    lines.push("  const medianaNum = (arr) => { const a = arr.slice().sort((x,y) => x-y); const n = a.length;");
+    lines.push("    return n % 2 ? a[(n-1)/2] : (a[n/2-1] + a[n/2]) / 2; };");
+    lines.push("  const porDia = []; let descartados = 0;");
     lines.push("  dayKeys.forEach(k => {");
-    lines.push("    const pts = (byDay[k] || [])");
+    lines.push("    const brutos = (byDay[k] || [])");
     lines.push("      .filter(p => p.lat != null && p.lng != null)");
     lines.push("      .map(p => ({ lat:p.lat, lng:p.lng, name:p.title, sub:p.place_name || p.address || '', iso:k, type:p.type }));");
+    lines.push("    if (!brutos.length) return;");
+    lines.push("    const ref = refDelDia(k, brutos);");
+    lines.push("    const pts = ref ? brutos.filter(x => kmEntre([x.lat, x.lng], ref) <= TOPE_KM) : brutos;");
+    lines.push("    descartados += brutos.length - pts.length;");
     lines.push("    if (pts.length) porDia.push({ iso:k, pts });");
     lines.push("  });");
+
     lines.push("  const sueltos = DATA.addresses.filter(a => a.lat != null && a.lng != null)");
     lines.push("    .map(a => ({ lat:a.lat, lng:a.lng, name:a.label, sub:a.address || '', iso:null, type:'otro' }));");
     lines.push("  const total = porDia.reduce((n,d) => n + d.pts.length, 0) + sueltos.length;");
     lines.push("");
     lines.push("  if (total) {");
     lines.push("    root.appendChild(el('h2', {class:'section', text:'Mapa de la ruta'}));");
-    lines.push("    root.appendChild(el('p', {class:'map-hint', text: total + ' puntos · el color avanza con los días. Toca un punto para ir a su día.'}));");
+    lines.push("    const aviso = total + ' puntos · el color avanza con los días. Toca un punto para ir a su día.'");
+    lines.push("      + (descartados ? ' Se han omitido ' + descartados + (descartados===1 ? ' punto cuya ubicación no encajaba con su día.' : ' puntos cuya ubicación no encajaba con su día.') : '');");
+    lines.push("    root.appendChild(el('p', {class:'map-hint', text: aviso}));");
     lines.push("    const mapEl = el('div', {id:'map'}); root.appendChild(mapEl);");
     lines.push("    setTimeout(() => {");
     lines.push("      const m = L.map('map', { scrollWheelZoom:false });");
