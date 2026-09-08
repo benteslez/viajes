@@ -149,6 +149,34 @@ Supabase** que el resto de la app.
   `schema.sql` o `schema-wardrobe.sql`** (idempotentes; incluyen los `alter table … add column`).
 - **Offline:** funciona sin red como el resto (los datos van primero a IndexedDB).
 
+## Ubicaciones y geocodificación
+
+Las coordenadas de cada parada salen de geocodificar su nombre con Nominatim. Buscar el nombre a
+secas y quedarse con el primer resultado del mundo produce disparates: un "Obelisco" en Italia, un
+"Piano Staircase" en Los Ángeles.
+
+**`geocodeInContext(texto, ctx)`** acota la búsqueda:
+
+1. Prueba `nombre, ciudad, país`, luego `nombre, país`, luego el nombre solo — siempre con un
+   `viewbox` de ~75 km alrededor del centro de la ciudad del día y `bounded=1`.
+2. Valida el resultado: si cae a más de 60 km de esa ciudad, se descarta.
+3. Si nada encaja devuelve `null`. **Nunca escribe una coordenada sin validar**: mejor sin
+   ubicación que en el país equivocado.
+
+La ciudad de cada día la da `GeoCities.deduce()` (ver más abajo), que es también lo que usa el
+visor compartido. Una sola implementación para los dos.
+
+### Revisar ubicaciones
+
+En el menú del viaje. Compara cada evento con la ciudad de su día, y los que se salgan más de
+200 km los vuelve a buscar con contexto. Muestra el recuento antes de empezar, el progreso evento
+a evento y un resumen con los que no ha podido verificar.
+
+- Nominatim admite **una consulta por segundo**, así que el panel estima la duración y se puede
+  cancelar cerrándolo.
+- Un evento que no se pueda verificar **se queda como está**, salvo que se marque *Quitar la
+  ubicación de los que no se puedan verificar*.
+
 ## Compartir un viaje en solo lectura
 
 Desde la pantalla del viaje, *Compartir viaje* genera un **HTML autónomo** con ese viaje y nada
