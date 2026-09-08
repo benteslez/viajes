@@ -862,6 +862,37 @@ h2.section-title {
 .timeline-item.list-item .drag-handle { padding:2px; }
 .timeline-item.list-item .icon-btn { width:28px; height:28px; }
 .icon-btn.btn-note-on { color:var(--accent); background:var(--accent-bg); }
+/* Editor de la versión para compartir */
+.sd-day { border:1px solid var(--line); border-radius:12px; margin-bottom:8px; overflow:hidden; }
+.sd-day-head { list-style:none; cursor:pointer; padding:10px 12px; display:flex; justify-content:space-between; gap:10px; align-items:center; background:var(--bg-soft); }
+.sd-day-head::-webkit-details-marker { display:none; }
+.sd-day-t { font-weight:600; font-size:14px; }
+.sd-day-n { color:var(--text-muted); font-size:12px; }
+.sd-day-body { padding:10px 12px 12px; }
+.sd-lab { display:block; font-size:12px; color:var(--text-muted); margin:2px 0 4px; }
+.sd-item { border-top:1px solid var(--line-soft); padding:10px 0 2px; }
+.sd-item.sd-off { opacity:.45; }
+.sd-cab { display:flex; align-items:center; gap:8px; }
+.sd-tipo { flex:none; font-size:15px; }
+.sd-title { flex:1; min-width:0; font:inherit; font-size:14px; font-weight:600; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
+.sd-notes { width:100%; margin-top:6px; font:inherit; font-size:13px; padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); resize:vertical; }
+.sd-item.sd-off .sd-title, .sd-item.sd-off .sd-notes { text-decoration:line-through; }
+.dup-list { margin-top:10px; }
+.dup-grp { border:1px solid var(--line); border-radius:12px; margin-bottom:8px; overflow:hidden; }
+.dup-cab { display:flex; justify-content:space-between; gap:10px; align-items:baseline; padding:8px 12px; background:var(--bg-soft); }
+.dup-tit { font-weight:600; font-size:14px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dup-dia { color:var(--text-muted); font-size:12px; flex:none; }
+.dup-row { display:flex; align-items:center; gap:10px; padding:8px 12px; border-top:1px solid var(--line-soft); font-size:13px; cursor:pointer; }
+.dup-row.dup-keep { cursor:default; }
+.dup-badge { font-size:11px; font-weight:600; color:var(--accent); background:var(--accent-bg); border-radius:999px; padding:2px 8px; flex:none; }
+.dup-det { color:var(--text-muted); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sd-city { width:100%; font:inherit; font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
+.sd-hint { font-size:11px; color:var(--text-muted); margin:4px 0 2px; }
+.sd-time { flex:none; width:auto; max-width:120px; font:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elev); color:var(--text); }
+.sd-item.sd-new .sd-title { border-color:var(--accent); }
+.sd-add { margin-top:10px; width:100%; justify-content:center; gap:6px; color:var(--accent); font-size:13px; }
+.sd-add svg { width:16px; height:16px; }
+.icon-btn.btn-danger-ghost { color:var(--danger); }
 .timeline-item.list-item .icon-btn svg { width:16px; height:16px; }
 .timeline-item.list-item .li-actions .btn.btn-sm { height:28px; padding:0 9px; font-size:12px; }
 /* Sub-texto en 1-2 líneas máximo con ellipsis para que no expanda la card */
@@ -5648,10 +5679,23 @@ const TripDetail = {
     const GEO_TYPES = ['lugar', 'personas', 'playa', 'comida', 'compras', 'hotel', 'actividad', 'otro', 'gestion'];
     const conNombre = geo.planning.filter(i => GEO_TYPES.includes(i.type) && (i.address || i.place_name || i.title));
 
+    // Centro de respaldo por día: mediana de los puntos de ese mismo día. Hace
+    // falta porque el centro de una ciudad sale de los puntos que la NOMBRAN, y
+    // si ningún evento del viaje lleva el nombre de la ciudad en su dirección esa
+    // ciudad se queda sin centro y sus días no se podían revisar.
+    const porDia = {};
+    conNombre.forEach(i => { if (i.lat != null && i.day_date) (porDia[i.day_date] = porDia[i.day_date] || []).push(i); });
+    const centroDia = {};
+    Object.keys(porDia).forEach(d => {
+      const g = porDia[d];
+      if (g.length < 3) return;   // con dos puntos no se sabe cuál es el raro
+      centroDia[d] = [GeoCities._median(g.map(x => x.lat)), GeoCities._median(g.map(x => x.lng))];
+    });
+
     const malos = [], sinUbicar = [];
     conNombre.forEach(i => {
       const c = geo.cityByDay[i.day_date];
-      const cen = c && geo.centers[c];
+      const cen = (c && geo.centers[c]) || centroDia[i.day_date];
       if (i.lat == null || i.lng == null) { if (c) sinUbicar.push(i); return; }
       if (cen && GeoCities.km([i.lat, i.lng], cen) > TOPE_KM) malos.push(i);
     });
@@ -5665,6 +5709,8 @@ const TripDetail = {
     const body = el('div', {}, [
       el('p', { class:'muted', style:{marginTop:0}, text:'Se comparan las coordenadas de cada evento con la ciudad en la que transcurre su día. Los que se salgan más de ' + TOPE_KM + ' km se vuelven a buscar acotando por esa ciudad.' }),
       resumen,
+      el('div', { class:'field-hint', style:{marginTop:'2px'},
+        text: malos.length ? 'Si solo quieres que dejen de estropear los trayectos, «Quitar ubicación» borra las coordenadas de esas ' + malos.length + ' paradas al instante, sin consultar nada.' : '' }),
       el('label', { class:'switch', style:{padding:'8px 0', width:'100%'} }, [
         el('input', { id:'ga-clear', type:'checkbox' }),
         el('span', { class:'switch-track' }),
@@ -5715,14 +5761,194 @@ const TripDetail = {
       Router.render();
     };
 
+    // Borrado directo, sin red: quita la ubicación de los que no encajan con su
+    // ciudad. Es lo que hace falta cuando una coordenada disparatada mete un
+    // trayecto de miles de km y dispara el aviso de "quizá no dé tiempo".
+    const limpiarMalos = async () => {
+      const ok = await UI.confirm(`¿Quitar la ubicación de ${malos.length} ` +
+        (malos.length === 1 ? 'parada que no encaja' : 'paradas que no encajan') +
+        ' con la ciudad de su día?\n\nNo se borra la parada, solo sus coordenadas: dejarán de contar para los trayectos y el mapa.');
+      if (!ok) return;
+      let n = 0;
+      for (const it of malos) {
+        const fresh = await DB.get('planning_items', it.id);
+        if (!fresh || fresh.lat == null) continue;
+        fresh.lat = null; fresh.lng = null; fresh.gmaps_url = null;
+        try { await DB.put('planning_items', fresh); n++; } catch (_) {}
+      }
+      UI.toast(n + (n === 1 ? ' ubicación quitada' : ' ubicaciones quitadas'));
+      Router.render();
+      UI.closeSheet();
+      setTimeout(() => TripDetail.openGeoAudit(t), 280);
+    };
+
     const runBtn = el('button', { class:'btn btn-primary', id:'ga-run', onclick: run },
       [ el('span', { html: svg('refresh') }), cola.length ? `Revisar ${cola.length}` : 'Nada que revisar' ]);
     if (!cola.length) runBtn.disabled = true;
+    const limpiarBtn = malos.length
+      ? el('button', { class:'btn btn-danger', onclick: limpiarMalos }, `Quitar ubicación (${malos.length})`)
+      : null;
 
     UI.openSheet({
       title:'Revisar ubicaciones',
       body,
-      footer:[ el('button', { class:'btn btn-ghost', onclick: () => { abortado = true; UI.closeSheet(); } }, 'Cerrar'), runBtn ],
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => { abortado = true; UI.closeSheet(); } }, 'Cerrar'),
+               limpiarBtn, runBtn ].filter(Boolean),
+    });
+  },
+
+  // Busca paradas y reservas repetidas dentro del viaje. Aparecen sobre todo al
+  // importar dos archivos que traen lo mismo con ids distintos: `importProfile`
+  // escribe por id, así que dos ids distintos son dos filas, aunque el contenido
+  // sea idéntico. El borrado es blando: todo se puede recuperar desde la Papelera.
+  async openDupes(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+    const planning = await DB.listByTrip('planning_items', t.id);
+    const bookings = await DB.listByTrip('bookings', t.id);
+    const budget   = await DB.listByTrip('budget_items', t.id);
+
+    // Cuánta información lleva una fila: al deduplicar se conserva la más completa.
+    // Un gasto vinculado pesa mucho: borrar esa fila se llevaría por delante un
+    // gasto real, así que esa copia es siempre la que se conserva.
+    const conGasto = new Set(budget.filter(x => x.planning_item_id).map(x => x.planning_item_id));
+    const peso = (i) => ['notes','address','place_name','gmaps_url','consultation_url','consultation_price','status']
+        .reduce((n, k) => n + (i[k] ? 1 : 0), 0)
+      + (i.lat != null ? 1 : 0) + Object.keys(i.metadata || {}).length
+      + (conGasto.has(i.id) ? 50 : 0);
+
+    // --- Paradas: misma clase, mismo día y mismo título ---
+    const firma = (i) => [i.time || '', i.consultation_planned_t1 || '', i.consultation_planned_d2 || '',
+                          i.consultation_planned_t2 || '', norm(i.notes)].join('|');
+    const porClave = {};
+    planning.forEach(i => {
+      const dia = i.day_date || i.consultation_planned_d1 || '';
+      const k = [i.type, dia, norm(i.title)].join('|');
+      (porClave[k] = porClave[k] || []).push(i);
+    });
+    const grupos = [];
+    Object.keys(porClave).sort().forEach(k => {
+      const g = porClave[k];
+      if (g.length < 2) return;
+      g.sort((a, b) => peso(b) - peso(a) || String(a.id).localeCompare(String(b.id)));
+      const base = firma(g[0]);
+      grupos.push({
+        tabla:'planning_items', titulo: g[0].title || '(sin título)',
+        dia: g[0].day_date || g[0].consultation_planned_d1 || '',
+        filas: g.map((i, n) => ({
+          row: i, keep: n === 0, exacto: n > 0 && firma(i) === base,
+          detalle: [ (i.consultation_planned_t1 || i.time || 'sin hora'),
+                     (i.consultation_planned_t2 ? '→ ' + i.consultation_planned_t2 : ''),
+                     (i.notes ? 'con nota' : '') ].filter(Boolean).join(' · '),
+        })),
+      });
+    });
+
+    // --- Reservas: mismo tipo, mismo identificador y misma fecha ---
+    const bFirma = (b) => {
+      const d = b.structured_data || {};
+      return [b.type, norm(d.numero || d.nombre || d.localizador || b.doc_name || ''),
+              d.fecha_salida || d.checkin || d.recogida || b.ref_date || '',
+              d.hora_salida || b.ref_time || ''].join('|');
+    };
+    const bPeso = (b) => Object.keys(b.structured_data || {}).length + (b.doc_url ? 2 : 0);
+    const porFirmaB = {};
+    bookings.forEach(b => { (porFirmaB[bFirma(b)] = porFirmaB[bFirma(b)] || []).push(b); });
+    Object.keys(porFirmaB).sort().forEach(k => {
+      const g = porFirmaB[k];
+      if (g.length < 2) return;
+      g.sort((a, b) => bPeso(b) - bPeso(a) || String(a.id).localeCompare(String(b.id)));
+      const d0 = g[0].structured_data || {};
+      grupos.push({
+        tabla:'bookings', titulo: d0.nombre || d0.numero || g[0].doc_name || 'Reserva',
+        dia: d0.fecha_salida || d0.checkin || d0.recogida || g[0].ref_date || '',
+        filas: g.map((b, n) => ({ row: b, keep: n === 0, exacto: n > 0,
+          detalle: [ (TYPES_BOOKING.find(x => x.id === b.type) || {}).label || b.type,
+                     (b.structured_data || {}).localizador || '' ].filter(Boolean).join(' · ') })),
+      });
+    });
+
+    const sobran = grupos.reduce((n, g) => n + g.filas.filter(f => f.exacto).length, 0);
+    const dudosos = grupos.reduce((n, g) => n + g.filas.filter(f => !f.keep && !f.exacto).length, 0);
+
+    const body = el('div', {});
+    body.appendChild(el('p', { class:'muted', style:{marginTop:0}, text: grupos.length
+      ? 'Se agrupa por tipo, día y nombre. Las copias idénticas vienen marcadas; las que difieren en hora o nota, no: repásalas antes de borrar.'
+      : 'No hay paradas ni reservas repetidas en este viaje.' }));
+    if (grupos.length) {
+      body.appendChild(el('div', { class:'card' }, [
+        el('div', { class:'kv' }, [ el('span', {class:'k', text:'Grupos con repetidos'}), el('span', {class:'v', text:String(grupos.length)}) ]),
+        el('div', { class:'kv' }, [ el('span', {class:'k', text:'Copias idénticas'}), el('span', {class:'v', text:String(sobran)}) ]),
+        el('div', { class:'kv' }, [ el('span', {class:'k', text:'Parecidas (revisar)'}), el('span', {class:'v', text:String(dudosos)}) ]),
+      ]));
+    }
+    const lista = el('div', { class:'dup-list' });
+    body.appendChild(lista);
+
+    const marcados = new Set();
+    const actualiza = () => {
+      const b = document.getElementById('dup-del');
+      if (!b) return;
+      b.disabled = !marcados.size;
+      b.textContent = marcados.size ? `Eliminar ${marcados.size}` : 'Nada marcado';
+    };
+
+    grupos.forEach(g => {
+      const caja = el('div', { class:'dup-grp' });
+      caja.appendChild(el('div', { class:'dup-cab' }, [
+        el('span', { class:'dup-tit', text: g.titulo }),
+        el('span', { class:'dup-dia', text: g.dia ? fmtDate(g.dia, {day:'numeric', month:'short'}) : 'sin fecha' }),
+      ]));
+      g.filas.forEach(f => {
+        const marcar = f.exacto;
+        if (marcar) marcados.add(f);
+        const fila = el('label', { class:'dup-row' + (f.keep ? ' dup-keep' : '') }, [
+          f.keep ? el('span', { class:'dup-badge', text:'se queda' })
+                 : el('input', { type:'checkbox', checked: marcar, onchange: (e) => {
+                     if (e.target.checked) marcados.add(f); else marcados.delete(f);
+                     actualiza();
+                   } }),
+          el('span', { class:'dup-det', text: f.detalle || '—' }),
+        ]);
+        caja.appendChild(fila);
+      });
+      lista.appendChild(caja);
+    });
+
+    const borrar = async () => {
+      const sel = [...marcados];
+      const ok = await UI.confirm(`¿Eliminar ${sel.length} ` + (sel.length === 1 ? 'copia' : 'copias') +
+        '?\n\nVan a la Papelera del viaje, así que se pueden recuperar. Los gastos vinculados a esas paradas se eliminan con ellas.');
+      if (!ok) return;
+      let n = 0, gastos = 0;
+      for (const f of sel) {
+        const tabla = grupos.find(g => g.filas.includes(f)).tabla;
+        try {
+          await DB.remove(tabla, f.row.id); n++;
+          if (tabla === 'planning_items') {
+            for (const b of budget.filter(x => x.planning_item_id === f.row.id)) {
+              await DB.remove('budget_items', b.id); gastos++;
+            }
+          }
+        } catch (e) { console.error('dupes', e); }
+      }
+      UI.toast(n + (n === 1 ? ' copia eliminada' : ' copias eliminadas') +
+        (gastos ? ` · ${gastos} gastos` : '') + ' — están en la Papelera');
+      marcados.clear();
+      Router.render();
+      // UI.confirm cierra la hoja para preguntar, así que la volvemos a abrir ya
+      // recalculada: se ve lo que queda (o que no queda nada).
+      UI.closeSheet();
+      setTimeout(() => TripDetail.openDupes(t), 280);
+    };
+
+    const delBtn = el('button', { class:'btn btn-danger', id:'dup-del', onclick: borrar }, 'Nada marcado');
+    setTimeout(actualiza, 0);
+    UI.openSheet({
+      title:'Buscar duplicados',
+      body,
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'),
+               grupos.length ? delBtn : null ].filter(Boolean),
     });
   },
 
@@ -5784,6 +6010,10 @@ const TripDetail = {
       items.push({
         icon: svg('map'), label: 'Revisar ubicaciones',
         onclick: () => { UI.closeSheet(); TripDetail.openGeoAudit(t); }
+      });
+      items.push({
+        icon: svg('search'), label: 'Buscar duplicados',
+        onclick: () => { UI.closeSheet(); TripDetail.openDupes(t); }
       });
       items.push({
         icon: svg('copy'), label: 'Duplicar viaje',
@@ -13186,6 +13416,242 @@ const ShareLinks = {
   },
 
   // Registrar en este dispositivo un enlace ya publicado desde otro.
+  /* -------- Versión para compartir --------
+     Capa de cambios que se aplica SOLO al generar el HTML compartido. Los datos
+     del viaje no se tocan: aquí se decide qué se enseña y con qué palabras.
+     Vive en `trip.settings.share_draft`, así que sincroniza y viaja en el export.
+       { items: { <id>: { title?, notes?, hidden? } },
+         days:  { <iso>: { text? } },
+         added: { <iso>: [ { id, title, notes?, time? } ] } }
+     `items[id].hidden` quita del enlace una parada real del viaje (reversible);
+     `added[iso]` son paradas que existen solo en el enlace. */
+  shareDraft(t) {
+    const d = tripSettings(t).share_draft;
+    return (d && typeof d === 'object') ? d : { items: {}, days: {}, added: {} };
+  },
+  _draftMut(t) {
+    const st = tripSettingsMut(t);
+    if (!st.share_draft || typeof st.share_draft !== 'object') st.share_draft = {};
+    if (!st.share_draft.items) st.share_draft.items = {};
+    if (!st.share_draft.days) st.share_draft.days = {};
+    if (!st.share_draft.added) st.share_draft.added = {};
+    return st.share_draft;
+  },
+  // Paradas añadidas de un día, ya saneadas (sin título no se muestran).
+  _draftAdded(t, iso) {
+    const a = (this.shareDraft(t).added || {})[iso];
+    return Array.isArray(a) ? a : [];
+  },
+  _draftCount(t) {
+    const d = this.shareDraft(t);
+    const nAdd = Object.keys(d.added || {})
+      .reduce((n, k) => n + (Array.isArray(d.added[k]) ? d.added[k].length : 0), 0);
+    return Object.keys(d.items || {}).length + Object.keys(d.days || {}).length + nAdd;
+  },
+
+  async openShareDraft(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const planning = (await DB.listByTrip('planning_items', t.id))
+      .filter(i => !i.deleted_at)
+      .sort((a, b) => (a.day_date || '').localeCompare(b.day_date || '')
+                   || (a.time || '').localeCompare(b.time || '')
+                   || (a.order_index || 0) - (b.order_index || 0));
+    const dayNotes = await DB.listByTrip('day_notes', t.id);
+    const notaDe = {}; dayNotes.forEach(n => { notaDe[n.date] = n; });
+    // Ciudad deducida de cada día: es la que sale en la pastilla del enlace y la
+    // que el usuario puede sobrescribir aquí.
+    const legs = await DB.listByTrip('trip_legs', t.id);
+    const ciudadDe = GeoCities.deduce({ trip: t, planning, legs, dayNotes }).cityByDay || {};
+
+    const porDia = {};
+    planning.forEach(i => { const k = i.day_date || 'sin-fecha'; (porDia[k] = porDia[k] || []).push(i); });
+    Object.keys(notaDe).forEach(k => { if (!porDia[k]) porDia[k] = []; });
+    // Todos los días del viaje, aunque estén vacíos: así se puede añadir una
+    // parada al enlace en un día que en el viaje no tiene nada.
+    if (t.start_date && t.end_date) {
+      const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      let d = parseDate(t.start_date); const fin = parseDate(t.end_date); let guard = 0;
+      while (d && fin && d <= fin && guard++ < 1200) { const k = iso(d); if (!porDia[k]) porDia[k] = []; d.setDate(d.getDate() + 1); }
+    }
+    Object.keys(ShareLinks.shareDraft(t).added || {}).forEach(k => { if (!porDia[k]) porDia[k] = []; });
+    const dias = Object.keys(porDia).sort();
+
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Lo que hagas aquí se aplica solo al enlace compartido; tu viaje no cambia. Puedes reescribir títulos y notas, quitar paradas con el ojo (reversible) y añadir paradas que existan solo en el enlace.' }),
+      el('div', { id:'sd-list' }),
+    ]);
+
+    const marcaCambio = () => {
+      const n = ShareLinks._draftCount(t);
+      const b = document.getElementById('sd-count');
+      if (b) b.textContent = n ? (n === 1 ? '1 cambio' : n + ' cambios') : 'Sin cambios';
+    };
+
+    const guardar = async () => { try { await DB.put('trips', t); } catch (e) { console.error('share draft', e); } marcaCambio(); };
+
+    const filaItem = (it, onCambio) => {
+      const d = ShareLinks._draftMut(t);
+      const o = d.items[it.id] || {};
+      const wrap = el('div', { class:'sd-item' + (o.hidden ? ' sd-off' : '') });
+      const cab = el('div', { class:'sd-cab' }, [
+        el('span', { class:'sd-tipo', text: (typeDef(it.type).emoji || '') }),
+        el('input', { class:'sd-title', type:'text', value: o.title != null ? o.title : (it.title || ''),
+          placeholder: it.title || 'Título', autocomplete:'off',
+          onchange: async (e) => {
+            const v = e.target.value.trim();
+            const dd = ShareLinks._draftMut(t);
+            dd.items[it.id] = dd.items[it.id] || {};
+            if (!v || v === it.title) delete dd.items[it.id].title; else dd.items[it.id].title = v;
+            if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
+            await guardar();
+          } }),
+        el('button', { class:'icon-btn' + (o.hidden ? ' btn-note-on' : ''), title: o.hidden ? 'Volver a incluirla en el enlace' : 'Quitar del enlace',
+          html: svg('eye'),
+          onclick: async (e) => {
+            const dd = ShareLinks._draftMut(t);
+            dd.items[it.id] = dd.items[it.id] || {};
+            if (dd.items[it.id].hidden) delete dd.items[it.id].hidden; else dd.items[it.id].hidden = true;
+            const oculto = !!dd.items[it.id].hidden;
+            if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
+            wrap.classList.toggle('sd-off', oculto);
+            e.currentTarget.classList.toggle('btn-note-on', oculto);
+            e.currentTarget.title = oculto ? 'Volver a incluirla en el enlace' : 'Quitar del enlace';
+            if (onCambio) onCambio();
+            await guardar();
+          } }),
+      ]);
+      const ta = el('textarea', { class:'sd-notes', rows:'2',
+        placeholder: (it.notes || '').trim() ? 'Nota original: ' + (it.notes || '').slice(0, 60) + '…' : 'Sin nota',
+        onchange: async (e) => {
+          const v = e.target.value;
+          const dd = ShareLinks._draftMut(t);
+          dd.items[it.id] = dd.items[it.id] || {};
+          if (v === (it.notes || '')) delete dd.items[it.id].notes; else dd.items[it.id].notes = v;
+          if (!Object.keys(dd.items[it.id]).length) delete dd.items[it.id];
+          await guardar();
+        } }, o.notes != null ? o.notes : (it.notes || ''));
+      wrap.appendChild(cab); wrap.appendChild(ta);
+      return wrap;
+    };
+
+    // Parada que existe solo en el enlace: se guarda en `added[iso]` y nunca
+    // llega a `planning_items`. Aquí sí hay borrado real (de la versión compartida).
+    const filaNueva = (k, entry, onBorrar) => {
+      const wrap = el('div', { class:'sd-item sd-new' });
+      const cab = el('div', { class:'sd-cab' }, [
+        el('span', { class:'sd-tipo', text:'✨' }),
+        el('input', { class:'sd-title', type:'text', value: entry.title || '', placeholder:'Nombre del lugar',
+          autocomplete:'off',
+          onchange: async (e) => { entry.title = e.target.value.trim(); await guardar(); } }),
+        el('input', { class:'sd-time', type:'time', value: entry.time || '', title:'Hora (opcional)',
+          onchange: async (e) => { entry.time = e.target.value || ''; await guardar(); } }),
+        el('button', { class:'icon-btn btn-danger-ghost', title:'Eliminar esta parada del enlace', html: svg('trash'),
+          onclick: async () => {
+            const lista = ShareLinks._draftMut(t).added[k] || [];
+            const i = lista.indexOf(entry);
+            if (i >= 0) lista.splice(i, 1);
+            if (!lista.length) delete ShareLinks._draftMut(t).added[k];
+            wrap.remove(); onBorrar();
+            await guardar();
+          } }),
+      ]);
+      const ta = el('textarea', { class:'sd-notes', rows:'2', placeholder:'Nota (opcional)',
+        onchange: async (e) => { entry.notes = e.target.value; await guardar(); } }, entry.notes || '');
+      wrap.appendChild(cab); wrap.appendChild(ta);
+      return wrap;
+    };
+
+    const render = () => {
+      const cont = document.getElementById('sd-list');
+      if (!cont) return;
+      cont.innerHTML = '';
+      dias.forEach(k => {
+        const det = el('details', { class:'sd-day' });
+        const n = notaDe[k];
+        const dr = ShareLinks.shareDraft(t);
+        const cuenta = el('span', { class:'sd-day-n' });
+        const refrescaCuenta = () => {
+          const vis = porDia[k].filter(i => {
+            const o = (ShareLinks.shareDraft(t).items || {})[i.id];
+            return !(o && o.hidden);
+          }).length + ShareLinks._draftAdded(t, k).length;
+          cuenta.textContent = vis + (vis === 1 ? ' parada' : ' paradas');
+        };
+        refrescaCuenta();
+        det.appendChild(el('summary', { class:'sd-day-head' }, [
+          el('span', { class:'sd-day-t', text: k === 'sin-fecha' ? 'Sin fecha' : fmtDate(k, {weekday:'long', day:'numeric', month:'long'}) }),
+          cuenta,
+        ]));
+        const cuerpo = el('div', { class:'sd-day-body' });
+        cuerpo.appendChild(el('label', { class:'sd-lab', text:'Ciudad (pastilla del día)' }));
+        cuerpo.appendChild(el('input', { class:'sd-city', type:'text', autocomplete:'off',
+          placeholder: ciudadDe[k] ? ciudadDe[k] + ' (deducida)' : 'Sin ciudad',
+          value: (dr.days[k] && dr.days[k].city != null) ? dr.days[k].city : '',
+          onchange: async (e) => {
+            const v = e.target.value.trim();
+            const dd = ShareLinks._draftMut(t);
+            dd.days[k] = dd.days[k] || {};
+            if (!v || v === (ciudadDe[k] || '')) delete dd.days[k].city; else dd.days[k].city = v;
+            if (!Object.keys(dd.days[k]).length) delete dd.days[k];
+            await guardar();
+          } }));
+        cuerpo.appendChild(el('div', { class:'sd-hint', text:'Vacío = la deducida. Escribe «-» para no mostrar ninguna pastilla.' }));
+        cuerpo.appendChild(el('label', { class:'sd-lab', text:'Nota del día' }));
+        cuerpo.appendChild(el('textarea', { class:'sd-notes', rows:'2',
+          placeholder: n && n.text ? 'Nota original: ' + n.text.slice(0, 60) + '…' : 'Sin nota',
+          onchange: async (e) => {
+            const v = e.target.value;
+            const dd = ShareLinks._draftMut(t);
+            dd.days[k] = dd.days[k] || {};
+            if (v === ((n && n.text) || '')) delete dd.days[k].text; else dd.days[k].text = v;
+            if (!Object.keys(dd.days[k]).length) delete dd.days[k];
+            await guardar();
+          } }, (dr.days[k] && dr.days[k].text != null) ? dr.days[k].text : ((n && n.text) || '')));
+        const anadir = el('button', { class:'btn btn-ghost sd-add', html: svg('plus') + '<span>Añadir parada</span>',
+          onclick: async () => {
+            const dd = ShareLinks._draftMut(t);
+            const lista = dd.added[k] = Array.isArray(dd.added[k]) ? dd.added[k] : [];
+            const entry = { id: 'sd-' + uuid(), title:'', notes:'', time:'' };
+            lista.push(entry);
+            const fila = filaNueva(k, entry, refrescaCuenta);
+            cuerpo.insertBefore(fila, anadir);
+            refrescaCuenta();
+            const inp = fila.querySelector('.sd-title'); if (inp) inp.focus();
+            await guardar();
+          } });
+        det.addEventListener('toggle', () => {
+          if (!det.open || det._montado) return;
+          det._montado = true;
+          porDia[k].forEach(it => cuerpo.insertBefore(filaItem(it, refrescaCuenta), anadir));
+          ShareLinks._draftAdded(t, k).forEach(e => cuerpo.insertBefore(filaNueva(k, e, refrescaCuenta), anadir));
+        });
+        cuerpo.appendChild(anadir);
+        det.appendChild(cuerpo);
+        cont.appendChild(det);
+      });
+      marcaCambio();
+    };
+    setTimeout(render, 0);
+
+    const reset = el('button', { class:'btn btn-danger', onclick: async () => {
+      const ok = await UI.confirm('¿Descartar todos los cambios de la versión compartida y volver a los textos del viaje?');
+      if (!ok) return;
+      const st = tripSettingsMut(t); delete st.share_draft;
+      await DB.put('trips', t);
+      UI.toast('Versión compartida restablecida');
+      UI.closeSheet();
+      setTimeout(async () => ShareLinks.openShareDraft(await DB.get('trips', t.id)), 280);
+    }}, 'Restablecer');
+
+    UI.openSheet({
+      title:'Versión para compartir',
+      body,
+      footer:[ reset,
+        el('span', { id:'sd-count', class:'field-hint', style:{marginRight:'auto', alignSelf:'center'} }, ''),
+        el('button', { class:'btn btn-primary', onclick: () => { UI.closeSheet(); setTimeout(() => Exporter.openShareSheet(t), 280); } }, 'Listo') ],
+    });
+  },
+
   openAdopt(trip) {
     const body = el('div', {}, [
       el('p', { class:'muted', style:{marginTop:0}, text:'Si ya creaste el enlace de este viaje en otro dispositivo, pega aquí su URL. A partir de entonces "Actualizar enlace" lo regenerará en su sitio, en vez de publicar una copia con otra dirección.' }),
@@ -13485,12 +13951,17 @@ const Exporter = {
       [ el('span', { html: svg('shield') }), 'Ajustes del enlace' ]);
     // Si este dispositivo no conoce el enlace pero ya existe (se creó en otro),
     // pegar su URL evita publicar una segunda copia con otra dirección.
+    const nDraft = ShareLinks._draftCount(t);
+    const draftBtn = el('button', { class:'btn btn-sm' + (nDraft ? '' : ' btn-ghost'),
+      title:'Ajustar los textos que verá quien abra el enlace',
+      onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openShareDraft(t), 280); } },
+      [ el('span', { html: svg('edit') }), nDraft ? `Versión para compartir · ${nDraft}` : 'Versión para compartir' ]);
     const adoptar = !existingLink ? el('button', { class:'btn btn-sm btn-ghost',
       title:'Registrar un enlace creado en otro dispositivo',
       onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openAdopt(t), 280); } },
       [ el('span', { html: svg('external') }), 'Ya tengo un enlace' ]) : null;
     body.appendChild(el('div', { style:{marginTop:'14px', display:'flex', gap:'8px', flexWrap:'wrap'} },
-      [ ghCfg, adoptar ].filter(Boolean)));
+      [ draftBtn, ghCfg, adoptar ].filter(Boolean)));
 
     UI.openSheet({ title:'Compartir viaje', body,
       footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), generate, makeLink] });
@@ -13513,6 +13984,38 @@ const Exporter = {
   _buildShareHtml(t, data, opts) {
     // Filtrar datos según opts antes de embeber
     const safe = JSON.parse(JSON.stringify(data));
+
+    // Versión para compartir: títulos y notas propios del enlace, y paradas
+    // ocultas. Se aplica antes que nada; los datos del viaje no se tocan.
+    const draft = ShareLinks.shareDraft(t);
+    const dItems = draft.items || {}, dDays = draft.days || {};
+    safe.planning = safe.planning.filter(p => !(dItems[p.id] && dItems[p.id].hidden));
+    safe.planning.forEach(p => {
+      const o = dItems[p.id];
+      if (!o) return;
+      if (o.title != null) p.title = o.title;
+      if (o.notes != null) p.notes = o.notes;
+    });
+    // Paradas que existen solo en el enlace (nunca en planning_items).
+    const dAdded = draft.added || {};
+    Object.keys(dAdded).forEach(iso => {
+      (Array.isArray(dAdded[iso]) ? dAdded[iso] : []).forEach((a, i) => {
+        if (!a || !String(a.title || '').trim()) return;
+        safe.planning.push({
+          id: a.id || ('sd-' + iso + '-' + i), trip_id: t.id, leg_id: null,
+          type: 'lugar', title: String(a.title).trim(), notes: a.notes || '',
+          day_date: iso === 'sin-fecha' ? null : iso, end_date: null,
+          time: a.time || null, order_index: 9000 + i,
+          lat: null, lng: null, gmaps_url: null, metadata: {}, visited: false,
+        });
+      });
+    });
+    Object.keys(dDays).forEach(iso => {
+      if (dDays[iso].text == null) return;
+      const n = (safe.day_notes || []).find(x => x.date === iso);
+      if (n) n.text = dDays[iso].text;
+      else (safe.day_notes = safe.day_notes || []).push({ id:'draft-' + iso, trip_id:t.id, date:iso, title:null, color:null, text:dDays[iso].text });
+    });
 
     // Limpiar planning notes de URLs si !includeLinks
     if (!opts.includeLinks) {
@@ -13638,6 +14141,14 @@ const Exporter = {
     // Coherencia con "Ocultar además": si el usuario tapó un nombre, tampoco debe
     // asomar como etiqueta de ciudad.
     Object.keys(geo.cityByDay).forEach(k => { geo.cityByDay[k] = stripTerms(geo.cityByDay[k]); });
+    // La ciudad escrita a mano en la versión para compartir manda sobre la deducida.
+    // '-' significa "sin pastilla" en ese día.
+    Object.keys(dDays).forEach(iso => {
+      const c = dDays[iso].city;
+      if (c == null) return;
+      const v = String(c).trim();
+      geo.cityByDay[iso] = (!v || v === '-') ? null : stripTerms(v);
+    });
     const viewerScript = Exporter._viewerScript(payload, JSON.stringify(viewerOpts),
       { cityByDay: JSON.stringify(geo.cityByDay) });
 
@@ -13754,6 +14265,12 @@ summary.day-head {
 }
 summary.day-head::-webkit-details-marker { display:none; }
 summary.day-head:hover, summary.day-head:active { background:var(--bg-soft); }
+/* Abierto, cabecera y contenido eran los dos blancos y se fundían en un bloque
+   sin lectura. La cabecera pasa a fondo suave con una línea debajo. */
+details[open] > summary.day-head {
+  background:var(--bg-soft);
+  border-bottom:1px solid var(--line);
+}
 .dh-badge {
   flex:none; width:38px; height:38px; border-radius:13px; background:var(--accent-bg); color:var(--accent);
   display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1;
@@ -13810,7 +14327,7 @@ details[open] /* Notas largas: se recortan a dos líneas y se despliegan a petic
 .day-block.reveal.in { animation:entra-suave .42s cubic-bezier(.22,.8,.3,1) both; }
 .stat { animation:entra-suave .4s cubic-bezier(.22,.8,.3,1) both; animation-delay:calc(var(--i, 0) * 55ms); }
 .cover { animation:entra-suave .5s cubic-bezier(.22,.8,.3,1) both; }
-.day-body { padding:2px 16px 16px; }
+.day-body { padding:16px 16px 18px; }
 .day-empty { color:var(--text-muted); font-size:13.5px; padding:0 16px 18px; }
 .timeline { position:relative; margin-left:5px; padding-left:22px; border-left:1.5px solid var(--line); }
 .tl-item { position:relative; padding:12px 14px; background:var(--bg-soft); border-radius:15px; margin-bottom:8px; }
