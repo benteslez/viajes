@@ -13754,6 +13754,12 @@ summary.day-head {
 }
 summary.day-head::-webkit-details-marker { display:none; }
 summary.day-head:hover, summary.day-head:active { background:var(--bg-soft); }
+/* Abierto, cabecera y contenido eran los dos blancos y se fundían en un bloque
+   sin lectura. La cabecera pasa a fondo suave con una línea debajo. */
+details[open] > summary.day-head {
+  background:var(--bg-soft);
+  border-bottom:1px solid var(--line);
+}
 .dh-badge {
   flex:none; width:38px; height:38px; border-radius:13px; background:var(--accent-bg); color:var(--accent);
   display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1;
@@ -13810,7 +13816,7 @@ details[open] /* Notas largas: se recortan a dos líneas y se despliegan a petic
 .day-block.reveal.in { animation:entra-suave .42s cubic-bezier(.22,.8,.3,1) both; }
 .stat { animation:entra-suave .4s cubic-bezier(.22,.8,.3,1) both; animation-delay:calc(var(--i, 0) * 55ms); }
 .cover { animation:entra-suave .5s cubic-bezier(.22,.8,.3,1) both; }
-.day-body { padding:2px 16px 16px; }
+.day-body { padding:16px 16px 18px; }
 .day-empty { color:var(--text-muted); font-size:13.5px; padding:0 16px 18px; }
 .timeline { position:relative; margin-left:5px; padding-left:22px; border-left:1.5px solid var(--line); }
 .tl-item { position:relative; padding:12px 14px; background:var(--bg-soft); border-radius:15px; margin-bottom:8px; }
