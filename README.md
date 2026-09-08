@@ -346,7 +346,9 @@ repo y permiso *Contents: Read and write*.
   Pages configurada.
 - **Actualizar** reutiliza la misma ruta: la URL que ya mandaste no cambia.
 - **Revocar** borra el archivo del repo; el enlace deja de funcionar.
-- GitHub Pages tarda ~1 minuto en publicar el archivo nuevo.
+- GitHub Pages tarda ~1 minuto en publicar el archivo nuevo. La hoja del enlace **sondea la URL**
+  (HEAD cada 3 s, hasta 2 min) y mantiene *Abrir* deshabilitado hasta que responde: antes daba un
+  404 desconcertante justo después de publicar, cuando en realidad la subida había ido bien.
 
 > En un repo **público** la carpeta de enlaces la puede listar cualquiera: la URL no es un
 > secreto, solo evita que se adivine. Para enlaces realmente privados hace falta un repo privado
