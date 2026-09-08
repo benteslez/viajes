@@ -349,6 +349,11 @@ repo y permiso *Contents: Read and write*.
 - GitHub Pages tarda ~1 minuto en publicar el archivo nuevo. La hoja del enlace **sondea la URL**
   (HEAD cada 3 s, hasta 2 min) y mantiene *Abrir* deshabilitado hasta que responde: antes daba un
   404 desconcertante justo después de publicar, cuando en realidad la subida había ido bien.
+- El sondeo pide **siempre** `?_=<timestamp>`, nunca la URL limpia. Pedir la URL antes de que el
+  archivo exista hace que la CDN de GitHub Pages **guarde ese 404** y lo siga sirviendo un rato
+  aunque el despliegue ya haya terminado; sondear la URL limpia dejaría el enlace roto para quien
+  lo abriera después. Si aun así alguien se topa con el 404 cacheado, el botón *Abrir sin caché*
+  (aparece cuando el sondeo se agota) añade el parámetro y salta la caché.
 
 > En un repo **público** la carpeta de enlaces la puede listar cualquiera: la URL no es un
 > secreto, solo evita que se adivine. Para enlaces realmente privados hace falta un repo privado

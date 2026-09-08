@@ -2697,7 +2697,7 @@ window.App = window.App || {};
 // si no coinciden, lo que se está ejecutando es una copia cacheada vieja y el
 // problema está en el navegador, no en el servidor. Subirla en cada despliegue,
 // a la vez que CACHE en service-worker.js.
-const APP_VERSION = 'v104';
+const APP_VERSION = 'v105';
 
 const CFG = {
   // Rellena estos dos valores para activar la sync con Supabase.
@@ -13820,6 +13820,12 @@ const ShareLinks = {
       ]),
       el('div', { id:'sl-estado', class:'field-hint',
         text:'Comprobando si el enlace ya está publicado…' }),
+      // Si alguien abrió la URL antes de que existiera, la CDN de GitHub Pages
+      // se queda con ese 404 un rato. Añadir un parámetro cambia la clave de
+      // caché y devuelve el archivo de verdad.
+      el('button', { id:'sl-sincache', class:'btn btn-sm', hidden:true, style:{marginTop:'8px'},
+        onclick: () => window.open(`${entry.url}?_=${Date.now()}`, '_blank', 'noopener') },
+        'Abrir sin caché'),
       el('div', { class:'readonly-banner', style:{marginTop:'12px'} }, [
         el('span', { class:'ico', html: svg('lock') }),
         el('span', { text:'Es una foto fija: si cambias el viaje, pulsa "Actualizar" para regenerar el archivo. La URL no cambia.' }),
@@ -13844,9 +13850,13 @@ const ShareLinks = {
         e.style.color = ok ? 'var(--ok, #16a34a)' : '';
         return true;
       };
+      // El sondeo lleva SIEMPRE un parámetro distinto. Pedir la URL limpia antes
+      // de que exista hace que la CDN de GitHub Pages guarde ese 404 y lo siga
+      // sirviendo un buen rato aunque el archivo ya esté desplegado: el propio
+      // sondeo dejaría el enlace roto para quien lo abriera después.
       const vivo = async () => {
         try {
-          const r = await fetch(entry.url, { method:'HEAD', cache:'no-store' });
+          const r = await fetch(`${entry.url}?_=${Date.now()}`, { method:'HEAD', cache:'no-store' });
           return r.ok;
         } catch (_) { return false; }            // sin red o distinto origen
       };
@@ -13859,8 +13869,10 @@ const ShareLinks = {
         if (!pon(`Publicando en GitHub Pages… (${i * 3}s)`, false)) return;
         await new Promise(r => setTimeout(r, 3000));
       }
-      pon('Sigue sin responder. El archivo está subido; espera un minuto más y recarga.', false);
+      pon('Sigue sin responder. El archivo está subido: prueba "Abrir sin caché".', false);
       open.disabled = false; open.title = '';
+      const sc = document.getElementById('sl-sincache');
+      if (sc) sc.hidden = false;
     })();
     const revoke = el('button', { class:'btn btn-danger', onclick: async () => {
       const ok = await UI.confirm('¿Borrar el archivo del repo? El enlace dejará de funcionar.');
