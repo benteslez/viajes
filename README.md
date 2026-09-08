@@ -103,16 +103,23 @@ Desde el icono de perfil arriba a la derecha:
 deterministas (UUID v5), así que reimportar el mismo archivo **actualiza** las filas en vez de
 duplicarlas.
 
-| Archivo | Viaje | Fechas |
-| --- | --- | --- |
-| `datos/viaje-peru-2025.json` | Perú (Lima · Paracas · Huacachina · Cusco · Valle Sagrado · Machu Picchu · Arequipa · Colca · Puno) | 28 jun – 14 jul 2025 |
+| Archivo | Viaje | Fechas | Paradas |
+| --- | --- | --- | --- |
+| `datos/viaje-peru-2025.json` | Perú (Lima · Paracas · Huacachina · Cusco · Valle Sagrado · Machu Picchu · Arequipa · Colca · Puno) | 28 jun – 14 jul 2025 | 118 |
+| `datos/viaje-aruba-2025.json` | Aruba (Savaneta · Arikok · Palm Beach · Oranjestad) | 1 – 4 may 2025 | 20 |
 
-Cómo importarlo: descarga el `.json` (desde GitHub o desde la propia URL de Pages,
-`…/datos/viaje-peru-2025.json`) → icono de perfil → **Importar JSON**.
+Cómo importarlos: descarga el `.json` (desde GitHub o desde la propia URL de Pages,
+`…/datos/viaje-aruba-2025.json`) → icono de perfil → **Importar JSON**. Los dos archivos son
+independientes: puedes importar uno, el otro o los dos, en cualquier orden.
+
+Los importes en US$ se convierten con **1 US$ = 0,86 €** en ambos viajes. No es una estimación:
+es la tasa que usaba el propio Wanderlog, deducida de sus totales (en Aruba, 762,39 US$ =
+499,50 US$ + 226,10 €; en Perú, 3.262,11 US$ = 1.765,96 US$ + 1.286,79 €). Cada gasto lleva su
+`rate_to_eur`, así que se puede ajustar uno a uno desde la app.
 
 Dos avisos:
 
-- El archivo trae `profile: "ruben"`, así que el viaje aparece con ese perfil.
+- Los archivos traen `profile: "ruben"`, así que los viajes aparecen con ese perfil.
 - `DB.importProfile` escribe directo en IndexedDB **sin pasar por la cola `_pending`**, de modo que
   lo importado **no sube a Supabase**: hay que importar el archivo en cada dispositivo.
 
