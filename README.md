@@ -78,9 +78,15 @@ el servidor deduce el perfil de la tabla `app_users` a partir del JWT — que lo
 no se puede falsificar desde el navegador. `app_profile()` y las políticas RLS filtran
 las filas con eso. Sin sesión, `app_profile()` devuelve `NULL` y no se ve nada.
 
-- `ruben` es el dueño: único que puede escribir.
-- `sergio` lee los viajes de Rubén, pero no los modifica.
-- **`invitado` ya no existe.** Para enseñar un viaje a alguien, genera el enlace HTML
+- `ruben` es el dueño y el administrador: reparte permisos y ve todo lo suyo.
+- El resto entra por **concesiones explícitas** (`schema-perms.sql`): una fila en
+  `trip_shares` por cada par (viaje, persona), con `can_edit` y una lista de categorías
+  tapadas. Sergio incluido — su antiguo "lo lee todo" se migró a concesiones de solo lectura.
+- Las cuentas invitadas llevan `profile = 'invitado'` en `app_users`. **No tiene nada que ver
+  con el `invitado` que se eliminó**: aquel era el valor por defecto cuando no llegaba
+  cabecera, o sea todo internet; este es una cuenta real con contraseña que solo ve lo que
+  esté en `trip_shares`.
+- Para enseñar un viaje a alguien sin cuenta, sigue estando el enlace HTML
   (*Compartir viaje*): sale ya redactado y no da acceso a la base.
 
 > **Por qué cambió.** El modelo original no tenía autenticación: el cliente mandaba una
@@ -94,6 +100,32 @@ las filas con eso. Sin sesión, `app_profile()` devuelve `NULL` y no se ve nada.
 Sin `supabaseUrl` configurada la app es puramente local: no hay servidor ni datos ajenos
 que proteger, así que la pantalla de entrada sigue siendo el selector de perfil de
 siempre, sin contraseña.
+
+### Permisos por viaje
+
+`schema-perms.sql`. La tabla `trip_shares` es la única fuente de verdad: la pantalla de
+administrador de la app la edita, y la RLS la hace cumplir.
+
+| Columna | Qué hace |
+|---|---|
+| `can_edit` | `false` = solo lectura. `true` = puede modificar el viaje y sus hijas |
+| `ocultar` | Categorías que esa persona NO ve: `dinero`, `reservas`, `diario`, `maleta` |
+
+Tres funciones `security definer` concentran el criterio, y todas las políticas de las tablas
+hijas delegan en ellas: `app_can_read_trip()`, `app_can_edit_trip()` y `app_trip_hides()`. Son
+definer para que consultar `trip_shares` desde dentro de una política no sea recursivo.
+
+Borrar un viaje sigue siendo solo del dueño: que te dejen editarlo no te da derecho a
+borrárselo.
+
+> **Las categorías ocultan tablas enteras, no texto libre.** Ocultar `reservas` quita
+> localizadores, documentos e importes de la tabla `bookings`, pero un
+> `N.º de confirmación: 4648869009` escrito a mano en las notas de una parada **se sigue
+> viendo**. Postgres filtra filas y columnas; no tacha trozos de un párrafo. Esto vale para
+> gente de confianza con matices, no para alguien de quien no te fíes. Cerrar eso pide la
+> redacción del texto libre —que la app ya sabe hacer en JavaScript, en
+> `Exporter._buildShareHtml`— volcada a una tabla aparte que sea la única que lean los
+> invitados.
 
 ## Comportamiento offline
 
