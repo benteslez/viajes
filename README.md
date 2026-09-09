@@ -118,6 +118,27 @@ definer para que consultar `trip_shares` desde dentro de una política no sea re
 Borrar un viaje sigue siendo solo del dueño: que te dejen editarlo no te da derecho a
 borrárselo.
 
+**La app también tiene que conocer las concesiones, no solo el servidor.** Es un fallo que ya
+se cometió una vez: la RLS aplicaba `can_edit` correctamente, pero `canEdit()` en `index.html`
+era una constante por perfil (`sergio` → siempre lector), así que dar permiso de edición desde
+Administración no cambiaba nada visible — la base lo permitía y la interfaz no ofrecía un solo
+botón para usarlo.
+
+El módulo `GRANTS` lo arregla: descarga las filas de `trip_shares` del usuario con sesión al
+entrar y en cada `pullAll()`, las cachea en `localStorage` y expone `puedeEditar(tripId)`.
+
+```js
+canEdit(tripId)   // sin argumento y dentro de un viaje, se refiere a ESE viaje
+```
+
+Ese comportamiento implícito es lo que hace que el centenar de llamadas repartidas por la app
+pasen a ser por viaje sin tocarlas una a una. Fuera de un viaje —la lista, el perfil— manda el
+perfil: que te dejen editar el viaje de otro no te convierte en alguien que crea viajes nuevos.
+
+Es un espejo del servidor, no una barrera: quien se salte la interfaz choca igualmente con la
+RLS. Si la descarga de `trip_shares` falla, se conserva lo que hubiera en caché — dejar a un
+editor sin permisos por un fallo de red sería peor que el retraso.
+
 > **Las categorías ocultan tablas enteras, no texto libre.** Ocultar `reservas` quita
 > localizadores, documentos e importes de la tabla `bookings`, pero un
 > `N.º de confirmación: 4648869009` escrito a mano en las notas de una parada **se sigue

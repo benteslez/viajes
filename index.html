@@ -607,15 +607,44 @@ h2.section-title {
   border-color:color-mix(in srgb, var(--danger) 40%, var(--line));
   color:var(--danger);
 }
+/* Con 20 viajes, una tarjeta por viaje son cuatro pantallas de scroll y no se
+   pueden comparar dos permisos de un vistazo. Lista dividida por líneas, y en
+   pantalla ancha todo en una sola fila. Los tamaños de dedo (42/38 px) se
+   mantienen en móvil y solo se aprietan donde hay ratón. */
 .adm-trip {
-  background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md);
-  padding:12px; margin-bottom:10px;
+  display:grid; grid-template-columns:1fr; gap:6px;
+  padding:9px 0; border-bottom:1px solid var(--line);
 }
-.adm-trip .adm-nom { font-weight:640; font-size:15px; letter-spacing:-.012em; margin-bottom:2px; }
-.adm-trip .adm-fecha { font-size:12.5px; color:var(--text-muted); margin-bottom:9px; }
-.adm-cats { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-.adm-cats-lbl { font-size:12px; color:var(--text-muted); margin-top:11px; }
+.adm-trip:last-child { border-bottom:none; }
+.adm-cab { display:flex; flex-wrap:wrap; align-items:baseline; gap:1px 8px; min-width:0; }
+.adm-trip .adm-nom { font-weight:640; font-size:14px; letter-spacing:-.012em; }
+.adm-trip .adm-fecha { font-size:11.5px; color:var(--text-muted); }
+.adm-cats { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
+.adm-cats-lbl { font-size:11.5px; color:var(--text-muted); margin-right:1px; }
+/* En móvil la etiqueta "Ocultar:" empuja las cuatro pastillas a dos filas y eso
+   son 40 px por viaje, ochocientos en la lista entera. El rojo de una pastilla
+   marcada ya dice que es una restricción; la palabra sobra. */
+@media (max-width: 639px) {
+  .adm-cats-lbl { display:none; }
+  .adm-trip .cat-chip { padding:3px 10px; font-size:12px; }
+}
+@media (min-width: 640px) {
+  .adm-trip {
+    grid-template-columns:minmax(0,1fr) 250px auto;
+    align-items:center; gap:14px; padding:6px 0;
+  }
+  .adm-trip .seg-b  { min-height:30px; padding:5px 4px; font-size:12.5px; }
+  .adm-trip .cat-chip { min-height:28px; padding:3px 10px; font-size:11.5px; }
+}
 .adm-acciones { display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 16px; }
+.adm-cab-viajes {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; flex-wrap:wrap; margin:20px 0 10px;
+}
+/* El segmentado general ocupa todo el ancho; este es un selector pequeño y no
+   debe estirarse hasta el otro extremo de la pantalla. */
+.adm-orden { width:auto; flex:0 0 auto; }
+.adm-orden .seg-b { flex:0 0 auto; padding:6px 13px; min-height:36px; font-size:12.5px; }
 
 /* Toggle "en preparación" */
 .switch {
@@ -2785,12 +2814,79 @@ const PROFILES = [
   { id: 'ruben',  name: 'Rubén',  cls: 'avatar-r', initial: 'R', tag: 'Personal',     readonly: false },
   { id: 'sergio', name: 'Sergio', cls: 'avatar-s', initial: 'S', tag: 'Solo lectura', readonly: true  },
 ];
-// Helper global: ¿puede el perfil activo modificar datos?
-const canEdit = () => {
-  const p = PROFILES.find(p => p.id === STATE.profile);
-  return !!(p && !p.readonly);
+// Concesiones por viaje de quien tiene la sesión abierta (`trip_shares`).
+//
+// El servidor ya las aplica —la RLS rechaza un UPDATE sin can_edit—, pero la
+// app también tiene que conocerlas. Sin esto, un perfil marcado como lector
+// veía "Modo lector" en TODOS los viajes, y el permiso de edición que dabas
+// desde Administración no se notaba en ninguna parte: la base lo permitía y la
+// interfaz seguía sin ofrecer un solo botón para usarlo.
+//
+// Solo cuentan para los perfiles `readonly`: el dueño no tiene filas aquí.
+const GRANTS = {
+  mapa: {},          // trip_id -> { can_edit, ocultar }
+  cargado: false,
+
+  _clave() { return 'viajes_grants_' + (STATE.profile || ''); },
+
+  // Cacheadas en localStorage: la respuesta del servidor tarda, y sin caché el
+  // primer pintado sale en modo lector y cambia medio segundo después. Peor
+  // que esperar, porque parece que el permiso no está puesto.
+  cargarCache() {
+    try {
+      const raw = localStorage.getItem(this._clave());
+      if (raw) { this.mapa = JSON.parse(raw) || {}; this.cargado = true; }
+    } catch (_) { this.mapa = {}; }
+  },
+
+  async refrescar() {
+    const c = AUTH.init();
+    if (!c) return;
+    const { data, error } = await c.from('trip_shares').select('trip_id, can_edit, ocultar');
+    // Si falla, se conserva lo que hubiera: quedarse sin permisos por un fallo
+    // de red convertiría un editor en lector sin avisar.
+    if (error || !Array.isArray(data)) return;
+    const mapa = {};
+    for (const g of data) {
+      mapa[g.trip_id] = {
+        can_edit: !!g.can_edit,
+        ocultar: Array.isArray(g.ocultar) ? g.ocultar : [],
+      };
+    }
+    this.mapa = mapa;
+    this.cargado = true;
+    try { localStorage.setItem(this._clave(), JSON.stringify(mapa)); } catch (_) {}
+  },
+
+  olvidar() {
+    try { localStorage.removeItem(this._clave()); } catch (_) {}
+    this.mapa = {}; this.cargado = false;
+  },
+
+  puedeEditar(tripId) { return !!(tripId && this.mapa[tripId] && this.mapa[tripId].can_edit); },
+  editables() { return Object.values(this.mapa).filter(g => g.can_edit).length; },
+  oculta(tripId, cat) {
+    const g = this.mapa[tripId];
+    return !!(g && Array.isArray(g.ocultar) && g.ocultar.includes(cat));
+  },
 };
-const isReadonly = () => !canEdit();
+
+// Helper global: ¿puede el perfil activo modificar datos?
+//
+// Sin argumento y estando dentro de un viaje, se refiere a ESE viaje. Es lo que
+// hace que el centenar de llamadas repartidas por la app pasen a ser por viaje
+// sin tener que tocarlas una a una.
+//
+// Fuera de un viaje —la lista, el perfil— manda el perfil: que te dejen editar
+// el viaje de otro no te convierte en alguien que crea viajes nuevos.
+const canEdit = (tripId) => {
+  const p = PROFILES.find(p => p.id === STATE.profile);
+  if (!p) return false;
+  if (!p.readonly) return true;
+  const t = tripId || (STATE.view === 'trip' ? STATE.currentTripId : null);
+  return GRANTS.puedeEditar(t);
+};
+const isReadonly = (tripId) => !canEdit(tripId);
 
 // SOLO Sergio consulta los datos del PERFIL OWNER (Rubén) en modo lector.
 // Invitado NO accede a viajes de otros perfiles (ni en modo lector): solo ve los
@@ -4114,6 +4210,10 @@ const SYNC = {
         console.warn('pull', t, e);
       }
     }
+    // Los permisos cambian igual que los datos. Sin refrescarlos aquí, dar
+    // acceso de edición desde Administración no se notaría en el otro
+    // dispositivo hasta reiniciar la app entera.
+    try { await GRANTS.refrescar(); } catch (_) {}
     await DB.meta('last_sync_' + STATE.profile, nowIso());
     return changed;
   },
@@ -4983,6 +5083,10 @@ const ProfilePicker = {
     STATE.profile = profileId;
     localStorage.setItem('viajes_profile', profileId);
     SYNC.init();
+    // Primero la caché (pintado inmediato con los permisos de la última vez) y
+    // luego el servidor, que es quien manda.
+    GRANTS.cargarCache();
+    GRANTS.refrescar().then(() => { try { Router.render(); } catch (_) {} }).catch(() => {});
     PERSONAS.cargar().catch(() => {});
     // Pull en background — no bloquea la entrada a la app.
     // Cuando termine, llama a Router.render() para que aparezcan los datos remotos.
@@ -5175,12 +5279,15 @@ const Trips = {
     const viewingOther = isReadonly() && dataProfile() !== STATE.profile;
     if (isReadonly() || viewingOther) {
       const ownerName = PROFILES.find(p=>p.id===OWNER_PROFILE)?.name || OWNER_PROFILE;
+      const nEditables = GRANTS.editables();
       root.appendChild(el('div', { class:'view-readonly-line' }, [
         el('span', { class:'readonly-badge' }, [
           el('span', { html: svg('lock') }),
           STATE.profile === 'invitado' ? 'Invitado' : 'Modo lector',
         ]),
         viewingOther ? el('span', { class:'view-readonly-extra', text: ` · viendo datos de ${ownerName}` }) : null,
+        nEditables ? el('span', { class:'view-readonly-extra',
+          text: ` · puedes editar ${nEditables} ${nEditables === 1 ? 'viaje' : 'viajes'}` }) : null,
       ].filter(Boolean)));
     }
 
@@ -5411,7 +5518,7 @@ const Trips = {
 
     const foot = el('div', { class:'trip-card-foot' });
     foot.appendChild(el('div', { class:'destino', text: dest || '—' }));
-    if (canEdit()) {
+    if (canEdit(t.id)) {
       const sw = el('label', { class:'switch' }, [
         el('input', {
           type:'checkbox',
@@ -13212,6 +13319,9 @@ const AdminView = {
   usuarios: [], shares: [], viajes: [], perfiles: [],
   avisoLista: null,   // por qué la lista no viene de la Edge Function
   sel: null,          // id de la persona abierta, o null en el listado
+  // Se recuerda entre sesiones: quien ordena por nombre lo quiere siempre así.
+  orden: (() => { try { return localStorage.getItem('viajes_adm_orden') || 'fecha'; }
+                  catch (_) { return 'fecha'; } })(),
   error: null,
   cargado: false,     // cada toque de un permiso repinta la vista; sin esto,
                       // cada repintado volvía a llamar a la Edge Function y a
@@ -13266,6 +13376,23 @@ const AdminView = {
       throw new Error(detalle || ('La función respondió ' + res.status));
     }
     return j;
+  },
+
+  // Los viajes sin fecha van AL FINAL, no al principio: una cadena vacía es lo
+  // más pequeño que hay y un orden descendente los mandaría arriba del todo,
+  // que es justo donde no interesan.
+  viajesOrdenados() {
+    const vs = [...this.viajes];
+    if (this.orden === 'abc') {
+      return vs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity:'base' }));
+    }
+    return vs.sort((a, b) => {
+      const A = a.start_date || '', B = b.start_date || '';
+      if (!A && !B) return String(a.name || '').localeCompare(String(b.name || ''), 'es');
+      if (!A) return 1;
+      if (!B) return -1;
+      return B.localeCompare(A);
+    });
   },
 
   share(tripId, userId) {
@@ -13454,26 +13581,44 @@ const AdminView = {
     });
     root.appendChild(catsPers);
 
-    root.appendChild(el('h2', { class:'section-title', text:'Viajes' }));
-    // Con veinte viajes, ir uno a uno es inviable: estos dos atajos son la
+    const orden = el('div', { class:'seg adm-orden', role:'group', 'aria-label':'Ordenar los viajes' });
+    [['fecha','Por fecha'], ['abc','A–Z']].forEach(([id, txt]) => {
+      orden.appendChild(el('button', {
+        class:'seg-b' + (this.orden === id ? ' on' : ''), type:'button',
+        'aria-pressed': this.orden === id ? 'true' : 'false',
+        onclick: () => {
+          AdminView.orden = id;
+          try { localStorage.setItem('viajes_adm_orden', id); } catch (_) {}
+          Router.render();
+        },
+      }, txt));
+    });
+    root.appendChild(el('div', { class:'adm-cab-viajes' }, [
+      el('h2', { class:'section-title', style:{margin:0}, text:'Viajes' }), orden,
+    ]));
+
+    // Con veinte viajes, ir uno a uno es inviable: estos atajos son la
     // diferencia entre usar la pantalla y no usarla.
     root.appendChild(el('div', { class:'adm-acciones' }, [
-      el('button', { class:'btn btn-sm', onclick: () => AdminView.todos(u, 'leer') }, 'Dar lectura a todos'),
-      el('button', { class:'btn btn-sm btn-ghost', onclick: () => AdminView.todos(u, 'no') }, 'Quitar todo'),
+      el('button', { class:'btn btn-sm', onclick: () => AdminView.todos(u, 'leer') }, 'Todos: lectura'),
+      el('button', { class:'btn btn-sm', onclick: () => AdminView.todos(u, 'editar') }, 'Todos: edición'),
+      el('button', { class:'btn btn-sm btn-ghost', onclick: () => AdminView.todos(u, 'no') }, 'Quitar a todos'),
     ]));
 
     if (!this.viajes.length) {
       root.appendChild(el('p', { class:'muted', text:'No hay viajes que compartir.' }));
     }
 
-    this.viajes.forEach(v => {
+    this.viajesOrdenados().forEach(v => {
       const s = this.share(v.id, u.id);
       const modo = !s ? 'no' : (s.can_edit ? 'editar' : 'leer');
       const caja = el('div', { class:'adm-trip' });
-      caja.appendChild(el('div', { class:'adm-nom', text: v.name }));
-      caja.appendChild(el('div', { class:'adm-fecha', text: v.start_date
-        ? fmtDateShort(v.start_date) + (v.end_date ? ' – ' + fmtDateShort(v.end_date) : '')
-        : 'Sin fechas' }));
+      caja.appendChild(el('div', { class:'adm-cab' }, [
+        el('span', { class:'adm-nom', text: v.name }),
+        el('span', { class:'adm-fecha', text: v.start_date
+          ? fmtDateShort(v.start_date) + (v.end_date ? ' – ' + fmtDateShort(v.end_date) : '')
+          : 'Sin fechas' }),
+      ]));
 
       const seg = el('div', { class:'seg', role:'group', 'aria-label':'Acceso a ' + v.name });
       [['no','Sin acceso'], ['leer','Leer'], ['editar','Editar']].forEach(([id, txt]) => {
@@ -13486,8 +13631,8 @@ const AdminView = {
       caja.appendChild(seg);
 
       if (modo !== 'no') {
-        caja.appendChild(el('div', { class:'adm-cats-lbl', text:'Ocultarle:' }));
         const cats = el('div', { class:'adm-cats' });
+        cats.appendChild(el('span', { class:'adm-cats-lbl', text:'Ocultar:' }));
         const ocultas = new Set(Array.isArray(s?.ocultar) ? s.ocultar : []);
         ADMIN_CATS.forEach(c => {
           cats.appendChild(el('button', {
@@ -13560,11 +13705,19 @@ const AdminView = {
     } catch (e) { UI.toast('No se pudo guardar: ' + (e?.message || e)); }
   },
 
+  // Antes, "dar lectura a todos" solo tocaba los viajes sin concesión, para no
+  // pisar un "Editar" puesto a mano. Era una excepción invisible: pulsabas un
+  // botón que decía "a todos" y no se aplicaba a todos. Ahora hace lo que dice
+  // y el aviso lo anuncia antes. Lo que sí se conserva son las categorías
+  // tapadas de cada viaje: eso es otra decisión y no la estás cambiando.
   async todos(u, modo) {
-    const ok = await UI.confirm(modo === 'no'
-      ? `¿Quitar a esta persona el acceso a los ${this.viajes.length} viajes?`
-      : `¿Dar acceso de lectura a los ${this.viajes.length} viajes?`,
-      modo === 'no' ? 'Sí, borrar' : 'Dar acceso');
+    const n = this.viajes.length;
+    const [aviso, boton] = ({
+      no:     [`¿Quitar a esta persona el acceso a los ${n} viajes?`, 'Sí, quitar'],
+      leer:   [`¿Poner los ${n} viajes en solo lectura? Los que tuviera en edición bajan a lectura. Lo que le tengas tapado se mantiene.`, 'Sí, lectura'],
+      editar: [`¿Dar edición en los ${n} viajes? Podrá cambiar cualquiera de ellos. Lo que le tengas tapado se mantiene.`, 'Sí, edición'],
+    })[modo] || ['¿Seguro?', 'Sí'];
+    const ok = await UI.confirm(aviso, boton);
     if (!ok) return;
     const c = AUTH.init();
     try {
@@ -13573,14 +13726,19 @@ const AdminView = {
         if (error) throw error;
         this.shares = this.shares.filter(s => s.user_id !== u.id);
       } else {
-        // Solo los que no tienen ya concesión: así no se pisa un "Editar" que
-        // hubieras puesto a mano.
-        const nuevas = this.viajes.filter(v => !this.share(v.id, u.id))
-          .map(v => ({ trip_id: v.id, user_id: u.id, can_edit: false, ocultar: [] }));
-        if (nuevas.length) {
-          const { error } = await c.from('trip_shares').upsert(nuevas, { onConflict:'trip_id,user_id' });
+        const can_edit = modo === 'editar';
+        const filas = this.viajes.map(v => {
+          const previo = this.share(v.id, u.id);
+          return { trip_id: v.id, user_id: u.id, can_edit,
+                   ocultar: Array.isArray(previo?.ocultar) ? previo.ocultar : [] };
+        });
+        if (filas.length) {
+          const { error } = await c.from('trip_shares').upsert(filas, { onConflict:'trip_id,user_id' });
           if (error) throw error;
-          this.shares.push(...nuevas);
+          filas.forEach(f => {
+            const previo = this.share(f.trip_id, u.id);
+            if (previo) Object.assign(previo, f); else this.shares.push(f);
+          });
         }
       }
       Router.render();
@@ -13667,9 +13825,15 @@ const PerfilView = {
     ].filter(Boolean)));
     root.appendChild(el('p', { class:'view-sub', text: SYNC.enabled ? 'Sincronización Supabase activa.' : 'Modo local. Configura Supabase en CFG para activar sync.' }));
     if (isReadonly()) {
+      // El texto de antes ("cambia al perfil de Rubén") era de cuando el perfil
+      // se elegía en un botón. Con cuentas de verdad no puedes cambiarte a otra.
+      const nEditables = GRANTS.editables();
       root.appendChild(el('div', { class:'readonly-banner' }, [
         el('div', { class:'ico', html: svg('lock') }),
-        el('div', { text:'Este perfil solo puede consultar datos. Para añadir o editar viajes, cambia al perfil de Rubén.' }),
+        el('div', { text: nEditables
+          ? `Puedes editar ${nEditables} ${nEditables === 1 ? 'viaje' : 'viajes'} de los que te han compartido; `
+            + 'el resto los ves pero no los tocas. Crear viajes nuevos no, eso es de quien organiza.'
+          : 'Esta cuenta solo puede consultar. Si necesitas editar algún viaje, pídeselo a quien lo organiza.' }),
       ]));
     }
 
@@ -13879,6 +14043,7 @@ const PerfilView = {
     root.appendChild(el('button', { class:'btn btn-ghost', onclick: async () => {
       if (remoto) await AUTH.signOut();
       try { localStorage.removeItem('viajes_profile'); } catch (_) {}
+      GRANTS.olvidar();
       STATE.profile = null;
       STATE.filter = null; STATE.currentTripId = null;
       SYNC.enabled = false;
