@@ -301,6 +301,39 @@ El pill arriba a la derecha refleja el estado:
 Se usa `open.er-api.com` (sin clave) como API gratuita para tasas EUR→X. Se cachea 6 h en IndexedDB.
 Si no hay conexión, la app usa la última tasa cacheada o la tasa manual que pongas al editar el gasto.
 
+## Exportar PDF — guía de viaje
+
+*Detalle del viaje → menú «…» → Exportar PDF*. Genera un documento maquetado con **todo** lo que
+hay del viaje: portada con índice y cifras clave, resumen y tramos, itinerario día a día,
+reservas, presupuesto con barras, gastos compartidos y saldos, direcciones útiles, ficha del
+destino con contactos y frases, maleta como checklist y diario. Las secciones vacías no
+aparecen, y el índice de la portada se genera a partir de las que sí.
+
+Se dibuja con las primitivas de jsPDF —rectángulos y texto—, **no** con una captura de
+pantalla. El texto sigue siendo texto: se busca, se copia y pesa unas decenas de KB en vez de
+varios MB.
+
+Dos limitaciones que vienen del formato, no del código:
+
+| Limitación | Motivo |
+|---|---|
+| Solo cp1252 (latín occidental) | Las fuentes base de PDF no llevan más. `pdfTexto()` traduce lo traducible (`→` → `>`, `−` → `-`) y descarta el resto: un topónimo en kanji sale sin los kanji. Embeber una fuente CJK son megabytes en un archivo que ya pesa 900 KB |
+| Sin degradados | jsPDF no los tiene. La banda de portada son dos tonos apilados, que se lee como una franja intencionada |
+
+Cosas a respetar si se toca:
+
+- **La altura de cada tarjeta se calcula antes de dibujarla** (`pdfEventoAlto`). Medir después
+  obligaría a repintar o a partir la tarjeta entre dos hojas.
+- **Los bloques de texto libre tienen tope** (notas, 8 líneas; nota del día, 10). Una tarjeta
+  más alta que una página no la salva ningún salto de página.
+- **El texto largo va por `parrafo()`, no por `txt()`.** `txt()` pinta todas las líneas donde le
+  digas; una entrada de diario de dos folios se saldría por debajo del papel.
+- **`PDF_ETIQUETAS` fija a mano los ids ambiguos.** El mismo `localizador` es «Localizador» en un
+  vuelo y «Referencia» en un transporte; en una reserva no hay tipo del que deducirlo, y sin
+  fijarlo ganaba la última etiqueta recorrida.
+- **El dedupe título/dato es por igualdad exacta.** Con «uno contiene al otro», un seguro
+  titulado «IATI» se comía su propio «Póliza: IATI-99231».
+
 ## Exportar / Importar
 
 Desde el icono de perfil arriba a la derecha:
