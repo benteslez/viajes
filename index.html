@@ -15199,6 +15199,11 @@ function pdfLienzo(doc, tituloViaje) {
     parrafo(s, o) {
       o = o || {};
       const size = o.size || 9, lh = size * (o.lh || 1.45);
+      // La fuente, ANTES de partir. splitTextToSize mide con la que esté
+      // activa: si viene de un titular a 19 pt, parte como si el texto fuera
+      // de 19 pt y las líneas salen a media columna. Es lo que hacía que la
+      // entradilla de "El viaje" se viera en una columna estrecha y torcida.
+      font(size, o.bold, o.color, o.fam, o.italic);
       const ls = doc.splitTextToSize(pdfTexto(s), o.w || CW);
       ls.forEach(l => {
         if (y + lh > BOT) this.pagina();
@@ -15244,22 +15249,29 @@ function pdfLienzo(doc, tituloViaje) {
     },
 
     // Fila etiqueta / valor con guía de puntos, como un índice de catálogo.
+    // El valor va a la derecha y se ajusta AL HUECO que deja la etiqueta. Sin
+    // ajustarlo, un destino largo se metía encima de su propia etiqueta: dos
+    // textos superpuestos y ninguno legible.
     kvPunteado(k, v, yy) {
       font(8.6, false, C.muted);
-      doc.text(pdfTexto(k), M, yy, { baseline: 'top' });
-      const wk = doc.getTextWidth(pdfTexto(k));
+      const kt = pdfTexto(k);
+      doc.text(kt, M, yy, { baseline: 'top' });
+      const wk = doc.getTextWidth(kt);
       font(9.4, false, C.ink);
-      const t = pdfTexto(v);
-      const wv = doc.getTextWidth(t);
-      doc.text(t, W - M, yy, { baseline: 'top', align: 'right' });
-      const desde = M + wk + 6, hasta = W - M - wv - 6;
-      if (hasta > desde) {
-        stroke(C.line); doc.setLineWidth(0.5);
-        doc.setLineDashPattern([0.7, 2.6], 0);
-        doc.line(desde, yy + 7, hasta, yy + 7);
-        doc.setLineDashPattern([], 0);
+      const ls = doc.splitTextToSize(pdfTexto(v), Math.max(60, CW - wk - 24));
+      ls.forEach((l, i) => doc.text(l, W - M, yy + i * 13, { baseline: 'top', align: 'right' }));
+      // La guía de puntos solo cuando el valor cabe en una línea: con dos, no
+      // hay un hueco limpio que rellenar y queda sucio.
+      if (ls.length === 1) {
+        const desde = M + wk + 6, hasta = W - M - doc.getTextWidth(ls[0]) - 6;
+        if (hasta > desde) {
+          stroke(C.line); doc.setLineWidth(0.5);
+          doc.setLineDashPattern([0.7, 2.6], 0);
+          doc.line(desde, yy + 7, hasta, yy + 7);
+          doc.setLineDashPattern([], 0);
+        }
       }
-      return 17;
+      return Math.max(17, ls.length * 13 + 4);
     },
 
     panel(h, color, borde) {
@@ -15354,11 +15366,50 @@ function pdfPortada(doc, L, t, stats, indice, foto) {
   doc.line(M, L.y, L.W - M, L.y);
   L.y += 22;
 
-  // Las fechas, en grande y con serifa: es el dato que se busca primero.
-  doc.setFont('times', 'normal'); doc.setFontSize(13);
-  doc.setTextColor(C.ink[0], C.ink[1], C.ink[2]);
-  doc.text(pdfTexto(stats.fechas), M, L.y, { baseline: 'top' });
-  L.y += 26;
+  // El rango de fechas, montado como pieza: día grande con serifa, mes y año
+  // en versalitas debajo, y en medio un filete con la duración encima. Una
+  // línea de texto corrido ("13 de diciembre de 2026 — 7 de enero de 2027") da
+  // el mismo dato pero no dice nada; esto es la ficha del viaje.
+  if (stats.ini) {
+    const bloque = (fecha, x, align) => {
+      doc.setFont('times', 'bold'); doc.setFontSize(30);
+      doc.setTextColor(C.deep[0], C.deep[1], C.deep[2]);
+      const dia = fmtDate(fecha, { day: '2-digit' });
+      doc.text(pdfTexto(dia), x, L.y, { baseline: 'top', align: align });
+      const wd = doc.getTextWidth(pdfTexto(dia));
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      doc.setTextColor(C.muted[0], C.muted[1], C.muted[2]);
+      // es-ES da "diciembre de 2026"; en versalitas el "de" solo hace ruido.
+      const mes = fmtDate(fecha, { month: 'long', year: 'numeric' }).replace(/ de /g, ' ');
+      pdfVersal(doc, mes, x, L.y + 34, { align: align, track: 1.4 });
+      doc.setFontSize(7);
+      return Math.max(wd, doc.getTextWidth(pdfTexto(mes).toUpperCase()) + pdfTexto(mes).length * 1.4);
+    };
+    const wIzq = bloque(stats.ini, M, 'left');
+    if (stats.fin) {
+      const wDer = bloque(stats.fin, W - M, 'right');
+      const desde = M + wIzq + 26, hasta = W - M - wDer - 26;
+      if (hasta > desde) {
+        doc.setDrawColor(C.acc[0], C.acc[1], C.acc[2]); doc.setLineWidth(0.8);
+        doc.line(desde, L.y + 22, hasta, L.y + 22);
+        if (stats.duracion) {
+          const centro = (desde + hasta) / 2;
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+          const wDur = doc.getTextWidth(pdfTexto(stats.duracion).toUpperCase()) + pdfTexto(stats.duracion).length * 1.4;
+          doc.setFillColor(255, 255, 255);
+          doc.rect(centro - wDur / 2 - 8, L.y + 14, wDur + 16, 16, 'F');
+          doc.setTextColor(C.acc[0], C.acc[1], C.acc[2]);
+          pdfVersal(doc, stats.duracion, centro, L.y + 18, { align: 'center', track: 1.4 });
+        }
+      }
+    }
+    L.y += 68;
+  } else {
+    doc.setFont('times', 'normal'); doc.setFontSize(13);
+    doc.setTextColor(C.ink[0], C.ink[1], C.ink[2]);
+    doc.text(pdfTexto(stats.fechas), M, L.y, { baseline: 'top' });
+    L.y += 26;
+  }
 
   if (t.notes) {
     L.y += 4;
@@ -15429,7 +15480,9 @@ function pdfIndice(doc, L, indice, paginas) {
 /* ---------- Una parada, sobre la línea de tiempo ------------------------ */
 // El alto se calcula ANTES de dibujar para decidir el salto de página: medirlo
 // después obliga a repintar o a partir el bloque entre dos hojas.
-const PDF_SPINE = 62;     // x del filete vertical, relativo al margen
+// x del filete vertical, relativo al margen. Sin columna de horas no hace
+// falta un canalón ancho: 24 pt bastan para el punto y su aire.
+const PDF_SPINE = 24;
 function pdfEventoAlto(L, ev) {
   const w = L.CW - PDF_SPINE - 12;
   let h = 14;
@@ -15447,7 +15500,7 @@ function pdfEvento(doc, L, ev, ultimo, primero) {
   const h = pdfEventoAlto(L, ev);
   L.sitio(h + 10);
   const col = C.tipo[ev.tipo] || C.tipo.otro;
-  const xSpine = M + PDF_SPINE - 16;
+  const xSpine = M + 5;
   const x = M + PDF_SPINE, w = L.CW - PDF_SPINE;
 
   // Filete vertical continuo entre paradas: es lo que convierte una lista en
@@ -15458,13 +15511,6 @@ function pdfEvento(doc, L, ev, ultimo, primero) {
   doc.line(xSpine, L.y + (primero ? 6 : 0), xSpine, L.y + (ultimo ? 6 : h));
   L.fill(col); doc.circle(xSpine, L.y + 6, 3.1, 'F');
   L.fill(C.paper); doc.circle(xSpine, L.y + 6, 1.3, 'F');
-
-  // Hora en su propia columna, alineada a la derecha contra el filete.
-  if (ev.hora) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.6);
-    doc.setTextColor(C.ink[0], C.ink[1], C.ink[2]);
-    doc.text(pdfTexto(ev.hora), xSpine - 10, L.y + 2, { baseline: 'top', align: 'right' });
-  }
 
   let iy = L.y;
   // Tipo en versalitas del color de su categoría: dice qué es sin gastar una
@@ -15549,8 +15595,10 @@ const PdfGuia = {
         ? fmtDate(t.start_date, { day:'numeric', month:'long', year:'numeric' }) + '  —  '
           + fmtDate(t.end_date, { day:'numeric', month:'long', year:'numeric' })
         : 'Fechas por definir',
+      ini: t.start_date || null,
+      fin: t.end_date || null,
+      duracion: dias ? dias + (dias === 1 ? ' día' : ' días') : null,
       tiles: [
-        [dias ? String(dias) : '—', dias === 1 ? 'día' : 'días'],
         [String(d.planning.length), d.planning.length === 1 ? 'parada' : 'paradas'],
         [String(d.bookings.length), d.bookings.length === 1 ? 'reserva' : 'reservas'],
         // Sin decimales: en una cifra de portada los céntimos solo estorban.
@@ -15626,9 +15674,20 @@ const PdfGuia = {
   itinerario(doc, L, t, d) {
     const C = PDF_COLOR;
     const notaDe = {}; d.notes.forEach(n => { notaDe[n.date] = n; });
+    // Ciudad y país del tramo en el que cae ese día: es el "dónde estás hoy"
+    // que la app enseña en la pastilla de la cabecera del día.
     const ciudadDe = (iso) => {
-      const l = d.legs.find(x => (x.arrival_date || '') <= iso && (!x.departure_date || iso <= x.departure_date));
-      return l && l.city ? l.city : null;
+      const cand = d.legs.filter(x => x.city
+        && (x.arrival_date || '') <= iso && (!x.departure_date || iso <= x.departure_date));
+      if (!cand.length) return null;
+      // Gana el tramo MÁS CORTO. Una escapada de tres días a Iguazú vive dentro
+      // de la estancia de una semana en Buenos Aires, y las dos casan con esa
+      // fecha: con un `find` a secas ganaba la primera del array, que es un
+      // orden arbitrario, y el día de Iguazú salía rotulado "Buenos Aires".
+      cand.sort((a, b) =>
+        daysBetween(a.arrival_date, a.departure_date || a.arrival_date) -
+        daysBetween(b.arrival_date, b.departure_date || b.arrival_date));
+      return [cand[0].city, cand[0].country].filter(Boolean).join(', ');
     };
     const byDay = {};
     d.planning.forEach(p => { const k = p.day_date || 'sin-fecha'; (byDay[k] = byDay[k] || []).push(p); });
@@ -15650,15 +15709,40 @@ const PdfGuia = {
       // serifa y filete corto. Sin banda de color de fondo: en papel, una
       // banda por día convierte el folleto en un formulario.
       const nDia = (iso !== 'sin-fecha' && primerDia) ? daysBetween(primerDia, iso) + 1 : 0;
-      const ciudad = iso !== 'sin-fecha' ? ciudadDe(iso) : null;
-      const ante = iso === 'sin-fecha'
-        ? 'Sin fecha'
-        : [nDia ? 'Día ' + String(nDia).padStart(2, '0') : null, ciudad].filter(Boolean).join('  ·  ');
-      L.ante(ante, L.M, L.y, C.acc, 7);
+      // Manda la ciudad —es el "dónde estoy hoy"— y la etiqueta del día
+      // ("Día libre") se suma detrás si hay sitio. Al revés, un día etiquetado
+      // perdía la ciudad, que es justo el dato que se busca al ojear.
+      const ciudadHoy = iso !== 'sin-fecha' ? ciudadDe(iso) : null;
+      const etiqueta = notaDe[iso] && notaDe[iso].title;
+      const lugar = [ciudadHoy, etiqueta].filter(Boolean).join('  ·  ') || null;
+      L.ante(iso === 'sin-fecha' ? 'Sin fecha' : ('Día ' + String(nDia || 1).padStart(2, '0')),
+        L.M, L.y, C.acc, 7);
       L.y += 14;
-      const titulo = iso === 'sin-fecha' ? 'Ideas sin día asignado' : fmtDayLong(iso);
-      L.txt(titulo.charAt(0).toUpperCase() + titulo.slice(1), L.M, L.y, {
-        size: 16, fam: 'serif', bold: true, color: C.deep, w: L.CW });
+
+      // Fecha a la izquierda y lugar a la derecha, en la misma línea. Se mide
+      // antes: si no caben juntos, el lugar baja a la línea de abajo en vez de
+      // montarse encima del título.
+      const titulo0 = iso === 'sin-fecha' ? 'Ideas sin día asignado' : fmtDayLong(iso);
+      const titulo = titulo0.charAt(0).toUpperCase() + titulo0.slice(1);
+      doc.setFont('times', 'bold'); doc.setFontSize(16);
+      const wTit = doc.getTextWidth(pdfTexto(titulo));
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.6);
+      const wLug = lugar ? doc.getTextWidth(pdfTexto(lugar).toUpperCase()) + pdfTexto(lugar).length * 1.5 : 0;
+      let lugarFinal = lugar, wLugFinal = wLug;
+      // Si ciudad + etiqueta no caben en la línea, se cae a la ciudad sola
+      // antes que mandar las dos a una línea aparte.
+      if (lugar && ciudadHoy && etiqueta && wTit + 24 + wLug > L.CW) {
+        lugarFinal = ciudadHoy;
+        wLugFinal = doc.getTextWidth(pdfTexto(ciudadHoy).toUpperCase()) + pdfTexto(ciudadHoy).length * 1.5;
+      }
+      const cabenJuntos = lugarFinal && (wTit + 24 + wLugFinal <= L.CW);
+      L.txt(titulo, L.M, L.y, { size: 16, fam: 'serif', bold: true, color: C.deep, w: L.CW - (cabenJuntos ? wLugFinal + 24 : 0) });
+      if (lugarFinal) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.6);
+        doc.setTextColor(C.acc[0], C.acc[1], C.acc[2]);
+        if (cabenJuntos) pdfVersal(doc, lugarFinal, L.W - L.M, L.y + 6, { align: 'right', track: 1.5 });
+        else { L.y += 22; pdfVersal(doc, lugarFinal, L.M, L.y, { track: 1.5 }); }
+      }
       L.y += 24;
       L.filete(L.M, L.y, 34, C.acc, 2);
       L.y += 16;
@@ -15709,7 +15793,6 @@ const PdfGuia = {
     return {
       tipo: p.type,
       titulo: p.title || def.label,
-      hora: (!def.hideTime && p.time) ? p.time : null,
       meta: meta.join('   ·   ') || null,
       dir: p.address || null,
       notas: p.notes || null,
