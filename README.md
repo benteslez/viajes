@@ -146,6 +146,20 @@ discrepan, manda la base y la pantalla está mal.
 - La lista de personas se cachea (`AdminView.cargado`): cada toque repinta la vista, y sin
   caché cada repintado volvía a llamar a la Edge Function.
 
+### Datos personales (no son de ningún viaje)
+
+`schema-personales.sql`. Documentos de viaje, plantillas de maleta y países visitados son del
+**perfil**, no del viaje, así que no caben en `trip_shares`. Van en
+`app_users.ocultar_personales` y funcionan **al revés** que las categorías de viaje: se ven por
+defecto y se tapan una a una desde la pantalla de administración.
+
+Lo decide `app_ve_personal(owner, cat)`: lo tuyo siempre; lo del dueño salvo que se lo hayas
+tapado a esa persona; entre invitados, nada. Escribir sigue siendo solo del dueño — que veas mi
+pasaporte no te deja cambiarlo.
+
+En la app, las tres listas se leen con `dataProfile()` y no con `STATE.profile`: un lector no
+tiene documentos propios, y lo que le interesa son los de quien organiza el viaje.
+
 ### Altas y bajas de cuentas
 
 `supabase/functions/admin-usuarios/index.ts`. Crear o borrar una cuenta de Supabase Auth exige
@@ -163,9 +177,16 @@ el perfil `ruben`** — que el botón esté escondido en la app no protege nada,
 llamar a la URL a mano.
 
 Instalación: *Edge Functions → Deploy a new function*, nombre `admin-usuarios`, pegar el archivo.
-`SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` las inyecta Supabase sola. Si el navegador se queja
-de CORS en la petición previa (OPTIONS), apagar *Verify JWT*: la comprobación interna es más
-estricta, porque además de una sesión válida exige que sea la del administrador.
+`SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` las inyecta Supabase sola. Hay que **apagar
+*Verify JWT*** en los ajustes de la función: la comprobación interna es más estricta, porque
+además de una sesión válida exige que sea la del administrador.
+
+> **La llamada NO manda cabecera `apikey`.** La pasarela de Functions rechaza la clave legada
+> (formato JWT) en proyectos con el esquema nuevo de claves, con
+> `The apikey header matched no key configured for auth mode(s): "publishable", "secret"` — y eso
+> aunque la API REST siga aceptando esa misma clave sin rechistar. Con *Verify JWT* apagado no
+> hace falta ninguna. Si tu proyecto sí la exige, pon la *Publishable key* en
+> `CFG.supabasePublishableKey` y se manda.
 
 ### Sincronización
 

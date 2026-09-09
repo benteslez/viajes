@@ -2758,6 +2758,16 @@ const CFG = {
   supabaseUrl: 'https://nfdudwdqhgczmsaubyhp.supabase.co',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mZHVkd2RxaGdjem1zYXVieWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NjY5OTYsImV4cCI6MjA5NjU0Mjk5Nn0.ojLYEVbEN9DE5bJb0V2And-ozAQg_SqmWzEEYzUJXTA',
 
+  // Solo para las Edge Functions, y solo si su pasarela rechaza la anonKey de
+  // arriba con "The apikey header matched no key configured for auth mode(s):
+  // publishable, secret". Pasa en proyectos con el esquema NUEVO de claves: la
+  // API REST sigue aceptando la clave en formato JWT, pero Functions no.
+  // Se coge de Supabase -> Settings -> API Keys -> Publishable key
+  // (`sb_publishable_…`). Es pública, como la anonKey. Vacío = no se manda
+  // cabecera `apikey` a las funciones, que es lo correcto con Verify JWT
+  // apagado.
+  supabasePublishableKey: '',
+
   externalPlannerUrl: '', // HTML externo "Explorar opciones" (opcional)
 
   appName: 'ViajesApp/1.0 (personal)', // user-agent style id para Nominatim
@@ -13183,6 +13193,14 @@ function simplifySettlement(balances) {
    cada cual es la RLS (ver schema-perms.sql). Si algún día la pantalla y la
    base discrepan, manda la base — y la pantalla está mal.
    ============================================================ */
+// Datos que no cuelgan de ningún viaje: son del perfil. Se comparten por
+// persona, no por viaje, y al revés que las de viaje: visibles por defecto.
+const ADMIN_CATS_PERSONALES = [
+  { id:'documentos', label:'Documentos', hint:'Pasaporte, visados, seguros…' },
+  { id:'plantillas', label:'Plantillas de maleta', hint:'Tus listas guardadas' },
+  { id:'paises',     label:'Países visitados', hint:'Tu mapa de países' },
+];
+
 const ADMIN_CATS = [
   { id:'dinero',   label:'Dinero',   hint:'Presupuesto y gastos compartidos' },
   { id:'reservas', label:'Reservas', hint:'Localizadores, documentos e importes' },
@@ -13191,7 +13209,7 @@ const ADMIN_CATS = [
 ];
 
 const AdminView = {
-  usuarios: [], shares: [], viajes: [],
+  usuarios: [], shares: [], viajes: [], perfiles: [],
   sel: null,          // id de la persona abierta, o null en el listado
   error: null,
   cargado: false,     // cada toque de un permiso repinta la vista; sin esto,
@@ -13210,10 +13228,15 @@ const AdminView = {
     if (!tk) throw new Error('No hay sesión abierta.');
     let res;
     try {
+      // Sin `apikey` por defecto: la pasarela de Functions rechaza la clave
+      // legada en formato JWT cuando el proyecto usa el esquema nuevo
+      // (publishable/secret). Con "Verify JWT" apagado no hace falta ninguna,
+      // y el JWT del usuario va igualmente en Authorization para que la propia
+      // función compruebe quién llama.
+      const headers = { 'Content-Type':'application/json', Authorization:'Bearer ' + tk };
+      if (CFG.supabasePublishableKey) headers.apikey = CFG.supabasePublishableKey;
       res = await fetch(CFG.supabaseUrl.replace(/\/+$/, '') + '/functions/v1/admin-usuarios', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', apikey: CFG.supabaseAnonKey, Authorization:'Bearer ' + tk },
-        body: JSON.stringify({ accion, ...extra }),
+        method:'POST', headers, body: JSON.stringify({ accion, ...extra }),
       });
     } catch (e) {
       throw new Error('No se pudo contactar con la función admin-usuarios. ¿Está desplegada?');
@@ -13226,9 +13249,13 @@ const AdminView = {
       // por dónde tirar.
       const detalle = j.error || j.message || j.msg || String(txt || '').slice(0, 200);
       if (res.status === 401) {
-        throw new Error('La función rechazó la sesión (401). Si acabas de desplegarla, apaga '
-          + '"Verify JWT" en sus ajustes: la comprobación de administrador va dentro de la '
-          + 'función y es más estricta. Detalle: ' + (detalle || 'sin cuerpo'));
+        const pista = /apikey header matched no key/i.test(detalle)
+          ? 'Tu proyecto usa el esquema nuevo de claves: copia la Publishable key '
+            + '(Settings → API Keys) en CFG.supabasePublishableKey.'
+          : 'Comprueba que "Verify JWT" está apagado en los ajustes de la función: la '
+            + 'comprobación de administrador va dentro y es más estricta.';
+        throw new Error('La función rechazó la petición (401). ' + pista
+          + ' Detalle: ' + (detalle || 'sin cuerpo'));
       }
       throw new Error(detalle || ('La función respondió ' + res.status));
     }
@@ -13249,6 +13276,8 @@ const AdminView = {
     const { data: sh, error } = await c.from('trip_shares').select('*');
     if (error) throw new Error('No se pudieron leer los permisos: ' + error.message);
     this.shares = sh || [];
+    const { data: perfiles } = await c.from('app_users').select('user_id, nombre, ocultar_personales');
+    this.perfiles = perfiles || [];
     const r = await this._fn('list');
     this.usuarios = r.usuarios || [];
     this.cargado = true;
@@ -13257,13 +13286,19 @@ const AdminView = {
   resumen(u) {
     const mios = this.shares.filter(s => s.user_id === u.id);
     if (u.perfil === 'ruben') return 'Administrador · lo ve todo';
-    if (!mios.length) return 'Sin acceso a ningún viaje';
+    const tapPers = this.personalesDe(u.id).length;
+    const txtPers = tapPers
+      ? tapPers + (tapPers === 1 ? ' dato personal tapado' : ' datos personales tapados') : null;
+    if (!mios.length) {
+      return ['Sin acceso a ningún viaje', txtPers].filter(Boolean).join(' · ');
+    }
     const editables = mios.filter(s => s.can_edit).length;
     const tapadas = new Set(mios.flatMap(s => Array.isArray(s.ocultar) ? s.ocultar : []));
     return [
       mios.length + (mios.length === 1 ? ' viaje' : ' viajes'),
       editables ? editables + ' editable' + (editables === 1 ? '' : 's') : 'solo lectura',
       tapadas.size ? 'oculta: ' + [...tapadas].join(', ') : null,
+      txtPers,
     ].filter(Boolean).join(' · ');
   },
 
@@ -13345,6 +13380,22 @@ const AdminView = {
         [ el('span', { html: svg('trash') }), 'Eliminar persona' ]),
     ]));
 
+    // Lo que no es de ningún viaje va aparte, y al revés que las categorías de
+    // viaje: aquí lo normal es compartir, así que se ve salvo que lo tapes.
+    root.appendChild(el('h2', { class:'section-title', text:'Tus datos personales' }));
+    root.appendChild(el('p', { class:'field-hint', style:{margin:'-4px 0 10px'},
+      text:'Los ve por defecto. Marca lo que quieras taparle.' }));
+    const persOcultas = new Set(this.personalesDe(u.id));
+    const catsPers = el('div', { class:'adm-cats', style:{marginBottom:'18px'} });
+    ADMIN_CATS_PERSONALES.forEach(c => {
+      catsPers.appendChild(el('button', {
+        class:'cat-chip' + (persOcultas.has(c.id) ? ' on' : ''), type:'button',
+        title: c.hint, 'aria-pressed': persOcultas.has(c.id) ? 'true' : 'false',
+        onclick: () => AdminView.togglePersonal(u, c.id),
+      }, c.label));
+    });
+    root.appendChild(catsPers);
+
     root.appendChild(el('h2', { class:'section-title', text:'Viajes' }));
     // Con veinte viajes, ir uno a uno es inviable: estos dos atajos son la
     // diferencia entre usar la pantalla y no usarla.
@@ -13394,6 +13445,26 @@ const AdminView = {
   },
 
   // ---- Cambios -----------------------------------------------------------
+  personalesDe(userId) {
+    const f = this.perfiles.find(x => x.user_id === userId);
+    return Array.isArray(f?.ocultar_personales) ? f.ocultar_personales : [];
+  },
+
+  async togglePersonal(u, cat) {
+    const actual = new Set(this.personalesDe(u.id));
+    if (actual.has(cat)) actual.delete(cat); else actual.add(cat);
+    const ocultar_personales = [...actual];
+    try {
+      const { error } = await AUTH.init().from('app_users')
+        .update({ ocultar_personales }).eq('user_id', u.id);
+      if (error) throw error;
+      const f = this.perfiles.find(x => x.user_id === u.id);
+      if (f) f.ocultar_personales = ocultar_personales;
+      else this.perfiles.push({ user_id: u.id, ocultar_personales });
+      Router.render();
+    } catch (e) { UI.toast('No se pudo guardar: ' + (e?.message || e)); }
+  },
+
   async setAcceso(viaje, u, modo) {
     const c = AUTH.init();
     try {
@@ -13544,9 +13615,11 @@ const PerfilView = {
       ]));
     }
 
-    // Documentos de viaje
+    // Documentos de viaje. Se listan los del PERFIL DUEÑO: un lector no tiene
+    // documentos propios, y lo que le interesa —y la RLS le deja ver, salvo que
+    // se lo hayan tapado— son los de quien organiza el viaje.
     root.appendChild(el('h2', { class:'section-title', text:'Documentos de viaje' }));
-    const docs = await DB.listByProfile('travel_docs', STATE.profile);
+    const docs = await DB.listByProfile('travel_docs', dataProfile());
     if (!docs.length) {
       root.appendChild(el('p', { class:'muted', text:'Sin documentos guardados.' }));
     } else {
@@ -13571,7 +13644,7 @@ const PerfilView = {
 
     // Países visitados
     root.appendChild(el('h2', { class:'section-title', text:'Países visitados' }));
-    const visited = await DB.listByProfile('visited_countries', STATE.profile);
+    const visited = await DB.listByProfile('visited_countries', dataProfile());
     const countryList = visited.length
       ? visited.map(v => `${v.country_code}${v.year ? ' ('+v.year+')' : ''}`).join(', ')
       : 'Aún no has marcado ninguno.';
@@ -13580,7 +13653,7 @@ const PerfilView = {
 
     // Plantillas maleta
     root.appendChild(el('h2', { class:'section-title', text:'Mis plantillas de maleta' }));
-    const tpls = await DB.listByProfile('packing_templates', STATE.profile);
+    const tpls = await DB.listByProfile('packing_templates', dataProfile());
     if (!tpls.length) root.appendChild(el('p', { class:'muted', text:'No has creado plantillas propias. Las del sistema (Playa, Ciudad fría, Bebé) están siempre disponibles.' }));
     else {
       const list = el('div', { class:'list' });
@@ -13620,7 +13693,7 @@ const PerfilView = {
         }
       } catch (_) {}
     }
-    const visitedStats = await DB.listByProfile('visited_countries', STATE.profile);
+    const visitedStats = await DB.listByProfile('visited_countries', dataProfile());
     visitedStats.forEach(v => { if (v.country_code) countries.add(String(v.country_code).trim().toLowerCase()); });
 
     root.appendChild(el('div', { class:'metric-grid' }, [
