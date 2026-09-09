@@ -6163,6 +6163,10 @@ const TripDetail = {
         onclick: () => { UI.closeSheet(); TripDetail.openDupes(t); }
       });
       items.push({
+        icon: svg('upload'), label: 'Subir este viaje a la nube',
+        onclick: () => { UI.closeSheet(); TripDetail.openCloudPush(t); }
+      });
+      items.push({
         icon: svg('copy'), label: 'Duplicar viaje',
         onclick: () => { UI.closeSheet(); TripDetail._duplicateTrip(t); }
       });
@@ -6178,6 +6182,111 @@ const TripDetail = {
       title: t.name,
       body: list,
       footer: [el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar')],
+    });
+  },
+
+  // Sube este viaje y todos sus hijos a Supabase metiéndolos en la cola `_pending`,
+  // que es la misma vía por la que viaja cualquier cambio hecho dentro de la app.
+  // Hace falta porque `importProfile` escribe directo en IndexedDB sin encolar: un
+  // viaje traído de un JSON se queda en el dispositivo donde se importó y no llega
+  // a los demás. El import general sigue sin encolar a propósito — restaurar un
+  // backup viejo pisaría con datos caducos lo que haya más nuevo en el servidor.
+  // Aquí no hay ese riesgo: se sube un viaje concreto porque tú lo pides.
+  async openCloudPush(t) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes subir nada'); return; }
+
+    const TABLA_LABEL = {
+      trip_legs:'Tramos', planning_items:'Paradas', budget_items:'Gastos',
+      bookings:'Reservas', inquiries:'Consultas', wishlist_items:'Lista de deseos',
+      day_notes:'Notas de día', packing_items:'Maleta', addresses:'Direcciones',
+      destination_info:'Ficha del destino', emergency_contacts:'Contactos de emergencia',
+      phrases:'Frases', shared_expenses:'Gastos compartidos', diary:'Diario',
+      wardrobe_items:'Armario', wardrobe_catalog:'Catálogo del armario',
+    };
+    // Se deriva de DB.STORES para que una tabla nueva entre sola. Fuera: las que van
+    // por perfil (no cuelgan de un viaje) y `media`, que es local y no sincroniza.
+    const PERFIL = ['trips','packing_templates','travel_docs','visited_countries'];
+    const hijas = DB.STORES.filter(x => !PERFIL.includes(x) && x !== 'media');
+
+    // Se incluyen las filas de la papelera (`deleted_at`): así lo remoto queda igual
+    // que lo local y un borrado no reaparece en el siguiente pull.
+    const porTabla = {};
+    let total = 1;                                    // el propio viaje
+    for (const tbl of hijas) {
+      const rows = await DB.db.getAllFromIndex(tbl, 'by_trip', t.id).catch(() => []);
+      if (rows.length) { porTabla[tbl] = rows; total += rows.length; }
+    }
+
+    const resumen = el('div', { class:'card' }, [
+      el('div', { class:'kv' }, [ el('span', {class:'k', text:'Viaje'}), el('span', {class:'v', text:'1'}) ]),
+      ...Object.keys(porTabla).map(tbl => el('div', { class:'kv' }, [
+        el('span', { class:'k', text: TABLA_LABEL[tbl] || tbl }),
+        el('span', { class:'v', text: String(porTabla[tbl].length) }),
+      ])),
+    ]);
+
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:
+        'Pone este viaje entero en la cola de envío. Al terminar, los demás dispositivos lo '
+        + 'descargan solos la próxima vez que abras la app en ellos: no hay que importar nada allí.' }),
+      resumen,
+      SYNC.enabled ? null : el('div', { class:'field-hint', style:{marginTop:'10px'}, text:
+        'Este dispositivo no tiene Supabase configurado, así que no hay nube a la que subir. '
+        + 'Rellena CFG.supabaseUrl y CFG.supabaseAnonKey en index.html.' }),
+      (SYNC.enabled && !navigator.onLine) ? el('div', { class:'field-hint', style:{marginTop:'10px'}, text:
+        'Ahora mismo estás sin conexión: las filas se quedarán en cola y saldrán solas al volver la red.' }) : null,
+      el('div', { class:'field-hint', style:{marginTop:'10px'}, text:
+        'No borra ni cambia nada: cada fila se escribe por su id, así que repetirlo es inofensivo.' }),
+      el('div', { id:'cp-prog', class:'field-hint', style:{marginTop:'12px', whiteSpace:'pre-wrap'} }),
+    ].filter(Boolean));
+
+    const run = async () => {
+      const prog = $('#cp-prog');
+      const btn = $('#cp-run');
+      if (btn) { btn.disabled = true; btn.textContent = 'Subiendo…'; }
+      let n = 0;
+      const paso = () => { if (prog) prog.textContent = `Encolando ${n} / ${total}…`; };
+      try {
+        // El viaje SIEMPRE primero: en Supabase los hijos tienen FK contra `trips`,
+        // y la cola se vacía en orden de entrada.
+        await DB.put('trips', t); n++; paso();
+        for (const tbl of Object.keys(porTabla)) {
+          for (const row of porTabla[tbl]) {
+            await DB.put(tbl, row); n++;
+            if (n % 25 === 0) { paso(); await new Promise(r => setTimeout(r, 0)); }
+          }
+        }
+      } catch (e) {
+        console.error('cloud push', e);
+        if (prog) prog.textContent = 'Error al encolar: ' + (e?.message || e);
+        if (btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
+        return;
+      }
+      if (!SYNC.enabled) {
+        if (prog) prog.textContent = `${n} filas en cola. Se enviarán en cuanto configures Supabase.`;
+        if (btn) { btn.disabled = false; btn.textContent = 'Subir de nuevo'; }
+        return;
+      }
+      if (prog) prog.textContent = `${n} filas en cola. Enviando…`;
+      await SYNC.flush().catch(err => console.warn('cloud push flush', err));
+      const quedan = (await DB.db.getAll('_pending')).length;
+      if (prog) {
+        prog.textContent = quedan === 0
+          ? `Listo: ${n} filas subidas.\n\nAbre la app en los otros dispositivos y el viaje aparecerá solo.`
+          : `Quedan ${quedan} filas en la cola de envío (la cola es de todo el perfil, no solo de este viaje).`
+            + (SYNC.lastError ? `\n\nÚltimo error [${SYNC.lastErrorTable || '?'}]: ${SYNC.lastError}` : '')
+            + '\n\nSe reintenta sola al volver la conexión.';
+      }
+      if (btn) { btn.disabled = false; btn.textContent = quedan === 0 ? 'Subir de nuevo' : 'Reintentar'; }
+    };
+
+    const runBtn = el('button', { class:'btn btn-primary', id:'cp-run', onclick: run },
+      [ el('span', { html: svg('upload') }), `Subir ${total} ${total === 1 ? 'fila' : 'filas'}` ]);
+
+    UI.openSheet({
+      title:'Subir este viaje a la nube',
+      body,
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'), runBtn ],
     });
   },
 
