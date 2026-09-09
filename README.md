@@ -312,12 +312,9 @@ las que sí.
 Tres decisiones sostienen el aspecto. Conviene no deshacerlas sin pensarlo:
 
 1. **Foto a sangre en portada.** Es lo que separa un documento de una propuesta de viaje. Sale
-   de `cover_blob_id` (IndexedDB) o de `cover_photo_url`. Sin foto hay una portada de color que
-   aguanta el tipo, pero con foto cambia todo.
-
-   Si el viaje no tiene foto propia, **se busca una de alguno de sus lugares en Wikipedia**
-   (ver más abajo). La portada NO lleva el presupuesto: es el reclamo del viaje, y el precio
-   pertenece a su sección, donde va con su desglose y se entiende.
+   de lo que hayas subido a la app (ver «Fotos del viaje»). Sin foto hay una portada de color
+   que aguanta el tipo, pero con foto cambia todo. La portada NO lleva el presupuesto: es el
+   reclamo del viaje, y el precio pertenece a su sección, donde va con su desglose.
 2. **Dos familias.** Times para lo que se lee de lejos —título, secciones, días— y Helvetica
    para lo que se lee de cerca. El contraste serifa / palo seco no cuesta un byte: las dos van
    en las fuentes base de PDF.
@@ -351,31 +348,53 @@ texto: se busca y se copia, y el archivo pesa unas decenas de KB más la foto (~
 | **`parrafo()` fija la fuente antes de partir en líneas** | `splitTextToSize` mide con la que esté activa: viniendo de un titular a 19 pt partía como si el texto fuera de 19 pt, y la entradilla salía en una columna a media anchura |
 | **En `kvPunteado` el valor se ajusta al hueco que deja la etiqueta** | Sin ajustarlo, un destino largo se metía encima de su propia etiqueta |
 
-### Foto de portada automática
+### Fotos del viaje
 
-Cuando el viaje no tiene foto, `pdfFotoAuto()` busca una en la Action API de Wikipedia
-(`es.wikipedia.org/w/api.php`, con `origin=*` para CORS) y baja la imagen de
-`upload.wikimedia.org`. Los términos van del más específico al más genérico —tramo con país,
-tramo, ciudad del viaje, país, nombre del viaje— y se para en el primero que dé una foto
-utilizable.
+Todas las imágenes salen de lo que hayas subido en la app. **No se busca nada en internet.**
 
-| Regla | Por qué |
+**Portada:** `cover_blob_id` (la foto del viaje) → `cover_photo_url` → la primera foto de día que
+haya → portada de color. Los cuatro escalones funcionan; los tres primeros necesitan que exista
+una imagen.
+
+**Fotos por día:** *Planning → botón de imagen en la cabecera del día* (o pulsación larga sobre
+ella) abre el editor del día, que ahora tiene una rejilla de fotos. Se guardan y se borran al
+momento, no al pulsar «Guardar»: son binarios y no cuelgan de la fila de la nota, así que un día
+puede tener fotos sin tener ni título ni texto.
+
+| Detalle | Por qué |
 |---|---|
-| Se descartan banderas, escudos, mapas, logos y SVG por el nombre del archivo | Es lo que más devuelve la búsqueda de una ciudad, y es la peor portada posible. El nombre es lo único que se sabe antes de bajar la imagen |
-| Solo apaisadas y de 900 px para arriba | Una vertical se recorta a una tira y no se reconoce nada |
-| Presupuesto de 9 s para **toda** la búsqueda | Exportar no puede quedarse medio minuto esperando cinco consultas |
-| Si no encuentra nada, no se reintenta en 7 días (`viajes_wikicover_no_<id>`) | Un viaje que Wikipedia no ilustra pagaba la búsqueda entera en cada exportación |
-| La imagen se cachea en `media` con id `wikicover-<tripId>` | `media` es local y no se sincroniza. La segunda exportación no toca la red y funciona sin cobertura |
-| Se imprime el crédito bajo la portada | Commons es libre pero pide atribución. Una línea de 6 pt no le quita nada a la página |
+| Van en el store `media` con `trip_id` y `day_date`, aprovechando su índice `by_trip` | No hace falta ni un store nuevo ni tocar el esquema de Supabase |
+| Se guardan con `DB.db.put`, **nunca** con `DB.put` | `DB.put` encola la fila para subirla, y lo que se subiría es un blob de 250 KB por PostgREST |
+| Se comprimen a 1600 px de lado mayor y JPEG 0.82 al subirlas | Las fotos del móvil pesan de 4 a 12 MB. Sin esto, media docena por día se come la cuota de IndexedDB |
+| `deleteCascade` borra también las fotos del viaje | Si no, se quedan en IndexedDB para siempre, ocupando megas de un viaje que ya no existe |
 
-**Falla en silencio, siempre.** Sin red, con la API caída, con una respuesta de forma distinta
-a la esperada o sin ninguna imagen decente, se devuelve `null` y queda la portada de color. Una
-guía de viaje no puede depender de que Wikipedia conteste.
+> **Las fotos son locales y no se sincronizan.** Una foto subida en el móvil no aparece en el
+> portátil ni la ve nadie más. Es deliberado —sincronizar binarios por PostgREST es caro y
+> frágil— y por eso la guía tiene que verse bien sin ellas, que es como se ve por defecto.
 
-> Esta integración **no se ha podido probar contra la Wikipedia real**: la política de salida
-> del entorno donde se desarrolló bloquea `es.wikipedia.org`. Está verificada contra una
-> simulación con la forma documentada de la respuesta, y por eso todos los caminos de fallo
-> acaban en la portada de color.
+**En el PDF** se maquetan según cuántas haya, y siempre recortadas al marco (`object-fit: cover`),
+nunca deformadas:
+
+| Fotos | Maquetación |
+|---|---|
+| 1 | Banda a todo el ancho, 176 pt |
+| 2 | Dos columnas a media calle |
+| 3 | Mosaico: una grande a la izquierda, dos apiladas a la derecha |
+| 4+ | Filas de dos; una suelta al final va a banda ancha |
+
+Máximo 6 por día: esto es una guía, no un álbum. Van **después** de la cabecera del día y su
+nota, y **antes** de las paradas: presentan el día en vez de cortar el recorrido en dos.
+
+Dos cosas que hay que respetar:
+
+- **Se codifican antes de maquetar** (`pdfPrepararFotos`), no durante. Pasar un blob a JPEG es
+  asíncrono y el pintado no lo es; además el documento se maqueta dos veces para numerar el
+  índice, y codificar ahí sería hacerlo todo por duplicado.
+- **El salto de página reserva la cabecera del día Y su primera fila de fotos.** Con un valor
+  fijo, un día con mosaico dejaba el titular solo al pie de una página.
+
+Un día con fotos pero sin ninguna parada **sí aparece** en el itinerario: si no, subías fotos a
+un día libre y no salían por ningún lado.
 
 ### Limitaciones, que vienen del formato
 
