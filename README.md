@@ -335,31 +335,27 @@ los campos de golpe deja la pantalla pesada en el móvil.
 
 ### Enlace en vez de archivo
 
-El botón **Crear enlace** sube ese mismo HTML a un sitio público y devuelve su URL. Hay dos
-destinos, y cada enlace recuerda el suyo en `settings.share.store`:
+El botón **Crear enlace** sube ese mismo HTML a un repo de GitHub y devuelve su URL de Pages
+(`https://<usuario>.github.io/<repo>/compartir/<viaje>-<aleatorio>.html`). No hay backend: la
+escritura la hace el navegador con la API de GitHub.
 
-| | `sb` — Supabase Storage | `gh` — API de GitHub |
-|---|---|---|
-| Credencial | La sesión que ya tienes abierta | Un token personal por dispositivo |
-| Caduca | No | Sí, y sin avisar |
-| URL | `<proyecto>.supabase.co/storage/v1/object/public/compartir/<viaje>-<aleatorio>.html` | `<usuario>.github.io/<repo>/compartir/<viaje>-<aleatorio>.html` |
-| Disponible | Al momento | ~1 minuto (build de Pages) |
-| Cuándo se usa | Enlaces nuevos, si hay sesión | Enlaces creados antes, y sin Supabase configurado |
+> **Supabase Storage no vale para esto, y está comprobado.** Se intentó mover la publicación allí
+> para no depender de un token que caduca. Storage **reescribe a propósito** el `content-type` de
+> `text/html` a `text/plain` como medida antiabuso, así que el navegador enseña el código fuente
+> en vez de la página (y, sin charset en la cabecera, con los acentos rotos de propina). Las Edge
+> Functions hacen lo mismo. Solo se puede servir HTML en **plan Pro con dominio propio**.
+> Ver [supabase/discussions#39110](https://github.com/orgs/supabase/discussions/39110) y
+> [supabase/storage#186](https://github.com/supabase/storage/issues/186). No volver a intentarlo
+> sin comprobar antes que esa política ha cambiado.
+>
+> Queda el rastro en el código: `settings.share.store` vale `'gh'` para todos los enlaces, y
+> `'sb'` para los que se llegaron a publicar en el bucket. Esos se detectan, avisan de que están
+> rotos y, al actualizarlos, se rehacen en GitHub borrando el objeto muerto.
 
-El bucket lo monta `schema-storage.sql`: público de lectura, y de escritura solo para la sesión
-cuyo perfil sea `ruben`. Ese `to authenticated` importa — sin él, cualquiera que leyese el HTML de
-la app tendría la `anonKey` y podría llenar el bucket.
-
-**Un enlace ya repartido no se muda solo.** `publish()` respeta el destino de la entrada
-existente, porque cambiar de sitio cambia la URL y mataría la que ya mandaste. Para pasar uno
-viejo a Supabase está el botón **Mover a Supabase**, que avisa de que la URL cambia; el archivo
-antiguo se queda en el repo hasta que lo borres a mano (revocarlo pediría el token, que es
-justamente de lo que te estás quitando).
-
-Configuración de GitHub (*Ajustes del enlace*, en `localStorage`, clave `viajes_share_gh`):
+Configuración (*Ajustes del enlace*, guardada en `localStorage`, clave `viajes_share_gh`):
 usuario, repo, rama, carpeta, URL base de Pages y un **token fine-grained** con acceso solo a ese
-repo y permiso *Contents: Read and write*. Con Storage disponible el botón ni aparece, salvo que
-el viaje tenga un enlace de los antiguos.
+repo y permiso *Contents: Read and write*. Los fine-grained caducan: dale el plazo más largo que
+te deje GitHub (un año) o tendrás que renovarlo justo el día que quieras compartir algo.
 
 - El token vive **solo en ese dispositivo** y nunca entra en el HTML publicado (`hideTerms` y el
   token se excluyen del `OPTS` que se embebe).
@@ -369,17 +365,17 @@ el viaje tenga un enlace de los antiguos.
   sincroniza por Supabase y viaja en el export. `localStorage` queda de respaldo para los enlaces
   anteriores a este cambio.
 - **Ya tengo un enlace**: si este dispositivo no lo conoce y no hay sincronización, se pega su URL
-  y queda registrado, conservando la ruta. Se acepta tanto la de Storage como la de Pages, y del
-  prefijo sale el destino; cualquier otra se rechaza.
-- **Actualizar** reutiliza la misma ruta y el mismo destino: la URL que ya mandaste no cambia.
-- **Revocar** borra el archivo de donde esté; el enlace deja de funcionar.
-- Los objetos de Storage se suben con `cacheControl: 60`: al actualizar, quien lo abra ve el
-  cambio en un minuto como mucho (el defecto de Storage es una hora).
+  y queda registrado, conservando la ruta. Se rechaza cualquier URL que no cuelgue de la base de
+  Pages configurada.
+- **Actualizar** reutiliza la misma ruta: la URL que ya mandaste no cambia. La excepción son los
+  enlaces marcados `'sb'`, que se rehacen en GitHub con URL nueva porque la suya no renderiza.
+- **Revocar** borra el archivo (del repo, o del bucket si era de los `'sb'`); el enlace deja de
+  funcionar.
+- GitHub Pages tarda ~1 minuto en publicar el archivo nuevo.
 
-> **La URL no es un secreto en ninguno de los dos.** En un repo público la carpeta se puede
-> listar; en Storage no, pero sigue siendo un enlace abierto a quien lo tenga. Lo que protege el
-> contenido es que el HTML se genera ya redactado: los precios, localizadores y términos ocultos
-> no llegan a escribirse en el archivo.
+> **La URL no es un secreto.** En un repo público la carpeta de enlaces la puede listar
+> cualquiera. Lo que protege el contenido es que el HTML se genera ya redactado: los precios,
+> localizadores y términos ocultos no llegan a escribirse en el archivo.
 
 ## Atajos de teclado
 
