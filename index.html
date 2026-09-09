@@ -572,6 +572,43 @@ h2.section-title {
 .dot-aplazado { background:#a855f7; }
 .dot-cancelado { background:#ef4444; }
 
+/* Administración — control segmentado y pastillas de categoría ------------- */
+.seg {
+  display:flex; width:100%; gap:2px; padding:2px;
+  background:var(--bg-soft); border:1px solid var(--line); border-radius:var(--r-pill);
+}
+.seg-b {
+  flex:1; min-width:0; border:none; background:transparent; color:var(--text-muted);
+  font:inherit; font-size:13px; font-weight:600; padding:8px 4px;
+  min-height:42px;                 /* dedo, no ratón */
+  border-radius:var(--r-pill); cursor:pointer; white-space:nowrap;
+  -webkit-tap-highlight-color:transparent; transition:background .15s ease, color .15s ease;
+}
+.seg-b.on { background:var(--bg-elev); color:var(--text); box-shadow:var(--sh-1); }
+.seg-b.on.seg-edit { color:var(--accent); }
+.seg-b:disabled { opacity:.45; cursor:not-allowed; }
+/* Una categoría marcada es una RESTRICCIÓN, no una opción activada: va en rojo
+   para que no se lea como "esto se ve". */
+.cat-chip {
+  border:1px solid var(--line); background:var(--bg-elev); color:var(--text-muted);
+  border-radius:var(--r-pill); padding:6px 13px; min-height:38px; font:inherit; font-size:12.5px;
+  font-weight:600; cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+.cat-chip.on {
+  background:color-mix(in srgb, var(--danger) 12%, var(--bg-elev));
+  border-color:color-mix(in srgb, var(--danger) 40%, var(--line));
+  color:var(--danger);
+}
+.adm-trip {
+  background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md);
+  padding:12px; margin-bottom:10px;
+}
+.adm-trip .adm-nom { font-weight:640; font-size:15px; letter-spacing:-.012em; margin-bottom:2px; }
+.adm-trip .adm-fecha { font-size:12.5px; color:var(--text-muted); margin-bottom:9px; }
+.adm-cats { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.adm-cats-lbl { font-size:12px; color:var(--text-muted); margin-top:11px; }
+.adm-acciones { display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 16px; }
+
 /* Toggle "en preparación" */
 .switch {
   position:relative; display:inline-flex; align-items:center; gap:8px;
@@ -4689,6 +4726,12 @@ const Router = {
     back.onclick = async () => {
       if (STATE.view === 'trip')  return Router.go('trips');
       if (STATE.view === 'perfil')return Router.go('trips');
+      // Dentro de Administración, "volver" sale del detalle de la persona
+      // antes de salir de la pantalla.
+      if (STATE.view === 'admin') {
+        if (AdminView.sel) { AdminView.sel = null; return Router.render(); }
+        return Router.go('perfil');
+      }
     };
     // Limpiar slot de acciones del topbar — cada vista lo rellena si lo necesita.
     const extras = document.getElementById('topbar-extras');
@@ -4713,6 +4756,7 @@ const Router = {
       if (STATE.view === 'trips')  await Trips.render(root, title, fab);
       else if (STATE.view === 'trip')   await TripDetail.render(root, title, fab);
       else if (STATE.view === 'perfil') await PerfilView.render(root, title, fab);
+      else if (STATE.view === 'admin')  await AdminView.render(root, title, fab);
       else { STATE.view = 'trips'; await Trips.render(root, title, fab); }
       // Title dinámico — refleja la vista actual
       Router._setDocTitle();
@@ -13110,6 +13154,343 @@ function simplifySettlement(balances) {
 /* ============================================================
    VIEW — Perfil (docs, países visitados, ajustes)
    ============================================================ */
+/* ============================================================
+   AdminView — quién ve qué, y con qué permisos
+   ============================================================
+   Esta pantalla EDITA las reglas; no las aplica. Quien decide qué puede leer
+   cada cual es la RLS (ver schema-perms.sql). Si algún día la pantalla y la
+   base discrepan, manda la base — y la pantalla está mal.
+   ============================================================ */
+const ADMIN_CATS = [
+  { id:'dinero',   label:'Dinero',   hint:'Presupuesto y gastos compartidos' },
+  { id:'reservas', label:'Reservas', hint:'Localizadores, documentos e importes' },
+  { id:'diario',   label:'Diario',   hint:'El diario del viaje' },
+  { id:'maleta',   label:'Maleta',   hint:'La lista de equipaje' },
+];
+
+const AdminView = {
+  usuarios: [], shares: [], viajes: [],
+  sel: null,          // id de la persona abierta, o null en el listado
+  error: null,
+  cargado: false,     // cada toque de un permiso repinta la vista; sin esto,
+                      // cada repintado volvía a llamar a la Edge Function y a
+                      // releer trip_shares. El estado ya se actualiza en local.
+
+  disponible() { return STATE.profile === 'ruben' && !!(CFG.supabaseUrl && CFG.supabaseAnonKey); },
+
+  // Llamada a la Edge Function. Todo lo que toca cuentas pasa por aquí porque
+  // exige la service_role, que no puede estar en este archivo.
+  async _fn(accion, extra = {}) {
+    const c = AUTH.init();
+    if (!c) throw new Error('Supabase no está configurado en este dispositivo.');
+    const { data } = await c.auth.getSession();
+    const tk = data?.session?.access_token;
+    if (!tk) throw new Error('No hay sesión abierta.');
+    let res;
+    try {
+      res = await fetch(CFG.supabaseUrl.replace(/\/+$/, '') + '/functions/v1/admin-usuarios', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', apikey: CFG.supabaseAnonKey, Authorization:'Bearer ' + tk },
+        body: JSON.stringify({ accion, ...extra }),
+      });
+    } catch (e) {
+      throw new Error('No se pudo contactar con la función admin-usuarios. ¿Está desplegada?');
+    }
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || ('La función respondió ' + res.status));
+    return j;
+  },
+
+  share(tripId, userId) {
+    return this.shares.find(s => s.trip_id === tripId && s.user_id === userId) || null;
+  },
+
+  async cargar() {
+    this.error = null;
+    // Los viajes salen de IndexedDB: es instantáneo y ya están ahí.
+    this.viajes = (await DB.listByProfile('trips', 'ruben'))
+      .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    if (this.cargado) return;
+    const c = AUTH.init();
+    const { data: sh, error } = await c.from('trip_shares').select('*');
+    if (error) throw new Error('No se pudieron leer los permisos: ' + error.message);
+    this.shares = sh || [];
+    const r = await this._fn('list');
+    this.usuarios = r.usuarios || [];
+    this.cargado = true;
+  },
+
+  resumen(u) {
+    const mios = this.shares.filter(s => s.user_id === u.id);
+    if (u.perfil === 'ruben') return 'Administrador · lo ve todo';
+    if (!mios.length) return 'Sin acceso a ningún viaje';
+    const editables = mios.filter(s => s.can_edit).length;
+    const tapadas = new Set(mios.flatMap(s => Array.isArray(s.ocultar) ? s.ocultar : []));
+    return [
+      mios.length + (mios.length === 1 ? ' viaje' : ' viajes'),
+      editables ? editables + ' editable' + (editables === 1 ? '' : 's') : 'solo lectura',
+      tapadas.size ? 'oculta: ' + [...tapadas].join(', ') : null,
+    ].filter(Boolean).join(' · ');
+  },
+
+  async render(root, title, fab) {
+    title.textContent = 'Administración';
+    root.innerHTML = '';
+    fab.hidden = true;
+
+    if (!navigator.onLine) {
+      root.appendChild(el('h1', { class:'view-title', text:'Administración' }));
+      root.appendChild(el('div', { class:'readonly-banner' }, [
+        el('span', { class:'ico', html: svg('warn') }),
+        el('span', { text:'Sin conexión. Los permisos viven en el servidor, así que esta pantalla necesita internet.' }),
+      ]));
+      return;
+    }
+
+    root.appendChild(el('p', { class:'muted', text:'Cargando…' }));
+    try { await this.cargar(); }
+    catch (e) {
+      root.innerHTML = '';
+      root.appendChild(el('h1', { class:'view-title', text:'Administración' }));
+      root.appendChild(el('div', { class:'readonly-banner' }, [
+        el('span', { class:'ico', html: svg('warn') }),
+        el('span', { text: e?.message || 'No se pudo cargar.' }),
+      ]));
+      return;
+    }
+    root.innerHTML = '';
+
+    if (this.sel) this._detalle(root);
+    else this._listado(root);
+  },
+
+  // ---- Listado de personas ----------------------------------------------
+  _listado(root) {
+    root.appendChild(el('h1', { class:'view-title', text:'Personas y permisos' }));
+    root.appendChild(el('p', { class:'view-sub', text:'Quién entra en la app y qué viajes ve. Los permisos los aplica la base de datos; aquí solo se editan.' }));
+
+    const lista = el('div', { class:'list' });
+    this.usuarios.forEach(u => {
+      const esAdmin = u.perfil === 'ruben';
+      lista.appendChild(el('div', { class:'list-item' }, [
+        el('div', { class:'li-main', onclick: () => { if (!esAdmin) { AdminView.sel = u.id; Router.render(); } } }, [
+          el('div', { class:'li-title', text: u.email || u.id }),
+          el('div', { class:'li-sub', text: AdminView.resumen(u) }),
+          el('div', { class:'li-sub', text: u.ultimo_acceso
+            ? 'Última entrada: ' + fmtDateShort(String(u.ultimo_acceso).slice(0, 10))
+            : 'No ha entrado nunca' }),
+          !u.perfil ? el('div', { class:'tag', style:{marginTop:'6px', color:'var(--danger)'},
+            text:'Sin perfil en app_users: no puede entrar' }) : null,
+        ].filter(Boolean)),
+        esAdmin ? null : el('span', { class:'dh-caret', html: svg('chevron') }),
+      ].filter(Boolean)));
+    });
+    root.appendChild(lista);
+
+    root.appendChild(el('button', { class:'btn btn-sm', style:{marginTop:'14px'},
+      onclick: () => AdminView.altaSheet() }, [ el('span', { html: svg('plus') }), 'Añadir persona' ]));
+
+    root.appendChild(el('div', { class:'readonly-banner', style:{marginTop:'20px'} }, [
+      el('span', { class:'ico', html: svg('warn') }),
+      el('span', { text:'Las categorías ocultan tablas enteras. Un localizador escrito a mano dentro de las notas de una parada se sigue viendo: esto vale para gente de confianza, no para desconocidos.' }),
+    ]));
+  },
+
+  // ---- Detalle de una persona -------------------------------------------
+  _detalle(root) {
+    const u = this.usuarios.find(x => x.id === this.sel);
+    if (!u) { this.sel = null; return this._listado(root); }
+
+    root.appendChild(el('h1', { class:'view-title', text: u.email || u.id }));
+    root.appendChild(el('p', { class:'view-sub', text: this.resumen(u) }));
+
+    root.appendChild(el('div', { class:'adm-acciones' }, [
+      el('button', { class:'btn btn-sm', onclick: () => AdminView.passSheet(u) },
+        [ el('span', { html: svg('lock') }), 'Cambiar contraseña' ]),
+      el('button', { class:'btn btn-sm btn-danger', onclick: () => AdminView.borrar(u) },
+        [ el('span', { html: svg('trash') }), 'Eliminar persona' ]),
+    ]));
+
+    root.appendChild(el('h2', { class:'section-title', text:'Viajes' }));
+    // Con veinte viajes, ir uno a uno es inviable: estos dos atajos son la
+    // diferencia entre usar la pantalla y no usarla.
+    root.appendChild(el('div', { class:'adm-acciones' }, [
+      el('button', { class:'btn btn-sm', onclick: () => AdminView.todos(u, 'leer') }, 'Dar lectura a todos'),
+      el('button', { class:'btn btn-sm btn-ghost', onclick: () => AdminView.todos(u, 'no') }, 'Quitar todo'),
+    ]));
+
+    if (!this.viajes.length) {
+      root.appendChild(el('p', { class:'muted', text:'No hay viajes que compartir.' }));
+    }
+
+    this.viajes.forEach(v => {
+      const s = this.share(v.id, u.id);
+      const modo = !s ? 'no' : (s.can_edit ? 'editar' : 'leer');
+      const caja = el('div', { class:'adm-trip' });
+      caja.appendChild(el('div', { class:'adm-nom', text: v.name }));
+      caja.appendChild(el('div', { class:'adm-fecha', text: v.start_date
+        ? fmtDateShort(v.start_date) + (v.end_date ? ' – ' + fmtDateShort(v.end_date) : '')
+        : 'Sin fechas' }));
+
+      const seg = el('div', { class:'seg', role:'group', 'aria-label':'Acceso a ' + v.name });
+      [['no','Sin acceso'], ['leer','Leer'], ['editar','Editar']].forEach(([id, txt]) => {
+        seg.appendChild(el('button', {
+          class:'seg-b' + (modo === id ? ' on' : '') + (id === 'editar' ? ' seg-edit' : ''),
+          type:'button', 'aria-pressed': modo === id ? 'true' : 'false',
+          onclick: () => AdminView.setAcceso(v, u, id),
+        }, txt));
+      });
+      caja.appendChild(seg);
+
+      if (modo !== 'no') {
+        caja.appendChild(el('div', { class:'adm-cats-lbl', text:'Ocultarle:' }));
+        const cats = el('div', { class:'adm-cats' });
+        const ocultas = new Set(Array.isArray(s?.ocultar) ? s.ocultar : []);
+        ADMIN_CATS.forEach(c => {
+          cats.appendChild(el('button', {
+            class:'cat-chip' + (ocultas.has(c.id) ? ' on' : ''), type:'button',
+            title: c.hint, 'aria-pressed': ocultas.has(c.id) ? 'true' : 'false',
+            onclick: () => AdminView.toggleCat(v, u, c.id),
+          }, c.label));
+        });
+        caja.appendChild(cats);
+      }
+      root.appendChild(caja);
+    });
+  },
+
+  // ---- Cambios -----------------------------------------------------------
+  async setAcceso(viaje, u, modo) {
+    const c = AUTH.init();
+    try {
+      if (modo === 'no') {
+        const { error } = await c.from('trip_shares').delete()
+          .eq('trip_id', viaje.id).eq('user_id', u.id);
+        if (error) throw error;
+        this.shares = this.shares.filter(s => !(s.trip_id === viaje.id && s.user_id === u.id));
+      } else {
+        const previo = this.share(viaje.id, u.id);
+        const fila = {
+          trip_id: viaje.id, user_id: u.id, can_edit: modo === 'editar',
+          ocultar: Array.isArray(previo?.ocultar) ? previo.ocultar : [],
+        };
+        const { error } = await c.from('trip_shares').upsert(fila, { onConflict:'trip_id,user_id' });
+        if (error) throw error;
+        if (previo) Object.assign(previo, fila); else this.shares.push(fila);
+      }
+      Router.render();
+    } catch (e) { UI.toast('No se pudo guardar: ' + (e?.message || e)); }
+  },
+
+  async toggleCat(viaje, u, cat) {
+    const s = this.share(viaje.id, u.id);
+    if (!s) return;
+    const set = new Set(Array.isArray(s.ocultar) ? s.ocultar : []);
+    if (set.has(cat)) set.delete(cat); else set.add(cat);
+    const ocultar = [...set];
+    try {
+      const { error } = await AUTH.init().from('trip_shares').update({ ocultar })
+        .eq('trip_id', viaje.id).eq('user_id', u.id);
+      if (error) throw error;
+      s.ocultar = ocultar;
+      Router.render();
+    } catch (e) { UI.toast('No se pudo guardar: ' + (e?.message || e)); }
+  },
+
+  async todos(u, modo) {
+    const ok = await UI.confirm(modo === 'no'
+      ? `¿Quitar a esta persona el acceso a los ${this.viajes.length} viajes?`
+      : `¿Dar acceso de lectura a los ${this.viajes.length} viajes?`,
+      modo === 'no' ? 'Sí, borrar' : 'Dar acceso');
+    if (!ok) return;
+    const c = AUTH.init();
+    try {
+      if (modo === 'no') {
+        const { error } = await c.from('trip_shares').delete().eq('user_id', u.id);
+        if (error) throw error;
+        this.shares = this.shares.filter(s => s.user_id !== u.id);
+      } else {
+        // Solo los que no tienen ya concesión: así no se pisa un "Editar" que
+        // hubieras puesto a mano.
+        const nuevas = this.viajes.filter(v => !this.share(v.id, u.id))
+          .map(v => ({ trip_id: v.id, user_id: u.id, can_edit: false, ocultar: [] }));
+        if (nuevas.length) {
+          const { error } = await c.from('trip_shares').upsert(nuevas, { onConflict:'trip_id,user_id' });
+          if (error) throw error;
+          this.shares.push(...nuevas);
+        }
+      }
+      Router.render();
+    } catch (e) { UI.toast('No se pudo guardar: ' + (e?.message || e)); }
+  },
+
+  // ---- Cuentas -----------------------------------------------------------
+  altaSheet() {
+    const err  = el('div', { class:'field-hint', style:{color:'var(--danger)', minHeight:'18px'} });
+    const mail = el('input', { type:'email', placeholder:'correo@ejemplo.com', autocomplete:'off',
+      autocapitalize:'off', autocorrect:'off', spellcheck:'false', inputmode:'email' });
+    const pass = el('input', { type:'text', placeholder:'Contraseña (mínimo 8 caracteres)', autocomplete:'off' });
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Se crea la cuenta ya confirmada y sin acceso a ningún viaje. Los permisos se dan después, uno a uno.' }),
+      el('div', { class:'form-row' }, [ el('label', { text:'Correo' }), mail ]),
+      el('div', { class:'form-row' }, [ el('label', { text:'Contraseña' }), pass ]),
+      el('div', { class:'field-hint', text:'La contraseña se ve en claro a propósito: tienes que poder copiarla para dársela. Que la cambie ella luego si quiere.' }),
+      err,
+    ]);
+    const crear = el('button', { class:'btn btn-primary', onclick: async () => {
+      err.textContent = '';
+      crear.disabled = true; crear.textContent = 'Creando…';
+      try {
+        await AdminView._fn('create', { email: mail.value.trim(), password: pass.value });
+        AdminView.cargado = false;
+        UI.closeSheet();
+        UI.toast('Cuenta creada');
+        Router.render();
+      } catch (e) {
+        err.textContent = e?.message || 'No se pudo crear.';
+        crear.disabled = false; crear.textContent = 'Crear cuenta';
+      }
+    }}, 'Crear cuenta');
+    UI.openSheet({ title:'Añadir persona', body,
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), crear ] });
+  },
+
+  passSheet(u) {
+    const err  = el('div', { class:'field-hint', style:{color:'var(--danger)', minHeight:'18px'} });
+    const pass = el('input', { type:'text', placeholder:'Nueva contraseña (mínimo 8)', autocomplete:'off' });
+    const body = el('div', {}, [
+      el('p', { class:'muted', style:{marginTop:0}, text:'Se la cambias tú y se la pasas. No recibe ningún correo.' }),
+      el('div', { class:'form-row' }, [ el('label', { text: u.email || u.id }), pass ]),
+      err,
+    ]);
+    const guardar = el('button', { class:'btn btn-primary', onclick: async () => {
+      err.textContent = '';
+      guardar.disabled = true; guardar.textContent = 'Guardando…';
+      try {
+        await AdminView._fn('password', { user_id: u.id, password: pass.value });
+        UI.closeSheet(); UI.toast('Contraseña cambiada');
+      } catch (e) {
+        err.textContent = e?.message || 'No se pudo cambiar.';
+        guardar.disabled = false; guardar.textContent = 'Cambiar';
+      }
+    }}, 'Cambiar');
+    UI.openSheet({ title:'Cambiar contraseña', body,
+      footer:[ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), guardar ] });
+  },
+
+  async borrar(u) {
+    const ok = await UI.confirm(`¿Eliminar la cuenta de ${u.email || u.id}? Pierde el acceso inmediatamente y no se puede deshacer. Sus permisos se borran con ella; los viajes no se tocan.`);
+    if (!ok) return;
+    try {
+      await this._fn('delete', { user_id: u.id });
+      this.cargado = false;
+      this.sel = null;
+      UI.toast('Cuenta eliminada');
+      Router.render();
+    } catch (e) { UI.toast('No se pudo eliminar: ' + (e?.message || e)); }
+  },
+};
+
 const PerfilView = {
   async render(root, title, fab) {
     title.textContent = 'Mi perfil';
@@ -13319,6 +13700,12 @@ const PerfilView = {
       } }, [ el('span',{html:svg('refresh')}), 'Sincronizar ahora' ]) : null,
     ].filter(Boolean));
     root.appendChild(dataBtns);
+
+    if (AdminView.disponible()) {
+      root.appendChild(el('h2', { class:'section-title', text:'Administración' }));
+      root.appendChild(el('button', { class:'btn', onclick: () => { AdminView.sel = null; AdminView.cargado = false; Router.go('admin'); } },
+        [ el('span', { html: svg('users') }), 'Personas y permisos' ]));
+    }
 
     // Salir. Con servidor detrás esto cierra la sesión de verdad: no basta con
     // olvidar el perfil, porque el JWT seguiría guardado y valdría para leer.

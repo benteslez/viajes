@@ -127,6 +127,25 @@ borrárselo.
 > `Exporter._buildShareHtml`— volcada a una tabla aparte que sea la única que lean los
 > invitados.
 
+### Pantalla de administración
+
+*Mi perfil → Personas y permisos*, visible solo con el perfil `ruben`. Es la interfaz de
+`trip_shares`: **edita las reglas, no las aplica**. Si algún día la pantalla y la base
+discrepan, manda la base y la pantalla está mal.
+
+- **Listado**: cada persona con su correo, su resumen (*"2 viajes · 1 editable · oculta:
+  dinero"*) y su última entrada. Una cuenta sin fila en `app_users` sale marcada en rojo,
+  porque no puede entrar.
+- **Detalle**: un control segmentado por viaje — *Sin acceso · Leer · Editar* — y, cuando hay
+  acceso, las pastillas de categoría. **Marcada = tapada**, por eso van en rojo: es una
+  restricción, no una opción activada.
+- **Atajos**: *Dar lectura a todos* y *Quitar todo*. Con veinte viajes, ir uno a uno es la
+  diferencia entre usar la pantalla y no usarla. El primero respeta los permisos que ya
+  hubieras puesto a mano.
+- Los cambios se guardan al tocarlos, sin botón de Guardar.
+- La lista de personas se cachea (`AdminView.cargado`): cada toque repinta la vista, y sin
+  caché cada repintado volvía a llamar a la Edge Function.
+
 ### Altas y bajas de cuentas
 
 `supabase/functions/admin-usuarios/index.ts`. Crear o borrar una cuenta de Supabase Auth exige
