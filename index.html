@@ -14973,15 +14973,24 @@ const ShareLinks = {
 /* ============================================================
    PDF — guía de viaje
    ============================================================
-   El exportador anterior era una lista de líneas de texto: todo Helvetica 11,
-   todo pegado al margen izquierdo, sin jerarquía y con la mitad de los datos
-   fuera (tramos, notas del día, direcciones, ficha del destino, maleta…).
+   No es un volcado de datos con estilo: es un folleto. La diferencia está en
+   tres decisiones, y conviene no deshacerlas sin pensarlo:
 
-   Esto lo sustituye por un documento maquetado: portada, cabecera y pie en
-   cada página, secciones con jerarquía y el itinerario en bloques por día.
-   Se dibuja con las primitivas de jsPDF —rectángulos y texto— y NO con una
-   captura de pantalla: el texto sigue siendo texto, se puede buscar y copiar,
-   y el archivo pesa unas decenas de KB en vez de varios MB.
+   1. FOTO A SANGRE EN PORTADA. Es lo que separa un documento de una propuesta
+      de viaje. Sale de `cover_blob_id` (IndexedDB) o de `cover_photo_url`. Sin
+      foto hay una portada de color que aguanta el tipo, pero con foto cambia
+      todo.
+   2. DOS FAMILIAS. Times para lo que se lee de lejos —título, secciones, días—
+      y Helvetica para lo que se lee de cerca. El contraste serifa/palo seco es
+      el truco editorial más viejo que hay y no cuesta un byte: las dos van en
+      las fuentes base de PDF.
+   3. ITINERARIO EN LÍNEA DE TIEMPO. Hora a la izquierda, un filete vertical y
+      el contenido a la derecha. Las tarjetas con borde de antes eran una
+      interfaz de app metida en un papel.
+
+   Se dibuja con las primitivas de jsPDF y NO con una captura de pantalla: el
+   texto sigue siendo texto, se busca y se copia, y el archivo pesa decenas de
+   KB (más la foto) en vez de varios MB.
    ============================================================ */
 
 // Las fuentes base de PDF van en WinAnsi (cp1252). Lo que no quepa ahí sale
@@ -14996,8 +15005,8 @@ function pdfTexto(v) {
     .replace(/[✓✔]/g, '+')
     // El menos tipográfico (U+2212) y los guiones no-cp1252 se caían enteros:
     // "UTC−3" salía "UTC3", que es peor que no poner nada.
-    .replace(/[\u2212\u2010\u2011\u2012]/g, '-')
-    .replace(/[\u00a0\u202f\u2007]/g, ' ');
+    .replace(/[−‐‑‒]/g, '-')
+    .replace(/[   ]/g, ' ');
   let out = '';
   for (const ch of s) {
     if (ch === '\n') { out += '\n'; continue; }
@@ -15012,18 +15021,23 @@ function pdfTexto(v) {
   return out.replace(/[ \t]{2,}/g, ' ').replace(/ +\n/g, '\n');
 }
 
-// Tinte claro de un color, para el fondo de sus pastillas. jsPDF no tiene
-// color-mix, así que se mezcla con blanco a mano.
-const pdfTinte = (c, f) => [
-  Math.round(255 - (255 - c[0]) * (f || 0.12)),
-  Math.round(255 - (255 - c[1]) * (f || 0.12)),
-  Math.round(255 - (255 - c[2]) * (f || 0.12)),
-];
+// Versalitas espaciadas, con el interletraje DE VERDAD del PDF (operador Tc)
+// y no metiendo espacios entre las letras.
+//
+// Con espacios inyectados el papel se ve igual, pero el texto extraído sale
+// como "U R U G U A Y" con basura entre medias: copiar un titular daba un
+// churro y ninguna búsqueda encontraba nada. jsPDF expone setCharSpace desde
+// la 2.x, así que no hay excusa.
+function pdfVersal(doc, s, x, y, o) {
+  o = o || {};
+  doc.setCharSpace(o.track != null ? o.track : 1.7);
+  doc.text(pdfTexto(s).toUpperCase(), x, y, { baseline: o.baseline || 'top', align: o.align });
+  doc.setCharSpace(0);
+}
 
 // Las claves de `structured_data` van sin acentos ('aerolinea', 'poliza'), así
-// que capitalizarlas a pelo daba "Aerolinea" y "Poliza". Las etiquetas buenas
-// ya existen en PLANNING_METADATA; se reutilizan y se completan a mano las que
-// solo aparecen en reservas.
+// que capitalizarlas a pelo daba "Aerolinea". Las etiquetas buenas ya existen
+// en PLANNING_METADATA; se reutilizan y se completan las que solo hay aquí.
 const PDF_ETIQUETAS = (() => {
   // Estas van fijadas a mano porque el mismo id tiene etiquetas distintas según
   // el tipo: `localizador` es "Localizador" en un vuelo y "Referencia" en un
@@ -15042,49 +15056,92 @@ const PDF_ETIQUETAS = (() => {
   });
   return m;
 })();
+const pdfEtiqueta = (k) => PDF_ETIQUETAS[k] || (String(k).charAt(0).toUpperCase() + String(k).slice(1));
 
-// ¿El dato ya está dicho en el título? "Palacio Salvo Suites · Nombre: Palacio
-// Salvo Suites" no informa de nada y ensucia la ficha.
-//
-// Igualdad exacta, no "uno contiene al otro": con esa regla más laxa, un seguro
-// titulado "IATI" se comía su propio "Póliza: IATI-99231", que es justo el dato
-// por el que abres el PDF en un mostrador.
+// ¿El dato ya está dicho en el título? Igualdad exacta, no "uno contiene al
+// otro": con esa regla más laxa, un seguro titulado "IATI" se comía su propio
+// "Póliza: IATI-99231", que es justo el dato por el que abres el PDF en un
+// mostrador.
 const pdfRepetido = (titulo, valor) => {
   const n = (x) => String(x).toLowerCase().replace(/[^a-z0-9áéíóúñü]/g, '');
   const a = n(titulo), b = n(valor);
   return !!(a && b && a === b);
 };
-const pdfEtiqueta = (k) => PDF_ETIQUETAS[k] || (String(k).charAt(0).toUpperCase() + String(k).slice(1));
 
+// Paleta cálida de folleto, no la azul de la app. Un catálogo de agencia se
+// mueve en tierras y verdes profundos; el azul de interfaz lo devuelve al
+// terreno del documento corporativo.
 const PDF_COLOR = {
-  ink:   [15, 26, 46],
-  muted: [110, 124, 145],
-  soft:  [148, 160, 178],
-  line:  [222, 228, 238],
-  panel: [246, 248, 252],
-  acc:   [37, 99, 235],
-  accBg: [234, 241, 255],
-  band:  [23, 47, 99],
-  band2: [37, 82, 168],
-  white: [255, 255, 255],
+  ink:    [28, 26, 23],      // negro cálido
+  deep:   [17, 58, 56],      // verde profundo: numerales y antetítulos
+  acc:    [186, 98, 51],     // terracota: filetes, precios, acentos
+  muted:  [122, 113, 102],
+  soft:   [163, 154, 141],
+  line:   [225, 217, 203],
+  sand:   [247, 243, 235],   // fondo de panel
+  paper:  [255, 255, 255],
+  white:  [255, 255, 255],
+  crema:  [252, 248, 240],
   tipo: {
-    hotel:[13,148,136], vuelo:[109,40,217], transporte:[3,105,161], coche:[169,105,10],
-    comida:[194,65,12], compras:[190,24,93], actividad:[37,99,235], playa:[8,145,178],
-    personas:[82,98,120], gestion:[82,98,120], lugar:[71,85,105], otro:[71,85,105],
+    hotel:[17,94,89], vuelo:[92,58,120], transporte:[24,86,116], coche:[152,96,26],
+    comida:[168,68,34], compras:[150,44,84], actividad:[186,98,51], playa:[20,116,124],
+    personas:[96,92,84], gestion:[96,92,84], lugar:[74,80,72], otro:[74,80,72],
   },
 };
+
+// Tinte claro de un color, para fondos. jsPDF no tiene color-mix.
+const pdfTinte = (c, f) => [
+  Math.round(255 - (255 - c[0]) * (f || 0.12)),
+  Math.round(255 - (255 - c[1]) * (f || 0.12)),
+  Math.round(255 - (255 - c[2]) * (f || 0.12)),
+];
+
+// Foto de portada, recortada al encuadre y pasada a JPEG.
+//
+// Puede fallar de tres maneras distintas y todas acaban igual —sin foto y con
+// la portada de color—, porque una guía sin imagen se sigue leyendo: que no
+// haya blob, que la URL externa no dé CORS, o que el canvas quede contaminado
+// y toDataURL lance.
+async function pdfFotoPortada(t, anchoPx, altoPx) {
+  try {
+    let blob = null;
+    if (t.cover_blob_id) {
+      const rec = await DB.getMedia(t.cover_blob_id);
+      if (rec && rec.blob) blob = rec.blob;
+    }
+    if (!blob && t.cover_photo_url) {
+      const r = await fetch(t.cover_photo_url, { mode: 'cors' });
+      if (r.ok) blob = await r.blob();
+    }
+    if (!blob) return null;
+    const bmp = await createImageBitmap(blob);
+    // Recorte centrado tipo `object-fit: cover`: llenar el marco sin deformar.
+    const escala = Math.max(anchoPx / bmp.width, altoPx / bmp.height);
+    const w = bmp.width * escala, h = bmp.height * escala;
+    const cv = document.createElement('canvas');
+    cv.width = anchoPx; cv.height = altoPx;
+    const cx = cv.getContext('2d');
+    cx.drawImage(bmp, (anchoPx - w) / 2, (altoPx - h) / 2, w, h);
+    const url = cv.toDataURL('image/jpeg', 0.82);
+    try { bmp.close(); } catch (_) {}
+    return url;
+  } catch (e) { console.warn('pdf portada', e); return null; }
+}
 
 // Lienzo: geometría, saltos de página y primitivas. Todo el estado (y, página,
 // sección actual) vive aquí dentro para que no haya nada compartido entre dos
 // exportaciones seguidas.
 function pdfLienzo(doc, tituloViaje) {
-  const W = 595.28, H = 841.89, M = 46, CW = W - M * 2;
-  const TOP = 68, BOT = H - 54;
+  const W = 595.28, H = 841.89, M = 54, CW = W - M * 2;
+  const TOP = 76, BOT = H - 62;
   const C = PDF_COLOR;
   let y = TOP, pag = 1, sec = '';
 
-  const font = (size, bold, color) => {
-    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+  // fam: 'serif' para lo que se lee de lejos, 'sans' para lo que se lee cerca.
+  const font = (size, bold, color, fam, italic) => {
+    const familia = fam === 'serif' ? 'times' : 'helvetica';
+    const estilo = italic ? (bold ? 'bolditalic' : 'italic') : (bold ? 'bold' : 'normal');
+    doc.setFont(familia, estilo);
     doc.setFontSize(size);
     const c = color || C.ink;
     doc.setTextColor(c[0], c[1], c[2]);
@@ -15093,20 +15150,21 @@ function pdfLienzo(doc, tituloViaje) {
   const stroke = (c) => doc.setDrawColor(c[0], c[1], c[2]);
 
   const api = {
-    W, H, M, CW, BOT,
+    W, H, M, CW, BOT, TOP,
     get y() { return y; },
     set y(v) { y = v; },
     get pag() { return pag; },
+    fill, stroke,
 
-    // Cabecera y pie de las páginas de contenido. La portada no los lleva.
+    // Pie de página. La cabecera se quita: en un folleto, una línea repetida
+    // arriba de cada hoja es de informe, no de catálogo.
     adorno() {
-      font(7.5, false, C.soft);
-      doc.text(pdfTexto(tituloViaje), M, 40, { baseline: 'middle' });
-      if (sec) doc.text(pdfTexto(sec), W - M, 40, { baseline: 'middle', align: 'right' });
-      stroke(C.line); doc.setLineWidth(0.6);
-      doc.line(M, 48, W - M, 48);
-      font(7.5, false, C.soft);
-      doc.text(String(pag), W / 2, H - 32, { baseline: 'middle', align: 'center' });
+      stroke(C.line); doc.setLineWidth(0.5);
+      doc.line(M, H - 46, W - M, H - 46);
+      font(6.6, false, C.soft);
+      pdfVersal(doc, String(tituloViaje).slice(0, 46), M, H - 34, { track: 1.3 });
+      font(8.5, false, C.acc, 'serif');
+      doc.text(String(pag), W - M, H - 35, { baseline: 'top', align: 'right' });
     },
 
     pagina(nombreSeccion) {
@@ -15127,7 +15185,7 @@ function pdfLienzo(doc, tituloViaje) {
     txt(s, x, yy, o) {
       o = o || {};
       const size = o.size || 9.5, lh = size * (o.lh || 1.32);
-      font(size, o.bold, o.color);
+      font(size, o.bold, o.color, o.fam, o.italic);
       const ls = doc.splitTextToSize(pdfTexto(s), o.w || CW);
       const usar = o.max ? ls.slice(0, o.max) : ls;
       if (o.max && ls.length > o.max) usar[usar.length - 1] = usar[usar.length - 1].replace(/.{2}$/, '…');
@@ -15135,206 +15193,309 @@ function pdfLienzo(doc, tituloViaje) {
       return usar.length * lh;
     },
 
-    // Título de sección: número, nombre y regla. Empieza página nueva salvo
-    // que quepa holgadamente, porque una sección que arranca a tres líneas del
-    // pie se lee fatal.
+    // txt() pinta todas las líneas de golpe donde le digas: vale para bloques
+    // cortos, pero una entrada de diario de dos folios se saldría por debajo
+    // del papel. Esto va línea a línea y salta de página cuando toca.
+    parrafo(s, o) {
+      o = o || {};
+      const size = o.size || 9, lh = size * (o.lh || 1.45);
+      const ls = doc.splitTextToSize(pdfTexto(s), o.w || CW);
+      ls.forEach(l => {
+        if (y + lh > BOT) this.pagina();
+        font(size, o.bold, o.color, o.fam, o.italic);
+        doc.text(l, o.x != null ? o.x : M, y, { baseline: 'top' });
+        y += lh;
+      });
+    },
+
+    // Antetítulo en versalitas espaciadas.
+    ante(s, x, yy, color, size) {
+      font(size || 6.8, true, color || C.acc);
+      pdfVersal(doc, s, x, yy);
+      return (size || 6.8) * 1.6;
+    },
+
+    filete(x, yy, ancho, color, grosor) {
+      stroke(color || C.acc); doc.setLineWidth(grosor || 1.6);
+      doc.line(x, yy, x + ancho, yy);
+    },
+
+    // Apertura de sección: numeral grande con serifa, título y filete corto.
+    // Es el elemento que más "catálogo" aporta y el que marca el ritmo.
     seccion(nombre, n) {
       sec = nombre;
-      if (y > BOT - 150) this.pagina(nombre);
-      // Una sección que empieza a media página necesita aire por arriba; una
-      // que estrena página, no: ya lo tiene.
-      y += (y > TOP + 4) ? 26 : 6;
-      fill(C.acc); doc.circle(M + 7, y + 7, 7, 'F');
-      font(8, true, C.white);
-      doc.text(String(n), M + 7, y + 7.6, { baseline: 'middle', align: 'center' });
-      font(15, true, C.ink);
-      doc.text(pdfTexto(nombre), M + 22, y + 7.6, { baseline: 'middle' });
+      if (y > BOT - 170) this.pagina(nombre);
+      y += (y > TOP + 4) ? 34 : 4;
+      font(40, false, pdfTinte(C.deep, 0.22), 'serif');
+      doc.text(String(n).padStart(2, '0'), M, y - 6, { baseline: 'top' });
+      font(19, true, C.deep, 'serif');
+      doc.text(pdfTexto(nombre), M + 46, y + 8, { baseline: 'top' });
+      y += 40;
+      this.filete(M + 46, y, 46, C.acc, 2);
       y += 20;
-      stroke(C.line); doc.setLineWidth(0.8); doc.line(M, y, W - M, y);
-      y += 14;
     },
 
     subtitulo(s) {
-      this.sitio(26);
-      y += this.txt(s, M, y, { size: 10.5, bold: true, color: C.ink }) + 6;
+      this.sitio(30);
+      y += this.ante(s, M, y + 2, C.muted, 7.2) + 6;
+      stroke(C.line); doc.setLineWidth(0.5);
+      doc.line(M, y - 2, W - M, y - 2);
+      y += 8;
     },
 
-    // Pastilla redondeada. Devuelve su ancho para poder ponerlas en fila.
-    chip(label, x, yy, colTexto, colFondo) {
-      const t = pdfTexto(label);
-      font(7.2, true, colTexto);
-      const w = doc.getTextWidth(t) + 13;
-      fill(colFondo); doc.roundedRect(x, yy, w, 13.5, 6.75, 6.75, 'F');
-      font(7.2, true, colTexto);
-      doc.text(t, x + 6.5, yy + 7.1, { baseline: 'middle' });
-      return w + 5;
+    // Fila etiqueta / valor con guía de puntos, como un índice de catálogo.
+    kvPunteado(k, v, yy) {
+      font(8.6, false, C.muted);
+      doc.text(pdfTexto(k), M, yy, { baseline: 'top' });
+      const wk = doc.getTextWidth(pdfTexto(k));
+      font(9.4, false, C.ink);
+      const t = pdfTexto(v);
+      const wv = doc.getTextWidth(t);
+      doc.text(t, W - M, yy, { baseline: 'top', align: 'right' });
+      const desde = M + wk + 6, hasta = W - M - wv - 6;
+      if (hasta > desde) {
+        stroke(C.line); doc.setLineWidth(0.5);
+        doc.setLineDashPattern([0.7, 2.6], 0);
+        doc.line(desde, yy + 7, hasta, yy + 7);
+        doc.setLineDashPattern([], 0);
+      }
+      return 17;
     },
 
-    // Fila etiqueta / valor, con la etiqueta a la izquierda en gris.
-    kv(k, v, x, yy, wTotal) {
-      const wk = 106;
-      this.txt(k, x, yy + 0.6, { size: 8.2, color: C.muted, w: wk - 8 });
-      return Math.max(12, this.txt(v, x + wk, yy, { size: 9.5, w: (wTotal || CW) - wk }));
-    },
-
-    panel(h) {
-      fill(C.panel); stroke(C.line); doc.setLineWidth(0.6);
-      doc.roundedRect(M, y, CW, h, 6, 6, 'FD');
+    panel(h, color, borde) {
+      fill(color || C.sand);
+      if (borde) { stroke(borde); doc.setLineWidth(0.6); doc.roundedRect(M, y, CW, h, 3, 3, 'FD'); }
+      else doc.roundedRect(M, y, CW, h, 3, 3, 'F');
     },
   };
   return api;
 }
 
 /* ---------- Portada ---------------------------------------------------- */
-function pdfPortada(doc, L, t, stats, indice) {
-  const C = PDF_COLOR, W = L.W, M = L.M, CW = L.CW;
+function pdfPortada(doc, L, t, stats, indice, foto) {
+  const C = PDF_COLOR, W = L.W, H = L.H, M = L.M, CW = L.CW;
+  const hFoto = 470;
+
+  if (foto) {
+    doc.addImage(foto, 'JPEG', 0, 0, W, hFoto, undefined, 'FAST');
+    // Velo oscuro para que el texto blanco se lea sobre cualquier foto. Un
+    // degradado de verdad no existe en jsPDF, así que se acumula opacidad:
+    // cada rectángulo va desde su altura HASTA EL PIE de la foto, no en
+    // franjas sueltas. Con franjas se veían las costuras entre una y otra.
+    const pasos = 34, desde = hFoto * 0.30;
+    doc.setFillColor(10, 18, 18);
+    for (let i = 0; i < pasos; i++) {
+      const yy = desde + (i / pasos) * (hFoto - desde);
+      doc.setGState(new doc.GState({ opacity: 0.055 }));
+      doc.rect(0, yy, W, hFoto - yy, 'F');
+    }
+    doc.setGState(new doc.GState({ opacity: 0.18 }));
+    doc.rect(0, 0, W, hFoto, 'F');
+    doc.setGState(new doc.GState({ opacity: 1 }));
+  } else {
+    doc.setFillColor(C.deep[0], C.deep[1], C.deep[2]);
+    doc.rect(0, 0, W, hFoto, 'F');
+    // Sin foto, un par de arcos concéntricos evitan el rectángulo plano.
+    doc.setGState(new doc.GState({ opacity: 0.10 }));
+    doc.setFillColor(255, 255, 255);
+    doc.circle(W - 60, 70, 190, 'F'); doc.circle(40, hFoto - 30, 130, 'F');
+    doc.setGState(new doc.GState({ opacity: 1 }));
+  }
+
+  // Marco fino: detalle de catálogo impreso.
+  doc.setDrawColor(255, 255, 255); doc.setLineWidth(0.8);
+  doc.setGState(new doc.GState({ opacity: 0.5 }));
+  doc.rect(24, 24, W - 48, hFoto - 48, 'S');
+  doc.setGState(new doc.GState({ opacity: 1 }));
 
   // En un viaje multidestino, city y country traen los dos una lista y
   // concatenarlas daba "Montevideo, Buenos Aires, Santiago, Uruguay,
   // Argentina, Chile". Cuando hay varias ciudades, los tramos ya dan el
   // detalle: aquí basta con los países.
   const variasCiudades = String(t.city || '').includes(',');
-  const destino = variasCiudades
-    ? (t.country || t.city || '')
-    : [t.city, t.country].filter(Boolean).join(', ');
+  const destino = variasCiudades ? (t.country || t.city || '')
+                                 : [t.city, t.country].filter(Boolean).join(', ');
 
-  // La altura de la banda se calcula ANTES de pintarla: con un alto fijo, un
-  // título de una línea dejaba un palmo de azul vacío debajo.
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(33);
-  const todas = doc.splitTextToSize(pdfTexto(t.name), CW);
-  const lineas = todas.slice(0, 3);
-  // Si el nombre no cabe en tres líneas, que se note que está cortado.
-  if (todas.length > 3) lineas[2] = lineas[2].replace(/.{2}$/, '…');
-  const hBanda = 100 + lineas.length * 38 + 8 + (destino ? 20 : 0) + 18 + 30;
-
-  doc.setFillColor(C.band[0], C.band[1], C.band[2]);
-  doc.rect(0, 0, W, hBanda, 'F');
-  doc.setFillColor(C.band2[0], C.band2[1], C.band2[2]);
-  doc.rect(0, hBanda - 14, W, 14, 'F');
-
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.4);
   doc.setTextColor(255, 255, 255);
-  // Espaciado manual: jsPDF no tiene letter-spacing y una antetítulo apretada
-  // pierde todo el aire que le da sentido.
-  doc.text('G U Í A   D E   V I A J E', M, 62, { baseline: 'top' });
+  pdfVersal(doc, destino || 'Itinerario propuesto', 48, 322, { track: 2 });
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(33);
+  doc.setFont('times', 'bold'); doc.setFontSize(40);
+  const todas = doc.splitTextToSize(pdfTexto(t.name), CW - 20);
+  const lineas = todas.slice(0, 2);
+  if (todas.length > 2) lineas[1] = lineas[1].replace(/.{2}$/, '…');
   doc.setTextColor(255, 255, 255);
-  lineas.forEach((l, i) => doc.text(l, M, 100 + i * 38, { baseline: 'top' }));
-  let yy = 100 + lineas.length * 38 + 8;
+  lineas.forEach((l, i) => doc.text(l, 46, 340 + i * 44, { baseline: 'top' }));
 
-  if (destino) {
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(12.5);
-    doc.setTextColor(206, 220, 245);
-    doc.text(pdfTexto(destino), M, yy, { baseline: 'top' });
-    yy += 20;
-  }
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
-  doc.setTextColor(255, 255, 255);
-  doc.text(pdfTexto(stats.fechas), M, yy, { baseline: 'top' });
+  doc.setDrawColor(C.acc[0], C.acc[1], C.acc[2]); doc.setLineWidth(2.4);
+  doc.line(48, 340 + lineas.length * 44 + 12, 48 + 54, 340 + lineas.length * 44 + 12);
 
-  // Tira de datos: cuatro cifras que resumen el viaje de un vistazo.
-  L.y = hBanda + 30;
-  const cajas = stats.tiles;
-  const gap = 12, wCaja = (CW - gap * (cajas.length - 1)) / cajas.length;
+  // Tira de cifras: sin cajas, separadas por filetes. Una cifra grande con
+  // serifa y su etiqueta en versalitas debajo.
+  L.y = hFoto + 46;
+  const cajas = stats.tiles, n = cajas.length;
+  const wCaja = CW / n;
   cajas.forEach((c, i) => {
-    const x = M + i * (wCaja + gap);
-    doc.setFillColor(C.panel[0], C.panel[1], C.panel[2]);
-    doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(0.6);
-    doc.roundedRect(x, L.y, wCaja, 58, 6, 6, 'FD');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
-    doc.setTextColor(C.acc[0], C.acc[1], C.acc[2]);
-    doc.text(pdfTexto(c[0]), x + wCaja / 2, L.y + 22, { baseline: 'middle', align: 'center' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6);
+    const cx = M + i * wCaja + wCaja / 2;
+    doc.setFont('times', 'bold'); doc.setFontSize(21);
+    doc.setTextColor(C.deep[0], C.deep[1], C.deep[2]);
+    doc.text(pdfTexto(c[0]), cx, L.y, { baseline: 'top', align: 'center' });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.4);
     doc.setTextColor(C.muted[0], C.muted[1], C.muted[2]);
-    doc.text(pdfTexto(c[1]), x + wCaja / 2, L.y + 42, { baseline: 'middle', align: 'center' });
-  });
-  L.y += 58 + 34;
-
-  if (indice.length) {
-    L.txt('EN ESTE DOCUMENTO', M, L.y, { size: 7.6, bold: true, color: C.soft });
-    L.y += 18;
-    indice.forEach((nombre, i) => {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.setTextColor(C.acc[0], C.acc[1], C.acc[2]);
-      doc.text(String(i + 1), M + 5, L.y + 4, { baseline: 'middle', align: 'center' });
-      L.txt(nombre, M + 18, L.y, { size: 10 });
+    pdfVersal(doc, c[1], cx, L.y + 26, { align: 'center', track: 1.4 });
+    if (i) {
       doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(0.5);
-      doc.line(M, L.y + 15, W - M, L.y + 15);
-      L.y += 22;
-    });
-  }
+      doc.line(M + i * wCaja, L.y - 2, M + i * wCaja, L.y + 34);
+    }
+  });
+  L.y += 52;
+
+  doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(0.5);
+  doc.line(M, L.y, L.W - M, L.y);
+  L.y += 22;
+
+  // Las fechas, en grande y con serifa: es el dato que se busca primero.
+  doc.setFont('times', 'normal'); doc.setFontSize(13);
+  doc.setTextColor(C.ink[0], C.ink[1], C.ink[2]);
+  doc.text(pdfTexto(stats.fechas), M, L.y, { baseline: 'top' });
+  L.y += 26;
 
   if (t.notes) {
-    L.y += 8;
-    const h = L.alto(t.notes, 9, CW - 24) + 24;
-    if (L.y + h < L.BOT) {
-      L.panel(h);
-      L.txt(t.notes, M + 12, L.y + 12, { size: 9, w: CW - 24, color: C.muted });
-      L.y += h;
-    }
+    L.y += 4;
+    L.y += L.txt(t.notes, M, L.y, { size: 10, fam: 'serif', italic: true, color: C.muted, w: CW - 40, max: 4, lh: 1.45 });
   }
 
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.4);
+  // El recorrido, en versalitas al pie. Cierra la portada y evita que el tercio
+  // inferior quede en blanco: en un folleto, la ruta es parte del reclamo.
+  if (stats.ruta) {
+    L.y += 24;
+    doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(0.5);
+    doc.line(M, L.y, W - M, L.y);
+    L.y += 16;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.4);
+    doc.setTextColor(C.deep[0], C.deep[1], C.deep[2]);
+    // splitTextToSize no sabe del interletraje, así que se parte a un ancho
+    // más corto para dejarle sitio.
+    doc.splitTextToSize(pdfTexto(stats.ruta).toUpperCase(), CW * 0.6).slice(0, 2)
+      .forEach((l, i) => pdfVersal(doc, l, M, L.y + i * 14, { track: 2 }));
+  }
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.6);
   doc.setTextColor(C.soft[0], C.soft[1], C.soft[2]);
-  doc.text(pdfTexto('Generada el ' + fmtDate(todayIso(), { day:'numeric', month:'long', year:'numeric' })),
-    M, L.H - 36, { baseline: 'top' });
+  pdfVersal(doc, 'Generada el ' + fmtDate(todayIso(), { day:'numeric', month:'long', year:'numeric' }),
+    M, H - 42, { track: 1.3 });
 }
 
-/* ---------- Un evento del itinerario ----------------------------------- */
-// Devuelve el alto que ocupa. Se calcula ANTES de dibujar para poder decidir
-// el salto de página: medir después obliga a repintar o a partir la tarjeta.
+/* ---------- Índice ------------------------------------------------------ */
+// `paginas` llega en la SEGUNDA pasada (ver PdfGuia.construir): en la primera
+// todavía no se sabe en qué hoja cae cada sección. Sin números, un índice de
+// catálogo no sirve de nada; con ellos hay que maquetar dos veces.
+function pdfIndice(doc, L, indice, paginas) {
+  const C = PDF_COLOR;
+  L.y = L.TOP + 14;
+  L.ante('En esta guía', L.M, L.y, C.acc, 7.2);
+  L.y += 20;
+  doc.setFont('times', 'bold'); doc.setFontSize(26);
+  doc.setTextColor(C.deep[0], C.deep[1], C.deep[2]);
+  doc.text('Contenido', L.M, L.y, { baseline: 'top' });
+  L.y += 56;
+  indice.forEach((it, i) => {
+    doc.setFont('times', 'normal'); doc.setFontSize(11.5);
+    doc.setTextColor(C.acc[0], C.acc[1], C.acc[2]);
+    doc.text(String(i + 1).padStart(2, '0'), L.M, L.y + 2, { baseline: 'top' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11.5);
+    doc.setTextColor(C.ink[0], C.ink[1], C.ink[2]);
+    const nombre = pdfTexto(it.nombre);
+    doc.text(nombre, L.M + 32, L.y, { baseline: 'top' });
+    const wn = doc.getTextWidth(nombre);
+    const num = paginas && paginas[i] ? String(paginas[i]) : '';
+    if (num) {
+      doc.setFont('times', 'normal'); doc.setFontSize(11.5);
+      doc.setTextColor(C.deep[0], C.deep[1], C.deep[2]);
+      doc.text(num, L.W - L.M, L.y + 1, { baseline: 'top', align: 'right' });
+      const wnum = doc.getTextWidth(num);
+      const dDesde = L.M + 32 + wn + 8, dHasta = L.W - L.M - wnum - 8;
+      if (dHasta > dDesde) {
+        L.stroke(C.line); doc.setLineWidth(0.6);
+        doc.setLineDashPattern([0.7, 3], 0);
+        doc.line(dDesde, L.y + 9, dHasta, L.y + 9);
+        doc.setLineDashPattern([], 0);
+      }
+    }
+    L.y += 32;
+  });
+}
+
+/* ---------- Una parada, sobre la línea de tiempo ------------------------ */
+// El alto se calcula ANTES de dibujar para decidir el salto de página: medirlo
+// después obliga a repintar o a partir el bloque entre dos hojas.
+const PDF_SPINE = 62;     // x del filete vertical, relativo al margen
 function pdfEventoAlto(L, ev) {
-  let h = 15;                                    // título
-  // Con tope: una tarjeta no puede crecer más que una página, o el salto de
-  // página no la salvaría de salirse por abajo.
-  if (ev.meta) h += Math.min(L.alto(ev.meta, 8.4, L.CW - 46), 4 * 8.4 * 1.32);
-  if (ev.dir)  h += L.alto(ev.dir, 8.4, L.CW - 46);
-  if (ev.notas) h += Math.min(L.alto(ev.notas, 8.6, L.CW - 46), 8 * 8.6 * 1.32) + 3;
-  if (ev.chips && ev.chips.length) h += 17;
-  return h + 15;
+  const w = L.CW - PDF_SPINE - 12;
+  let h = 14;
+  // Con tope: un bloque no puede crecer más que una página, o el salto no lo
+  // salvaría de salirse por abajo.
+  if (ev.meta)  h += Math.min(L.alto(ev.meta, 8.3, w), 4 * 8.3 * 1.32) + 2;
+  if (ev.dir)   h += L.alto(ev.dir, 8.3, w);
+  if (ev.notas) h += Math.min(L.alto(ev.notas, 8.8, w), 8 * 8.8 * 1.4) + 5;
+  if (ev.chips && ev.chips.length) h += 14;
+  return h + 16;
 }
 
-function pdfEvento(doc, L, ev) {
+function pdfEvento(doc, L, ev, ultimo, primero) {
   const C = PDF_COLOR, M = L.M;
   const h = pdfEventoAlto(L, ev);
-  L.sitio(h);
+  L.sitio(h + 10);
   const col = C.tipo[ev.tipo] || C.tipo.otro;
-  // Barra de color a la izquierda: identifica el tipo sin gastar una línea de
-  // texto en decirlo, y en blanco y negro sigue leyéndose como una tarjeta.
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(0.6);
-  doc.roundedRect(M, L.y, L.CW, h - 6, 5, 5, 'FD');
-  doc.setFillColor(col[0], col[1], col[2]);
-  doc.roundedRect(M, L.y, 3.5, h - 6, 1.75, 1.75, 'F');
+  const xSpine = M + PDF_SPINE - 16;
+  const x = M + PDF_SPINE, w = L.CW - PDF_SPINE;
 
-  let iy = L.y + 9;
-  const x = M + 14, w = L.CW - 46;
+  // Filete vertical continuo entre paradas: es lo que convierte una lista en
+  // un recorrido. Cada parada dibuja su tramo desde donde acabó la anterior
+  // hasta donde empieza la siguiente, así que se sueldan sin costura; la
+  // primera arranca en su punto y la última termina en el suyo, sin cabos.
+  L.stroke(C.line); doc.setLineWidth(0.7);
+  doc.line(xSpine, L.y + (primero ? 6 : 0), xSpine, L.y + (ultimo ? 6 : h));
+  L.fill(col); doc.circle(xSpine, L.y + 6, 3.1, 'F');
+  L.fill(C.paper); doc.circle(xSpine, L.y + 6, 1.3, 'F');
+
+  // Hora en su propia columna, alineada a la derecha contra el filete.
   if (ev.hora) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.4);
-    doc.setTextColor(col[0], col[1], col[2]);
-    doc.text(pdfTexto(ev.hora), L.M + L.CW - 12, iy + 1, { baseline: 'top', align: 'right' });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.6);
+    doc.setTextColor(C.ink[0], C.ink[1], C.ink[2]);
+    doc.text(pdfTexto(ev.hora), xSpine - 10, L.y + 2, { baseline: 'top', align: 'right' });
   }
-  iy += L.txt(ev.titulo, x, iy, { size: 10.3, bold: true, w: w, max: 2 });
-  if (ev.meta)  iy += L.txt(ev.meta,  x, iy + 1, { size: 8.4, color: C.muted, w: w, max: 4 });
-  if (ev.dir)   iy += L.txt(ev.dir,   x, iy + 1, { size: 8.4, color: C.soft,  w: w });
-  if (ev.notas) iy += L.txt(ev.notas, x, iy + 3, { size: 8.6, color: C.muted, w: w, max: 8 }) + 2;
+
+  let iy = L.y;
+  // Tipo en versalitas del color de su categoría: dice qué es sin gastar una
+  // línea y sin la caja de colores de una interfaz.
   if (ev.chips && ev.chips.length) {
-    let cx = x;
-    const tinte = pdfTinte(col);
-    ev.chips.forEach(c => { cx += L.chip(c, cx, iy + 2, col, tinte); });
-    iy += 17;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.4);
+    doc.setTextColor(col[0], col[1], col[2]);
+    pdfVersal(doc, ev.chips[0], x, iy, { track: 1.5 });
+    iy += 12;
+  }
+  iy += L.txt(ev.titulo, x, iy, { size: 11.5, fam: 'serif', bold: true, w: w, max: 2, lh: 1.2 });
+  if (ev.meta)  iy += L.txt(ev.meta,  x, iy + 2, { size: 8.3, color: C.muted, w: w, max: 4 }) + 2;
+  if (ev.dir)   iy += L.txt(ev.dir,   x, iy, { size: 8.3, color: C.soft, w: w });
+  if (ev.notas) iy += L.txt(ev.notas, x, iy + 5, { size: 8.8, color: C.ink, w: w, max: 8, lh: 1.4 }) + 5;
+
+  // Etiquetas secundarias (precio, "hasta el…") al final, discretas.
+  const extra = (ev.chips || []).slice(1);
+  if (extra.length) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.setTextColor(C.acc[0], C.acc[1], C.acc[2]);
+    doc.text(pdfTexto(extra.join('   ·   ')), x, iy + 2, { baseline: 'top' });
   }
   L.y += h;
 }
 
-
 const PdfGuia = {
+  // Se maqueta DOS VECES: la primera para saber en qué página cae cada sección
+  // y la segunda para poder escribir esos números en el índice. Los datos y la
+  // foto se preparan una sola vez, así que la segunda pasada es solo dibujo
+  // (unas décimas) y a cambio el índice deja de ser una lista sin referencias.
   async construir(t) {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit:'pt', format:'a4', compress:true });
-    doc.setProperties({ title: t.name, subject: 'Guía de viaje', creator: 'Viajes' });
-
     const d = {
       planning:  await DB.listByTrip('planning_items', t.id),
       bookings:  await DB.listByTrip('bookings', t.id),
@@ -15349,60 +15510,83 @@ const PdfGuia = {
       diary:     await DB.listByTrip('diary', t.id),
       info:      (await DB.listByTrip('destination_info', t.id))[0] || null,
     };
+    const foto = await pdfFotoPortada(t, 1240, 980);
+    const primera = this._maquetar(t, d, foto, null);
+    return this._maquetar(t, d, foto, primera.paginas).doc;
+  },
+
+  _maquetar(t, d, foto, paginas) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit:'pt', format:'a4', compress:true });
+    doc.setProperties({ title: t.name, subject: 'Guía de viaje', creator: 'Viajes' });
 
     const L = pdfLienzo(doc, t.name);
     const C = PDF_COLOR;
     const dias = (t.start_date && t.end_date) ? daysBetween(t.start_date, t.end_date) + 1 : 0;
     const totalEur = d.budget.reduce((a, b) => a + (Number(b.amount_eur) || 0), 0);
+    const nDias = new Set(d.planning.map(p => p.day_date).filter(Boolean)).size;
 
-    // Qué secciones existen de verdad. El índice de la portada y la numeración
-    // salen de aquí, así que nunca prometen una sección vacía.
+    // Qué secciones existen de verdad. El índice y la numeración salen de aquí,
+    // así que nunca prometen una sección vacía.
     const secciones = [];
-    const hay = (nombre, cond, pinta) => { if (cond) secciones.push({ nombre, pinta }); };
-    hay('Resumen',            true,                 () => this.resumen(doc, L, t, d, dias, totalEur));
-    hay('Itinerario',         d.planning.length,    () => this.itinerario(doc, L, t, d));
-    hay('Reservas',           d.bookings.length,    () => this.reservas(doc, L, d));
-    hay('Presupuesto',        d.budget.length,      () => this.presupuesto(doc, L, d, totalEur));
-    hay('Gastos compartidos', d.shared.length,      () => this.gastos(doc, L, d));
-    hay('Direcciones útiles', d.addresses.length,   () => this.direcciones(doc, L, d));
-    hay('Ficha del destino',  !!(d.info || d.contacts.length || d.phrases.length),
-                                                    () => this.destino(doc, L, d));
-    hay('Maleta',             d.packing.length,     () => this.maleta(doc, L, d));
-    hay('Diario',             d.diary.length,       () => this.diario(doc, L, d));
+    const hay = (nombre, cond, pista, pinta) => { if (cond) secciones.push({ nombre, pista, pinta }); };
+    hay('El viaje',           true, [t.city, t.country].filter(Boolean).join(', ').slice(0, 46) || null,
+                                    () => this.resumen(doc, L, t, d, dias, totalEur));
+    hay('Itinerario',         d.planning.length, nDias ? nDias + (nDias === 1 ? ' día' : ' días') : null,
+                                    () => this.itinerario(doc, L, t, d));
+    hay('Reservas',           d.bookings.length, d.bookings.length + '', () => this.reservas(doc, L, d));
+    hay('Presupuesto',        d.budget.length, totalEur ? fmtMoney(Math.round(totalEur), 'EUR').replace(/,00/, '') : null,
+                                    () => this.presupuesto(doc, L, d, totalEur));
+    hay('Gastos compartidos', d.shared.length, null, () => this.gastos(doc, L, d));
+    hay('Direcciones útiles', d.addresses.length, null, () => this.direcciones(doc, L, d));
+    hay('Ficha del destino',  !!(d.info || d.contacts.length || d.phrases.length), null,
+                                    () => this.destino(doc, L, d));
+    hay('Maleta',             d.packing.length, d.packing.length + ' cosas', () => this.maleta(doc, L, d));
+    hay('Diario',             d.diary.length, null, () => this.diario(doc, L, d));
 
     pdfPortada(doc, L, t, {
       fechas: (t.start_date && t.end_date)
-        ? fmtDate(t.start_date, { day:'numeric', month:'long', year:'numeric' }) + '  –  '
+        ? fmtDate(t.start_date, { day:'numeric', month:'long', year:'numeric' }) + '  —  '
           + fmtDate(t.end_date, { day:'numeric', month:'long', year:'numeric' })
         : 'Fechas por definir',
       tiles: [
         [dias ? String(dias) : '—', dias === 1 ? 'día' : 'días'],
         [String(d.planning.length), d.planning.length === 1 ? 'parada' : 'paradas'],
         [String(d.bookings.length), d.bookings.length === 1 ? 'reserva' : 'reservas'],
-        // Sin decimales: en una cifra de portada los céntimos solo estorban y
-        // obligan a encoger la tipografía.
+        // Sin decimales: en una cifra de portada los céntimos solo estorban.
         [totalEur ? fmtMoney(Math.round(totalEur), 'EUR').replace(/,00/, '') : '—', 'presupuesto'],
       ],
-    }, secciones.map(s => s.nombre));
+      ruta: d.legs.length > 1
+        ? d.legs.slice().sort((a, b) => String(a.arrival_date || '').localeCompare(String(b.arrival_date || '')))
+            .map(l => l.city).filter(Boolean).join('  -  ')
+        : null,
+    }, secciones, foto);
 
-    // Antes cada sección abría página. Con nueve secciones y pocos datos salían
-    // once hojas medio vacías. Ahora fluyen y solo se corta donde hace falta:
-    // la primera (venimos de la portada) y el itinerario, que es largo y se lee
-    // mucho mejor empezando arriba.
+    // El índice va en su propia página: en un folleto es una parada, no una
+    // lista apretada al pie de la portada.
+    if (secciones.length > 2) { L.pagina(''); pdfIndice(doc, L, secciones, paginas); }
+
+    const dondeCae = [];
     secciones.forEach((s, i) => {
-      // El itinerario se lee mucho mejor empezando arriba, pero forzar el salto
-      // siempre dejaba media hoja en blanco detrás del resumen. Solo salta si
-      // no cabría ni un día entero.
-      if (i === 0 || (s.nombre === 'Itinerario' && L.y > L.BOT - 320)) L.pagina(s.nombre);
+      // El itinerario se lee mucho mejor empezando arriba; el resto fluye para
+      // no dejar medias hojas en blanco.
+      if (i === 0 || (s.nombre === 'Itinerario' && L.y > L.BOT - 340)) L.pagina(s.nombre);
+      dondeCae.push(L.pag);
       L.seccion(s.nombre, i + 1);
       s.pinta();
     });
-    return doc;
+    return { doc, paginas: dondeCae };
   },
 
-  /* ---- 1. Resumen ---- */
+  /* ---- 1. El viaje ---- */
   resumen(doc, L, t, d, dias, totalEur) {
     const C = PDF_COLOR;
+    if (t.notes) {
+      // Entradilla: el texto del viaje, grande y con serifa. Es lo que en un
+      // folleto vende el plan antes de que nadie mire una tabla.
+      L.parrafo(t.notes, { size: 11.5, fam: 'serif', color: C.ink, lh: 1.5, w: L.CW - 30 });
+      L.y += 18;
+    }
     const filas = [
       ['Destino', t.city || t.country],
       ['País', t.city ? t.country : null],
@@ -15410,29 +15594,31 @@ const PdfGuia = {
       ['Duración', dias ? dias + (dias === 1 ? ' día' : ' días') : null],
       ['Estado', t.in_preparation ? 'En preparación' : statusDays(t)],
       ['Moneda', t.default_currency || 'EUR'],
-      ['Presupuesto', totalEur ? fmtMoney(totalEur, 'EUR') : null],
+      ['Presupuesto estimado', totalEur ? fmtMoney(totalEur, 'EUR') : null],
     ].filter(r => r[1]);
-    const h = filas.length * 17 + 20;
-    L.sitio(h); L.panel(h);
-    let iy = L.y + 11;
-    filas.forEach(r => { iy += L.kv(r[0], r[1], L.M + 14, iy, L.CW - 28) + 4; });
-    L.y += h + 18;
+    L.sitio(filas.length * 17 + 10);
+    filas.forEach(r => { L.y += L.kvPunteado(r[0], r[1], L.y); });
+    L.y += 18;
 
     // Tramos: el esqueleto del viaje antes de entrar en el detalle del día.
     const legs = d.legs.slice().sort((a, b) => String(a.arrival_date || '').localeCompare(String(b.arrival_date || '')));
     if (legs.length) {
-      L.subtitulo('Tramos');
-      legs.forEach(l => {
-        L.sitio(24);
-        doc.setFillColor(C.acc[0], C.acc[1], C.acc[2]);
-        doc.circle(L.M + 4, L.y + 6, 3, 'F');
+      L.subtitulo('El recorrido');
+      legs.forEach((l, i) => {
+        L.sitio(34);
+        const noches = (l.arrival_date && l.departure_date) ? daysBetween(l.arrival_date, l.departure_date) : 0;
+        doc.setFont('times', 'bold'); doc.setFontSize(10);
+        doc.setTextColor(C.acc[0], C.acc[1], C.acc[2]);
+        doc.text(String(i + 1).padStart(2, '0'), L.M, L.y + 2, { baseline: 'top' });
+        L.txt([l.city, l.country].filter(Boolean).join(', ') || 'Tramo', L.M + 24, L.y, {
+          size: 11, fam: 'serif', bold: true, w: L.CW - 190 });
         const rango = [l.arrival_date && fmtDateShort(l.arrival_date), l.departure_date && fmtDateShort(l.departure_date)]
           .filter(Boolean).join(' – ');
-        L.txt([l.city, l.country].filter(Boolean).join(', ') || 'Tramo', L.M + 14, L.y, { size: 9.8, bold: true, w: L.CW - 130 });
-        if (rango) L.txt(rango, L.M + L.CW, L.y + 1, { size: 8.6, color: C.muted, align: 'right' });
-        L.y += 19;
+        L.txt(rango + (noches ? '   ·   ' + noches + (noches === 1 ? ' noche' : ' noches') : ''),
+          L.W - L.M, L.y + 3, { size: 8.4, color: C.muted, align: 'right' });
+        L.y += 24;
       });
-      L.y += 8;
+      L.y += 6;
     }
   },
 
@@ -15447,6 +15633,7 @@ const PdfGuia = {
     const byDay = {};
     d.planning.forEach(p => { const k = p.day_date || 'sin-fecha'; (byDay[k] = byDay[k] || []).push(p); });
     const dias = Object.keys(byDay).sort((a, b) => (a === 'sin-fecha') - (b === 'sin-fecha') || a.localeCompare(b));
+    const primerDia = dias.find(x => x !== 'sin-fecha');
 
     dias.forEach(iso => {
       const items = byDay[iso].slice().sort((a, b) => {
@@ -15456,30 +15643,42 @@ const PdfGuia = {
         return String(a.time || '~').localeCompare(String(b.time || '~'))
             || (a.order_index || 0) - (b.order_index || 0);
       });
-      const nota = notaDe[iso];
-      L.sitio(78);
-      // Banda del día
-      doc.setFillColor(C.accBg[0], C.accBg[1], C.accBg[2]);
-      doc.roundedRect(L.M, L.y, L.CW, 28, 5, 5, 'F');
-      doc.setFillColor(C.acc[0], C.acc[1], C.acc[2]);
-      doc.roundedRect(L.M, L.y, 4, 28, 2, 2, 'F');
-      const titulo = iso === 'sin-fecha' ? 'Sin fecha asignada' : fmtDayLong(iso);
-      L.txt(titulo.charAt(0).toUpperCase() + titulo.slice(1), L.M + 14, L.y + 8, { size: 10.5, bold: true, color: C.band, w: L.CW - 150 });
-      const ciudad = iso !== 'sin-fecha' && ciudadDe(iso);
-      if (ciudad) L.txt(ciudad, L.M + L.CW - 12, L.y + 9.5, { size: 8.6, color: C.acc, align: 'right' });
-      L.y += 34;
+      L.sitio(120);
+      L.y += 10;
 
-      if (nota && nota.text) {
-        const h = L.alto(nota.text, 8.8, L.CW - 26) + 16;
+      // Cabecera del día: antetítulo "DÍA 03 · MONTEVIDEO", fecha grande con
+      // serifa y filete corto. Sin banda de color de fondo: en papel, una
+      // banda por día convierte el folleto en un formulario.
+      const nDia = (iso !== 'sin-fecha' && primerDia) ? daysBetween(primerDia, iso) + 1 : 0;
+      const ciudad = iso !== 'sin-fecha' ? ciudadDe(iso) : null;
+      const ante = iso === 'sin-fecha'
+        ? 'Sin fecha'
+        : [nDia ? 'Día ' + String(nDia).padStart(2, '0') : null, ciudad].filter(Boolean).join('  ·  ');
+      L.ante(ante, L.M, L.y, C.acc, 7);
+      L.y += 14;
+      const titulo = iso === 'sin-fecha' ? 'Ideas sin día asignado' : fmtDayLong(iso);
+      L.txt(titulo.charAt(0).toUpperCase() + titulo.slice(1), L.M, L.y, {
+        size: 16, fam: 'serif', bold: true, color: C.deep, w: L.CW });
+      L.y += 24;
+      L.filete(L.M, L.y, 34, C.acc, 2);
+      L.y += 16;
+
+      if (notaDe[iso] && notaDe[iso].text) {
+        // La nota del día, en cursiva con serifa y sobre fondo crema: se lee
+        // como el comentario del que ha diseñado el viaje.
+        const w = L.CW - 40;
+        const h = Math.min(L.alto(notaDe[iso].text, 9.6, w), 10 * 9.6 * 1.45) + 24;
         L.sitio(h);
-        doc.setFillColor(253, 248, 235); doc.setDrawColor(228, 205, 150); doc.setLineWidth(0.6);
-        doc.roundedRect(L.M, L.y, L.CW, h, 4, 4, 'FD');
-        L.txt(nota.text, L.M + 13, L.y + 8, { size: 8.8, color: [122, 92, 20], w: L.CW - 26 });
-        L.y += h + 7;
+        L.panel(h, C.crema);
+        L.fill(C.acc); doc.rect(L.M, L.y, 2.5, h, 'F');
+        L.txt(notaDe[iso].text, L.M + 20, L.y + 12, {
+          size: 9.6, fam: 'serif', italic: true, color: C.ink, w: w, max: 10, lh: 1.45 });
+        L.y += h + 14;
       }
 
-      items.forEach(p => pdfEvento(doc, L, this._evento(p, t)));
-      L.y += 9;
+      items.forEach((p, i) => pdfEvento(doc, L, this._evento(p, t),
+        i === items.length - 1, i === 0));
+      L.y += 12;
     });
   },
 
@@ -15497,22 +15696,21 @@ const PdfGuia = {
       if (f.type === 'url' || f.id === 'origen' || f.id === 'destino') return;
       const v = m[f.id];
       if (v == null || v === '' || (Array.isArray(v) && !v.length)) return;
-      // "Hotel Palacio Salvo · Nombre del alojamiento: Palacio Salvo Suites" no
-      // aporta nada: si el metadato ya está dicho en el título, se calla.
+      // "Hotel Palacio Salvo · Nombre: Palacio Salvo Suites" no aporta nada.
       const txt = Array.isArray(v) ? v.join(', ') : String(v);
       if (pdfRepetido(p.title, txt)) return;
       meta.push(f.label + ': ' + txt);
     });
     if (p.place_name && p.place_name !== p.title) meta.unshift(p.place_name);
     const chips = [def.label];
-    if (p.end_date && p.end_date !== p.day_date) chips.push('hasta ' + fmtDateShort(p.end_date));
+    if (p.end_date && p.end_date !== p.day_date) chips.push('hasta el ' + fmtDateShort(p.end_date));
     if (p.in_consultation) chips.push('En consulta');
     if (p.consultation_price != null) chips.push(fmtMoney(p.consultation_price, t.default_currency || 'EUR'));
     return {
       tipo: p.type,
       titulo: p.title || def.label,
       hora: (!def.hideTime && p.time) ? p.time : null,
-      meta: meta.join('  ·  ') || null,
+      meta: meta.join('   ·   ') || null,
       dir: p.address || null,
       notas: p.notes || null,
       chips,
@@ -15521,12 +15719,12 @@ const PdfGuia = {
 
   /* ---- 3. Reservas ---- */
   reservas(doc, L, d) {
-    const C = PDF_COLOR;
     const porTipo = {};
     d.bookings.forEach(b => { (porTipo[b.type] = porTipo[b.type] || []).push(b); });
     Object.keys(porTipo).forEach(tipo => {
       L.subtitulo(TYPES_BOOKING.find(x => x.id === tipo)?.label || tipo);
-      porTipo[tipo].forEach(b => {
+      const lista = porTipo[tipo];
+      lista.forEach((b, i) => {
         const titulo = (b.structured_data || {}).nombre || (b.structured_data || {}).aerolinea
           || (b.structured_data || {}).compania || (TYPES_BOOKING.find(x => x.id === tipo)?.label || tipo);
         const datos = Object.entries(b.structured_data || {})
@@ -15536,58 +15734,63 @@ const PdfGuia = {
         pdfEvento(doc, L, {
           tipo: tipo === 'tren' || tipo === 'ferry' ? 'transporte' : tipo,
           titulo,
-          meta: datos.join('  ·  ') || null,
+          meta: datos.join('   ·   ') || null,
           dir: b.doc_url ? ('Documento: ' + (b.doc_name || b.doc_url)) : null,
           notas: b.notes || null,
+          // Sin etiqueta de tipo: el subtítulo del grupo ya dice "Seguro", y
+          // repetirlo debajo de cada ficha lo decía dos veces seguidas.
           chips: [],
-        });
+        }, i === lista.length - 1, i === 0);
       });
-      L.y += 6;
+      L.y += 10;
     });
   },
 
   /* ---- 4. Presupuesto ---- */
   presupuesto(doc, L, d, totalEur) {
     const C = PDF_COLOR;
+    // El total, primero y en grande: en una propuesta de viaje es el dato que
+    // se busca antes que ningún desglose.
+    L.sitio(70);
+    L.panel(64, C.deep);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.setTextColor(168, 198, 194);
+    pdfVersal(doc, 'Precio total estimado', L.M + 20, L.y + 15, { track: 1.9 });
+    doc.setFont('times', 'bold'); doc.setFontSize(26);
+    doc.setTextColor(255, 255, 255);
+    doc.text(pdfTexto(fmtMoney(totalEur, 'EUR')), L.M + 20, L.y + 28, { baseline: 'top' });
+    L.y += 84;
+
     const porCat = {};
     d.budget.forEach(b => { porCat[b.category || 'otros'] = (porCat[b.category || 'otros'] || 0) + (Number(b.amount_eur) || 0); });
     const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
-
+    L.subtitulo('En qué se va');
     // Barras proporcionales: leer seis importes y compararlos de cabeza cuesta;
     // verlos cuesta cero.
-    const h = cats.length * 26 + 22;
-    L.sitio(h + 40); L.panel(h);
-    let iy = L.y + 12;
-    const wBar = L.CW - 200;
+    const wBar = L.CW - 210;
     cats.forEach(([cat, v]) => {
+      L.sitio(26);
       const label = CATS_BUDGET.find(c => c.id === cat)?.label || cat;
-      L.txt(label, L.M + 14, iy, { size: 9, w: 96 });
-      doc.setFillColor(233, 237, 244);
-      doc.roundedRect(L.M + 112, iy + 1.5, wBar, 8, 4, 4, 'F');
-      const frac = totalEur > 0 ? Math.max(0.02, v / totalEur) : 0;
-      doc.setFillColor(C.acc[0], C.acc[1], C.acc[2]);
-      doc.roundedRect(L.M + 112, iy + 1.5, wBar * frac, 8, 4, 4, 'F');
-      L.txt(fmtMoney(v, 'EUR'), L.M + L.CW - 14, iy, { size: 9, bold: true, align: 'right' });
-      iy += 26;
+      L.txt(label, L.M, L.y + 1, { size: 9, w: 96 });
+      L.fill(pdfTinte(C.acc, 0.14)); doc.rect(L.M + 104, L.y + 3, wBar, 6, 'F');
+      const frac = totalEur > 0 ? Math.max(0.015, v / totalEur) : 0;
+      L.fill(C.acc); doc.rect(L.M + 104, L.y + 3, wBar * frac, 6, 'F');
+      L.txt(Math.round((v / (totalEur || 1)) * 100) + ' %', L.M + 104 + wBar + 10, L.y + 2,
+        { size: 7.6, color: C.soft });
+      L.txt(fmtMoney(v, 'EUR'), L.W - L.M, L.y + 1, { size: 9, bold: true, align: 'right' });
+      L.y += 22;
     });
-    L.y += h + 12;
-
-    L.sitio(30);
-    doc.setFillColor(C.band[0], C.band[1], C.band[2]);
-    doc.roundedRect(L.M, L.y, L.CW, 30, 5, 5, 'F');
-    L.txt('Total estimado', L.M + 14, L.y + 10, { size: 10, bold: true, color: C.white });
-    L.txt(fmtMoney(totalEur, 'EUR'), L.M + L.CW - 14, L.y + 9, { size: 11.5, bold: true, color: C.white, align: 'right' });
-    L.y += 44;
+    L.y += 14;
 
     L.subtitulo('Detalle');
     const filas = d.budget.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-    filas.forEach((b, i) => {
+    filas.forEach(b => {
       L.sitio(20);
-      if (i % 2 === 0) { doc.setFillColor(249, 250, 253); doc.rect(L.M, L.y - 2, L.CW, 19, 'F'); }
-      L.txt(b.concept || '—', L.M + 6, L.y + 1, { size: 8.8, w: L.CW - 210 });
-      L.txt(b.date ? fmtDateShort(b.date) : '', L.M + L.CW - 120, L.y + 1, { size: 8.2, color: C.soft, align: 'right' });
-      L.txt(fmtMoney(b.amount, b.currency || 'EUR'), L.M + L.CW - 6, L.y + 1, { size: 8.8, align: 'right' });
-      L.y += 17;
+      L.txt(b.concept || '—', L.M, L.y, { size: 8.8, w: L.CW - 210 });
+      L.txt(b.date ? fmtDateShort(b.date) : '', L.W - L.M - 96, L.y, { size: 8.2, color: C.soft, align: 'right' });
+      L.txt(fmtMoney(b.amount, b.currency || 'EUR'), L.W - L.M, L.y, { size: 8.8, align: 'right' });
+      L.stroke(C.line); doc.setLineWidth(0.4); doc.line(L.M, L.y + 14, L.W - L.M, L.y + 14);
+      L.y += 19;
     });
   },
 
@@ -15599,37 +15802,37 @@ const PdfGuia = {
       const imp = Number(g.amount) || 0;
       const partes = (Array.isArray(g.participants) && g.participants.length) ? g.participants : (g.payer ? [g.payer] : []);
       if (g.payer) saldos[g.payer] = (saldos[g.payer] || 0) + imp;
-      partes.forEach(p => { saldos[p] = (saldos[p] || 0) - imp / partes.length; });
+      partes.forEach(pp => { saldos[pp] = (saldos[pp] || 0) - imp / partes.length; });
     });
-    d.shared.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach((g, i) => {
+    d.shared.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(g => {
       L.sitio(20);
-      if (i % 2 === 0) { doc.setFillColor(249, 250, 253); doc.rect(L.M, L.y - 2, L.CW, 19, 'F'); }
-      L.txt(g.concept || '—', L.M + 6, L.y + 1, { size: 8.8, w: L.CW - 230 });
-      L.txt(g.payer || '', L.M + L.CW - 130, L.y + 1, { size: 8.2, color: C.soft, align: 'right' });
-      L.txt(fmtMoney(g.amount, g.currency || 'EUR'), L.M + L.CW - 6, L.y + 1, { size: 8.8, align: 'right' });
-      L.y += 17;
+      L.txt(g.concept || '—', L.M, L.y, { size: 8.8, w: L.CW - 230 });
+      L.txt(g.payer || '', L.W - L.M - 96, L.y, { size: 8.2, color: C.soft, align: 'right' });
+      L.txt(fmtMoney(g.amount, g.currency || 'EUR'), L.W - L.M, L.y, { size: 8.8, align: 'right' });
+      L.stroke(C.line); doc.setLineWidth(0.4); doc.line(L.M, L.y + 14, L.W - L.M, L.y + 14);
+      L.y += 19;
     });
     const nombres = Object.keys(saldos);
     if (nombres.length) {
-      L.y += 12; L.subtitulo('Saldos');
+      L.y += 14; L.subtitulo('Cómo queda la cuenta');
       nombres.forEach(n => {
-        L.sitio(18);
+        L.sitio(20);
         const v = saldos[n];
-        L.txt(n, L.M + 6, L.y, { size: 9, w: L.CW - 140 });
-        L.txt((v >= 0 ? 'le deben ' : 'debe ') + fmtMoney(Math.abs(v), 'EUR'), L.M + L.CW - 6, L.y, {
-          size: 9, bold: true, align: 'right', color: v >= 0 ? [21, 128, 61] : [190, 24, 60],
+        L.txt(n, L.M, L.y, { size: 10, fam: 'serif', w: L.CW - 160 });
+        L.txt((v >= 0 ? 'le deben ' : 'debe ') + fmtMoney(Math.abs(v), 'EUR'), L.W - L.M, L.y + 1, {
+          size: 9, bold: true, align: 'right', color: v >= 0 ? [26, 106, 74] : C.acc,
         });
-        L.y += 17;
+        L.y += 19;
       });
     }
   },
 
   /* ---- 6. Direcciones ---- */
   direcciones(doc, L, d) {
-    d.addresses.forEach(a => pdfEvento(doc, L, {
+    d.addresses.forEach((a, i) => pdfEvento(doc, L, {
       tipo: 'lugar', titulo: a.label || 'Dirección', meta: a.address || null,
       dir: null, notas: a.notes || null, chips: [],
-    }));
+    }, i === d.addresses.length - 1, i === 0));
   },
 
   /* ---- 7. Ficha del destino ---- */
@@ -15637,41 +15840,42 @@ const PdfGuia = {
     const C = PDF_COLOR, i = d.info;
     if (i) {
       const filas = [
-        ['Zona horaria', i.timezone], ['Dif. con origen', i.tz_diff_origin],
+        ['Zona horaria', i.timezone], ['Diferencia con origen', i.tz_diff_origin],
         ['Voltaje', i.voltage], ['Enchufe', i.plug_type],
         ['Moneda local', i.local_currency], ['Propinas', i.tipping_notes],
-        ['Tel. emergencia', i.emergency_number],
+        ['Teléfono de emergencia', i.emergency_number],
       ].filter(r => r[1]);
       if (filas.length) {
-        const h = filas.length * 17 + 20;
-        L.sitio(h); L.panel(h);
-        let iy = L.y + 11;
-        filas.forEach(r => { iy += L.kv(r[0], r[1], L.M + 14, iy, L.CW - 28) + 4; });
-        L.y += h + 16;
+        L.sitio(filas.length * 17 + 10);
+        filas.forEach(r => { L.y += L.kvPunteado(r[0], r[1], L.y); });
+        L.y += 18;
       }
       if (i.embassy_info) {
         L.subtitulo('Embajada de España');
-        L.y += L.txt(i.embassy_info, L.M, L.y, { size: 9, color: C.muted }) + 14;
+        L.parrafo(i.embassy_info, { size: 9.4, fam: 'serif', color: C.ink });
+        L.y += 16;
       }
     }
     if (d.contacts.length) {
-      L.subtitulo('Contactos de emergencia');
+      L.subtitulo('En caso de urgencia');
       d.contacts.forEach(c => {
-        L.sitio(19);
-        L.txt(c.name || '—', L.M + 6, L.y, { size: 9.4, bold: true, w: L.CW - 190 });
-        L.txt([c.relation, c.phone].filter(Boolean).join('  ·  '), L.M + L.CW - 6, L.y + 0.5, { size: 8.8, color: C.muted, align: 'right' });
-        L.y += 18;
+        L.sitio(24);
+        L.txt(c.name || '—', L.M, L.y, { size: 10.5, fam: 'serif', bold: true, w: L.CW - 200 });
+        L.txt([c.relation, c.phone].filter(Boolean).join('   ·   '), L.W - L.M, L.y + 3,
+          { size: 8.8, color: C.muted, align: 'right' });
+        L.stroke(C.line); doc.setLineWidth(0.4); doc.line(L.M, L.y + 17, L.W - L.M, L.y + 17);
+        L.y += 23;
       });
-      L.y += 10;
+      L.y += 12;
     }
     if (d.phrases.length) {
-      L.subtitulo('Frases útiles');
-      d.phrases.forEach((p, n) => {
-        L.sitio(21);
-        if (n % 2 === 0) { doc.setFillColor(249, 250, 253); doc.rect(L.M, L.y - 3, L.CW, 20, 'F'); }
-        L.txt(p.phrase_local || '', L.M + 6, L.y, { size: 9.4, bold: true, w: L.CW / 2 - 12 });
-        L.txt(p.translation || '', L.M + L.CW / 2, L.y + 0.4, { size: 9, color: C.muted, w: L.CW / 2 - 12 });
-        L.y += 18;
+      L.subtitulo('Para defenderse');
+      d.phrases.forEach(p => {
+        L.sitio(24);
+        L.txt('«' + (p.phrase_local || '') + '»', L.M, L.y, {
+          size: 11, fam: 'serif', italic: true, color: C.deep, w: L.CW / 2 - 12 });
+        L.txt(p.translation || '', L.M + L.CW / 2, L.y + 3, { size: 9, color: C.muted, w: L.CW / 2 - 12 });
+        L.y += 22;
       });
     }
   },
@@ -15685,23 +15889,20 @@ const PdfGuia = {
     Object.keys(porCat).forEach(cat => {
       L.subtitulo(CATS_PACKING.find(c => c.id === cat)?.label || cat);
       const items = porCat[cat];
-      const mitad = Math.ceil(items.length / 2), colW = L.CW / 2 - 10;
-      const alto = mitad * 16 + 4;
+      const mitad = Math.ceil(items.length / 2), colW = L.CW / 2 - 12;
+      const alto = mitad * 17 + 4;
       L.sitio(alto);
       items.forEach((p, n) => {
         const col = n < mitad ? 0 : 1;
-        const x = L.M + col * (colW + 20), yy = L.y + (n % mitad) * 16;
-        doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(0.7);
-        doc.roundedRect(x, yy + 1.5, 8, 8, 1.5, 1.5, 'D');
-        if (p.checked) {
-          doc.setFillColor(C.acc[0], C.acc[1], C.acc[2]);
-          doc.roundedRect(x + 1.6, yy + 3.1, 4.8, 4.8, 1, 1, 'F');
-        }
-        L.txt((p.qty > 1 ? p.qty + '  ' : '') + (p.name || ''), x + 14, yy, {
-          size: 9, w: colW - 16, max: 1, color: p.checked ? C.soft : C.ink,
+        const x = L.M + col * (colW + 24), yy = L.y + (n % mitad) * 17;
+        L.stroke(p.checked ? C.acc : C.line); doc.setLineWidth(0.7);
+        doc.rect(x, yy + 1.5, 8, 8, 'S');
+        if (p.checked) { L.fill(C.acc); doc.rect(x + 2, yy + 3.5, 4, 4, 'F'); }
+        L.txt((p.qty > 1 ? p.qty + '  ' : '') + (p.name || ''), x + 15, yy, {
+          size: 9.2, w: colW - 18, max: 1, color: p.checked ? C.soft : C.ink,
         });
       });
-      L.y += alto + 8;
+      L.y += alto + 10;
     });
   },
 
@@ -15709,11 +15910,11 @@ const PdfGuia = {
   diario(doc, L, d) {
     const C = PDF_COLOR;
     d.diary.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(e => {
-      const h = L.alto(e.text || '', 9, L.CW - 26) + 34;
-      L.sitio(Math.min(h, L.BOT - L.M));
-      L.txt(e.date ? fmtDayLong(e.date) : 'Sin fecha', L.M, L.y, { size: 9.6, bold: true, color: C.acc });
-      L.y += 15;
-      L.y += L.txt(e.text || '', L.M, L.y, { size: 9, color: C.ink, lh: 1.45 }) + 16;
+      L.sitio(56);   // que no quede el encabezado solo al pie de la página
+      L.ante(e.date ? fmtDayLong(e.date) : 'Sin fecha', L.M, L.y, C.acc, 7);
+      L.y += 18;
+      L.parrafo(e.text || '', { size: 10, fam: 'serif', color: C.ink, lh: 1.5 });
+      L.y += 20;
     });
   },
 };
