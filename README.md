@@ -139,6 +139,39 @@ Es un espejo del servidor, no una barrera: quien se salte la interfaz choca igua
 RLS. Si la descarga de `trip_shares` falla, se conserva lo que hubiera en caché — dejar a un
 editor sin permisos por un fallo de red sería peor que el retraso.
 
+**Quitar el acceso tiene que borrar la copia local.** Es la otra cara de local-first: la RLS
+impide volver a traer el viaje, pero el que ya se descargó sigue en el IndexedDB de esa
+persona. `SYNC.purgarSinAcceso()` lo borra del dispositivo en la siguiente sincronización, con
+sus tablas hijas.
+
+Tres cautelas, cada una por un motivo distinto:
+
+| Cautela | Por qué |
+|---|---|
+| Solo se purga si `GRANTS.refrescar()` devolvió `true` | Purgar contra la caché podría borrar un viaje que acaban de conceder |
+| Borrado directo con `DB.db.delete()`, nunca `DB.remove()` | `DB.remove()` marca `deleted_at` y encola el borrado: sería borrarle el viaje **al dueño** por quitarle el acceso a otro |
+| Si falta localmente algún viaje concedido, la pasada de `pullAll()` se hace completa | Un viaje viejo recién concedido tiene un `updated_at` anterior al último sync y el filtro incremental no lo traería nunca |
+
+`DB.listByProfile()` aplica además el filtro de visibilidad en la propia consulta, y no en cada
+pantalla: hay siete sitios que listan viajes y bastaba olvidarse de uno.
+
+### Perfiles y cuentas
+
+`PROFILES` tiene que contener **todos** los perfiles que puede devolver `app_users`, hoy
+`ruben`, `sergio` e `invitado` (el que se asigna a cualquier alta desde Administración). Un
+perfil que no esté en la lista deja sin respuesta a todo lo que se decide con
+`PROFILES.find(...)`: si es lector, qué viajes ve, qué inicial se pinta.
+
+`dataProfile()` decide de qué cajón se leen los datos. Cualquier cuenta que no sea la dueña lee
+del cajón del dueño; **qué** ve de ese cajón lo decide `GRANTS`. Antes decía literalmente
+`me === 'sergio'`, así que una cuenta nueva buscaba viajes de un dueño sin viajes y la pantalla
+salía vacía por mucho permiso que se le diera.
+
+`canSeeMoney()` / `canSeeLinks()` / `canSeeDocs()` son restos del invitado sin credencial y hoy
+devuelven siempre `true`: ocultar es tarea del servidor, por viaje y por persona. Si volvieran a
+mirar el perfil, una cuenta nueva no vería un precio jamás y el interruptor «Dinero» de
+Administración no cambiaría nada.
+
 > **Las categorías ocultan tablas enteras, no texto libre.** Ocultar `reservas` quita
 > localizadores, documentos e importes de la tabla `bookings`, pero un
 > `N.º de confirmación: 4648869009` escrito a mano en las notas de una parada **se sigue
@@ -230,6 +263,12 @@ viaje a la nube* por viaje. Ese botón y *Sincronizar ahora* se han quitado: rep
 pasa solo y hacían dudar de si había que pulsarlos.
 
 ### Quién tocó qué
+
+> `AUTH.uid` se rellena en `AUTH.session()`, no solo en `fetchProfile()`. El arranque usa
+> `cachedProfile() || fetchProfile()`, así que en cuanto había caché —o sea, en todos los
+> arranques menos el primero— `fetchProfile()` no llegaba a ejecutarse, `uid` se quedaba a
+> `null` y `_ultimaEdicion()`, que empieza con `if (!mio) return null`, no pintaba nunca la
+> línea de autoría.
 
 `schema-autoria.sql`. Cada tabla lleva `updated_by`, que **sella un trigger con `auth.uid()`**,
 no el cliente: si lo mandara la app, cualquiera podría firmar una fila con el uuid de otro.

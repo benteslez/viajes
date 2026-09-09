@@ -2549,6 +2549,7 @@ body.readonly .timeline-item { cursor:default; }
 }
 .avatar-r { background:linear-gradient(135deg, #2563eb, #06b6d4); }
 .avatar-s { background:linear-gradient(135deg, #f97316, #facc15); }
+.avatar-i { background:linear-gradient(135deg, #14b8a6, #22c55e); }
 .avatar-i { background:linear-gradient(135deg, #64748b, #94a3b8); }
 .profile-info { flex:1; }
 .profile-name { font-weight:600; font-size:16px; }
@@ -2806,13 +2807,18 @@ const PROFILES = [
   // id ASCII puro — es el valor de la columna `profile` de cada fila y el que
   // guarda `app_users`. El nombre visible "Rubén" sale de .name, no del id.
   //
-  // 'invitado' ya no existe. Era un perfil sin credencial, y como el servidor
-  // asumía 'invitado' cuando no llegaba cabecera, cualquiera en internet leía
-  // los datos con un curl. Ahora cada perfil es una cuenta de Supabase Auth
-  // (ver schema-auth.sql); compartir un viaje se hace con el enlace HTML, que
-  // sale ya redactado y no da acceso a la base.
-  { id: 'ruben',  name: 'Rubén',  cls: 'avatar-r', initial: 'R', tag: 'Personal',     readonly: false },
-  { id: 'sergio', name: 'Sergio', cls: 'avatar-s', initial: 'S', tag: 'Solo lectura', readonly: true  },
+  // 'invitado' fue una vez un perfil SIN credencial, y como el servidor lo
+  // asumía cuando no llegaba cabecera, cualquiera en internet leía los datos
+  // con un curl. Eso está cerrado (schema-auth.sql): hoy es una cuenta de
+  // Supabase Auth como las demás, y es el perfil que se le pone a cualquier
+  // persona que des de alta desde Administración.
+  //
+  // Tiene que estar en esta lista. Un perfil que no esté aquí no tiene entrada
+  // en PROFILES, y todo lo que decide con `PROFILES.find(...)` —si es lector,
+  // qué viajes ve, qué inicial se pinta— se queda sin saber qué contestar.
+  { id: 'ruben',    name: 'Rubén',    cls: 'avatar-r', initial: 'R', tag: 'Personal',     readonly: false },
+  { id: 'sergio',   name: 'Sergio',   cls: 'avatar-s', initial: 'S', tag: 'Solo lectura', readonly: true  },
+  { id: 'invitado', name: 'Invitado', cls: 'avatar-i', initial: 'I', tag: 'Solo lectura', readonly: true  },
 ];
 // Concesiones por viaje de quien tiene la sesión abierta (`trip_shares`).
 //
@@ -2839,13 +2845,16 @@ const GRANTS = {
     } catch (_) { this.mapa = {}; }
   },
 
+  // Devuelve true solo si la lista viene del servidor. Quien decida borrar
+  // datos del dispositivo a partir de esto tiene que saber si son de fiar o
+  // son la caché de la última vez.
   async refrescar() {
     const c = AUTH.init();
-    if (!c) return;
+    if (!c) return false;
     const { data, error } = await c.from('trip_shares').select('trip_id, can_edit, ocultar');
     // Si falla, se conserva lo que hubiera: quedarse sin permisos por un fallo
     // de red convertiría un editor en lector sin avisar.
-    if (error || !Array.isArray(data)) return;
+    if (error || !Array.isArray(data)) return false;
     const mapa = {};
     for (const g of data) {
       mapa[g.trip_id] = {
@@ -2856,6 +2865,7 @@ const GRANTS = {
     this.mapa = mapa;
     this.cargado = true;
     try { localStorage.setItem(this._clave(), JSON.stringify(mapa)); } catch (_) {}
+    return true;
   },
 
   olvidar() {
@@ -2864,6 +2874,20 @@ const GRANTS = {
   },
 
   puedeEditar(tripId) { return !!(tripId && this.mapa[tripId] && this.mapa[tripId].can_edit); },
+
+  // ¿Debe verse este viaje en este dispositivo? La RLS ya impide traerlo del
+  // servidor, pero la app es local-first: si se sincronizó ayer, sigue en
+  // IndexedDB. Sin este filtro, quitar el acceso no quitaba nada de la
+  // pantalla y la persona seguía entrando como si nada.
+  visible(trip) {
+    if (!trip) return false;
+    const p = PROFILES.find(p => p.id === STATE.profile);
+    if (!p) return false;                            // perfil desconocido: nada
+    if (!p.readonly) return true;                    // el dueño ve lo suyo
+    if (trip.profile === STATE.profile) return true; // y cada cual, lo propio
+    if (!this.cargado) return true;                  // sin lista fiable no se esconde nada
+    return !!this.mapa[trip.id];
+  },
   editables() { return Object.values(this.mapa).filter(g => g.can_edit).length; },
   oculta(tripId, cat) {
     const g = this.mapa[tripId];
@@ -2896,17 +2920,28 @@ const isReadonly = (tripId) => !canEdit(tripId);
 const OWNER_PROFILE = 'ruben';
 const dataProfile = () => {
   const me = STATE.profile;
-  return (me === 'sergio') ? OWNER_PROFILE : me;
+  // Antes ponía literalmente `me === 'sergio'`. Con una cuenta nueva —perfil
+  // 'invitado'— devolvía 'invitado', así que la app buscaba viajes de un dueño
+  // que no tiene ninguno y la pantalla salía vacía por mucho permiso que le
+  // dieras. Cualquier cuenta que no sea la dueña lee del cajón del dueño;
+  // QUÉ ve de ese cajón lo decide GRANTS, no esta función.
+  if (!me || me === OWNER_PROFILE) return me;
+  return OWNER_PROFILE;
 };
 
-// Restricciones del antiguo perfil Invitado: no veía precios, ni enlaces, ni
-// documentos. Se quedan como puntos de enganche —hoy siempre dan true, porque
-// 'invitado' ya no existe— para no dispersar la decisión por 30 sitios el día
-// que haya otro perfil limitado. Nunca fueron una barrera de seguridad: los
-// datos llegaban enteros al navegador y esto solo dejaba de pintarlos.
-const canSeeMoney = () => STATE.profile !== 'invitado';
-const canSeeLinks = () => STATE.profile !== 'invitado';
-const canSeeDocs  = () => STATE.profile !== 'invitado';
+// Restos del antiguo perfil Invitado, que no veía precios ni enlaces ni
+// documentos. Ese criterio por perfil ya no vale: ahora se decide por viaje y
+// por persona, en `trip_shares.ocultar`, y quien lo hace cumplir es la RLS —
+// las filas ni siquiera llegan al navegador.
+//
+// Si se dejaran como estaban, una cuenta nueva (perfil 'invitado') no vería
+// ningún precio jamás, y el interruptor "Dinero" de Administración no cambiaría
+// nada porque ya estaba todo oculto. Se dejan como puntos de enganche por si
+// vuelve a hacer falta una restricción global, pero hoy no ocultan nada:
+// esconder es tarea del servidor.
+const canSeeMoney = () => true;
+const canSeeLinks = () => true;
+const canSeeDocs  = () => true;
 
 // Campos específicos del editor según el tipo de evento.
 // Se persisten en planning_items.metadata (JSON) y se renderizan dinámicamente.
@@ -3798,12 +3833,20 @@ const DB = {
   },
 
   async get(table, id) {
+    // IndexedDB lanza DataError con una clave nula, no devuelve vacío. Pasaba
+    // al purgar el viaje que tenías abierto: la pantalla se quedaba en un
+    // error en vez de volver a la lista.
+    if (id == null || id === '') return undefined;
     return this.db.get(table, id);
   },
 
+  // El filtro de concesiones va AQUÍ y no en cada pantalla: hay siete sitios
+  // que listan viajes y bastaba olvidarse de uno para que "Sin acceso" no
+  // significara nada en esa pantalla.
   async listByProfile(table, profile) {
     const all = await this.db.getAllFromIndex(table, 'by_profile', profile);
-    return all.filter(r => !r.deleted_at);
+    const vivos = all.filter(r => !r.deleted_at);
+    return table === 'trips' ? vivos.filter(t => GRANTS.visible(t)) : vivos;
   },
 
   async listByTrip(table, tripId) {
@@ -3952,10 +3995,21 @@ const AUTH = {
   },
 
   // Sesión guardada. Sale de localStorage, así que responde sin conexión.
+  //
+  // Aquí se rellena `uid`, y no solo en fetchProfile(): el arranque usa el
+  // perfil cacheado (`cachedProfile() || fetchProfile()`) y en cuanto había
+  // caché —o sea, en todos los arranques menos el primero— fetchProfile() no
+  // llegaba a ejecutarse. `uid` se quedaba a null y la línea de autoría, que
+  // empieza con `if (!mio) return null`, no se pintaba nunca.
   async session() {
     const c = this.init();
     if (!c) return null;
-    try { const { data } = await c.auth.getSession(); return data?.session || null; }
+    try {
+      const { data } = await c.auth.getSession();
+      const ses = data?.session || null;
+      if (ses?.user?.id) this.uid = ses.user.id;
+      return ses;
+    }
     catch (e) { console.warn('getSession', e); return null; }
   },
 
@@ -4187,12 +4241,29 @@ const SYNC = {
   async pullAll() {
     if (!this.enabled || !STATE.profile) return 0;
     let changed = 0;
+
+    // Las concesiones, ANTES de bajar nada: deciden qué se baja y qué se borra.
+    // `fiables` distingue "esto lo dice el servidor" de "esto es la caché de la
+    // última vez", y solo con lo primero se puede borrar del dispositivo.
+    const fiables = await GRANTS.refrescar();
+
     // Restamos 60s al `since` por seguridad: cubre clock-drift entre cliente y servidor.
     // Si no hay last_sync previo, usamos 1970 para traer todo desde cero.
     const sinceRaw = await DB.meta('last_sync_' + STATE.profile);
-    const since = sinceRaw
+    let since = sinceRaw
       ? new Date(Date.parse(sinceRaw) - 60_000).toISOString()
       : '1970-01-01T00:00:00.000Z';
+
+    // Si te acaban de conceder un viaje viejo, su `updated_at` es anterior al
+    // último sync y la pasada incremental no lo traería NUNCA: el permiso
+    // estaría dado y el viaje no aparecería jamás. Cuando falta localmente
+    // alguno de los concedidos, esta pasada se hace completa.
+    if (fiables) {
+      for (const id of Object.keys(GRANTS.mapa)) {
+        try { if (!(await DB.db.get('trips', id))) { since = '1970-01-01T00:00:00.000Z'; break; } }
+        catch (_) {}
+      }
+    }
     // Para tablas con `profile`: filtramos por el perfil dueño (no STATE.profile),
     // así Sergio/Invitado descargan los datos de Rubén.
     // Para tablas hijas: confiamos en la RLS de Supabase (la cabecera x-app-profile lo restringe).
@@ -4210,12 +4281,46 @@ const SYNC = {
         console.warn('pull', t, e);
       }
     }
-    // Los permisos cambian igual que los datos. Sin refrescarlos aquí, dar
-    // acceso de edición desde Administración no se notaría en el otro
-    // dispositivo hasta reiniciar la app entera.
-    try { await GRANTS.refrescar(); } catch (_) {}
+    if (fiables) { try { changed += await this.purgarSinAcceso(); } catch (e) { console.warn('purgar', e); } }
     await DB.meta('last_sync_' + STATE.profile, nowIso());
     return changed;
+  },
+
+  // Quitarle el acceso a alguien no le quita el viaje del móvil: la app es
+  // local-first, el viaje ya está en su IndexedDB de una sincronización
+  // anterior y la RLS solo impide volver a traerlo. Sin esto, "Sin acceso" no
+  // borraba nada de su dispositivo.
+  //
+  // Es un borrado LOCAL Y SILENCIOSO, a propósito. Nada de DB.remove(): eso
+  // marcaría `deleted_at` y encolaría el borrado hacia el servidor, o sea,
+  // le borraría el viaje a su dueño por haberle quitado el acceso a otro.
+  async purgarSinAcceso() {
+    const p = PROFILES.find(p => p.id === STATE.profile);
+    if (!p || !p.readonly) return 0;      // el dueño no tiene concesiones
+    if (!GRANTS.cargado) return 0;
+    const trips = await DB.db.getAll('trips');
+    const fuera = trips.filter(t => t.profile !== STATE.profile && !GRANTS.mapa[t.id]);
+    if (!fuera.length) return 0;
+    const hijas = [
+      'trip_legs','planning_items','budget_items','bookings','inquiries',
+      'wishlist_items','day_notes','packing_items','addresses','destination_info',
+      'emergency_contacts','phrases','shared_expenses','diary',
+      'wardrobe_items','wardrobe_catalog',
+    ];
+    for (const t of fuera) {
+      for (const tabla of hijas) {
+        try {
+          const filas = await DB.db.getAllFromIndex(tabla, 'by_trip', t.id);
+          for (const f of filas) await DB.db.delete(tabla, f.id);
+        } catch (_) {}
+      }
+      try { await DB.db.delete('trips', t.id); } catch (_) {}
+      // No se toca STATE.currentTripId: con la fila borrada, TripDetail.render
+      // ya no encuentra el viaje y devuelve a la lista él solo. Ponerlo a null
+      // solo servía para que el siguiente DB.get fuese con una clave nula.
+    }
+    console.log('purgados por falta de acceso:', fuera.length);
+    return fuera.length;
   },
 
   async _mergeRow(table, remote) {
@@ -5087,6 +5192,8 @@ const ProfilePicker = {
     // luego el servidor, que es quien manda.
     GRANTS.cargarCache();
     GRANTS.refrescar().then(() => { try { Router.render(); } catch (_) {} }).catch(() => {});
+    // Cinturón y tirantes: cualquier camino de entrada deja `uid` puesto.
+    if (!AUTH.uid) AUTH.session().catch(() => {});
     PERSONAS.cargar().catch(() => {});
     // Pull en background — no bloquea la entrada a la app.
     // Cuando termine, llama a Router.render() para que aparezcan los datos remotos.
@@ -6539,6 +6646,14 @@ const TripDetail = {
   async render(root, title, fab) {
     const t = await DB.get('trips', STATE.currentTripId);
     if (!t) { Router.go('trips'); return; }
+    // Te pueden quitar el acceso con el viaje abierto. El purgado se lleva la
+    // copia local en la siguiente sincronización, pero hasta entonces sigue
+    // aquí y hay que echar de la pantalla igualmente.
+    if (!GRANTS.visible(t)) {
+      UI.toast('Ya no tienes acceso a este viaje.');
+      Router.go('trips');
+      return;
+    }
 
     title.textContent = t.name;
     root.innerHTML = '';
