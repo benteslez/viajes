@@ -3725,6 +3725,7 @@ const DB = {
    ============================================================ */
 const AUTH = {
   client: null,
+  lastError: null,
   PROFILE_KEY: 'viajes_profile',
 
   // Cliente único de Supabase, compartido con SYNC. Dos clientes sobre el
@@ -3753,12 +3754,15 @@ const AUTH = {
       email: String(email || '').trim(), password: password || '',
     });
     if (error) throw new Error(this._msg(error));
+    this.lastError = null;
     const profile = await this.fetchProfile();
     if (!profile) {
-      // Cuenta válida sin fila en app_users: no sabemos de quién son los datos
+      // Cuenta válida sin perfil utilizable: no sabemos de quién son los datos
       // que vería. Se cierra la sesión en vez de dejarla a medias.
       await this.signOut();
-      throw new Error('La cuenta existe pero no tiene perfil asignado. Añádela a la tabla app_users (ver schema-auth.sql).');
+      throw new Error(this.lastError
+        ? 'No se pudo leer el perfil de la cuenta: ' + this.lastError
+        : 'La cuenta existe pero no tiene perfil asignado. Añádela a la tabla app_users (ver schema-auth.sql).');
     }
     return profile;
   },
@@ -3774,13 +3778,27 @@ const AUTH = {
     const c = this.init();
     if (!c) return null;
     try {
-      const { data, error } = await c.from('app_users').select('profile').maybeSingle();
+      // Filtrar por el propio usuario, en vez de fiarse de que la RLS deje
+      // ver una sola fila. Desde que el administrador puede leer `app_users`
+      // entera —lo necesita la pantalla de permisos—, un select sin `eq`
+      // devuelve varias filas y maybeSingle() falla con un error, no con un
+      // vacío. La RLS decide qué se PUEDE leer; la consulta debe decir qué se
+      // quiere leer.
+      const { data: ses } = await c.auth.getSession();   // local, no va a la red
+      const uid = ses?.session?.user?.id;
+      if (!uid) return this.cachedProfile();
+      const { data, error } = await c.from('app_users')
+        .select('profile').eq('user_id', uid).maybeSingle();
       if (error) throw error;
       const p = data?.profile || null;
       if (p) localStorage.setItem(this.PROFILE_KEY, p);
       return p;
     } catch (e) {
+      // Se guarda el motivo: sin esto, un fallo al CONSULTAR el perfil y la
+      // ausencia REAL de perfil dan el mismo mensaje, y son problemas
+      // distintos. Costó una vuelta entera averiguarlo.
       console.warn('app_users', e);
+      this.lastError = e?.message || String(e);
       return this.cachedProfile();
     }
   },
