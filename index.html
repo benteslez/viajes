@@ -13306,10 +13306,21 @@ const AdminView = {
       this.usuarios = this.perfiles.map(pf => ({
         id: pf.user_id, email: null, perfil: pf.profile || null, ultimo_acceso: null,
       }));
+      // La plantilla con la que Supabase crea una función responde 200 con
+      // {message:"Hello <name>!"} a cualquier cosa. Es indistinguible de "no
+      // hay cuentas" salvo por esa firma, y costó una ronda entera averiguarlo:
+      // si vuelve a pasar, que lo diga la pantalla.
+      const plantilla = !fallo && respuesta && typeof respuesta.message === 'string'
+        && /^Hello /.test(respuesta.message) && !('usuarios' in respuesta);
       const porQue = fallo
         ? 'La función admin-usuarios ha fallado: ' + fallo.replace(/\.?$/, '.')
-        : 'La función admin-usuarios respondió sin cuentas'
-          + (respuesta ? ' — ' + JSON.stringify(respuesta).slice(0, 240) : '') + '.';
+        : plantilla
+          ? 'Lo desplegado en admin-usuarios no es el código de la app: responde '
+            + JSON.stringify(respuesta.message) + ', que es la plantilla de ejemplo de '
+            + 'Supabase. Pega supabase/functions/admin-usuarios/index.ts en Edge Functions '
+            + '→ admin-usuarios → Code y vuelve a desplegar.'
+          : 'La función admin-usuarios respondió sin cuentas'
+            + (respuesta ? ' — ' + JSON.stringify(respuesta).slice(0, 240) : '') + '.';
       // Que app_users venga vacía TAMBIÉN es un dato, y apunta a otro sitio: no
       // a la función, sino a que las filas de perfil no existen o la RLS no te
       // deja leerlas. Sin distinguir los dos casos, el aviso no sirve de nada.
