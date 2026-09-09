@@ -13249,9 +13249,14 @@ const AdminView = {
       // por dónde tirar.
       const detalle = j.error || j.message || j.msg || String(txt || '').slice(0, 200);
       if (res.status === 401) {
-        const pista = /apikey header matched no key/i.test(detalle)
-          ? 'Tu proyecto usa el esquema nuevo de claves: copia la Publishable key '
-            + '(Settings → API Keys) en CFG.supabasePublishableKey.'
+        // Dos síntomas distintos del mismo esquema nuevo de claves: con la
+        // anonKey legada dice que no casa ninguna, y sin cabecera dice que no
+        // hay credencial. En ambos casos la pasarela quiere la publishable.
+        const claves = /apikey header matched no key|no credential matched/i.test(detalle);
+        const pista = claves
+          ? 'La pasarela de Functions de tu proyecto solo acepta las claves nuevas. '
+            + 'Copia la Publishable key (Supabase → Settings → API Keys, empieza por '
+            + '"sb_publishable_") en CFG.supabasePublishableKey, dentro de index.html.'
           : 'Comprueba que "Verify JWT" está apagado en los ajustes de la función: la '
             + 'comprobación de administrador va dentro y es más estricta.';
         throw new Error('La función rechazó la petición (401). ' + pista
