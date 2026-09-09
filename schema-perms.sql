@@ -131,6 +131,10 @@ $$;
 -- Crear y borrar: solo los tuyos. Que te dejen editar un viaje no te da
 -- derecho a borrárselo a su dueño.
 
+-- `p_trips` es el nombre heredado, de cuando había una sola política ALL por
+-- tabla. Si sigue viva, convive con las nuevas y las políticas son permisivas
+-- (se suman con OR), así que dejarla sería dejar una puerta que ya no controlo.
+drop policy if exists p_trips        on trips;
 drop policy if exists p_trips_select on trips;
 drop policy if exists p_trips_insert on trips;
 drop policy if exists p_trips_update on trips;
@@ -211,6 +215,11 @@ begin
     'shared_expenses','diary',
     'wardrobe_items','wardrobe_catalog'
   ]) loop
+    -- Sin esto, una tabla que no exista (wardrobe_* viven en schema-wardrobe.sql
+    -- y puede que no se haya ejecutado) tumba el bucle, y con él TODO el script:
+    -- el editor de Supabase envuelve el archivo en una transacción.
+    if to_regclass('public.' || t) is null then continue; end if;
+
     cat := cats ->> t;
     filtro := case when cat is null then ''
                    else format(' and not app_trip_hides(%I.trip_id, %L)', t, cat) end;
