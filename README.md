@@ -167,6 +167,40 @@ Instalación: *Edge Functions → Deploy a new function*, nombre `admin-usuarios
 de CORS en la petición previa (OPTIONS), apagar *Verify JWT*: la comprobación interna es más
 estricta, porque además de una sesión válida exige que sea la del administrador.
 
+### Sincronización
+
+**Es automática y no hay que pulsar nada.** Se dispara al guardar (cola + envío a 1,5 s), al
+volver el foco o la visibilidad, al recuperar la conexión, cada 20 s con la app abierta, y cada
+30 s para la cola.
+
+El **indicador de la barra** es el único control: dice `Sincronizado`, `N sin subir`,
+`Sin conexión` o `Error`, y al tocarlo abre el detalle con la cola, el último error y las
+herramientas de reparación (*Reintentar*, *Pull completo*, *Push completo*).
+
+Decir "Sincronizado" con cosas en cola es mentir, y era la razón de fondo por la que no daba
+confianza. Ahora el contador (`SYNC.pendientes`) se lleva en memoria —contar la cola en cada
+encolado sería recorrerla entera cientos de veces al importar— y se recalcula al vaciarla.
+Un fallo lanza un aviso visible; antes se quedaba en un `console.warn`.
+
+**Importar un JSON encola**, así que un viaje traído de un archivo llega solo al resto de
+dispositivos. Ese era el único agujero real, y el motivo de que existiera un botón *Subir este
+viaje a la nube* por viaje. Ese botón y *Sincronizar ahora* se han quitado: repetían lo que ya
+pasa solo y hacían dudar de si había que pulsarlos.
+
+### Quién tocó qué
+
+`schema-autoria.sql`. Cada tabla lleva `updated_by`, que **sella un trigger con `auth.uid()`**,
+no el cliente: si lo mandara la app, cualquiera podría firmar una fila con el uuid de otro.
+
+La ficha del viaje muestra *"Última edición de Sergio · hace 2 h"* cuando el último en tocar
+algo **no fuiste tú**. Se mira el viaje y sus hijas, porque `trips.updated_by` solo cambia al
+editar la cabecera y lo que se toca de verdad son las paradas y las reservas. Si el último
+fuiste tú no se enseña nada: una línea que siempre está deja de leerse.
+
+`app_users.nombre` traduce uuid → nombre visible, y su política se amplía a cualquiera con
+sesión: sin eso no se puede pintar un nombre. Se expone quién existe y cómo se llama, a gente
+que tú has invitado; los correos siguen sin salir de `auth.users`.
+
 ## Comportamiento offline
 
 - Toda lectura/escritura va primero a IndexedDB.

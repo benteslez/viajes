@@ -186,6 +186,11 @@ body.view-trip .topbar-title { display:none; }
   font-feature-settings:"tnum","ss01";
 }
 .trip-detail-sub .sep { opacity:.55; margin:0 2px; }
+.trip-detail-autor {
+  display:inline-flex; align-items:center; gap:6px; margin:-2px 0 14px;
+  font-size:12.5px; color:var(--text-muted);
+}
+.trip-detail-autor svg { width:13px; height:13px; opacity:.75; }
 
 /* Portada con foto del viaje — visible solo en escritorio (≥720px).
    En móvil la ocultamos por completo para más limpieza visual. */
@@ -405,6 +410,9 @@ h2.section-title {
 .dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 .dot-curso { background:var(--status-curso); }
 .dot-prep  { background:var(--status-prep); }
+/* Sin fecha: gris malva, para que no se confunda con "en preparación" (ámbar)
+   ni con "pasado" (gris). Es un plan vivo, solo que sin fechar. */
+.dot-sinfecha { background:#a78bfa; }
 .dot-prox  { background:var(--status-prox); }
 .dot-pas   { background:var(--status-pas); }
 .dot-todos { background:linear-gradient(135deg, var(--accent), var(--accent-2)); }
@@ -3440,9 +3448,14 @@ const tripStatus = (t) => {
   if (t.in_preparation) return 'prep';
   if (t.start_date && t.start_date > today) return 'prox';
   if (t.end_date && t.end_date < today) return 'pas';
+  // Un viaje sin ninguna fecha no está "en preparación": está sin fechar. Antes
+  // caía en 'prep' por descarte y ensuciaba esa pestaña con planes que nadie
+  // había marcado como tales. Ojo al orden: si SÍ tiene marcado "en
+  // preparación", eso manda y ya ha salido por arriba.
+  if (!t.start_date && !t.end_date) return 'sinfecha';
   return 'prep';
 };
-const statusLabel = (s) => ({curso:'En curso', prep:'En preparación', prox:'Próximo', pas:'Pasado'}[s] || s);
+const statusLabel = (s) => ({curso:'En curso', prep:'En preparación', prox:'Próximo', pas:'Pasado', sinfecha:'Sin fecha'}[s] || s);
 // Confirmación del viaje — independiente del estado temporal. Tiñe la franja
 // inferior de la tarjeta. null (Sin definir) = blanco.
 const TRIP_CONFIRMATIONS = [
@@ -3692,8 +3705,13 @@ const DB = {
     return all.filter(r => !r.deleted_at);
   },
 
+  // Se lleva la cuenta en memoria en vez de contar la cola en cada encolado:
+  // importar un viaje mete cientos de filas de golpe y contar en cada una
+  // sería recorrer la cola entera cientos de veces.
   async _enqueue(table, record) {
     await this.db.add('_pending', { table, record, ts: Date.now() });
+    SYNC.pendientes++;
+    SYNC._pillPronto();
     SYNC.scheduleFlush();
   },
 
@@ -3738,6 +3756,10 @@ const DB = {
     return out;
   },
 
+  // Importar escribe en IndexedDB Y ENCOLA. Sin lo segundo, un viaje traído de
+  // un JSON se quedaba en el dispositivo donde se importó y hacía falta un
+  // botón aparte para subirlo a mano: era el único agujero real que le quedaba
+  // a la sincronización automática.
   async importProfile(data) {
     if (!data || !data._meta) throw new Error('Archivo de import inválido');
     const tx = this.db.transaction(this.STORES, 'readwrite');
@@ -3747,6 +3769,18 @@ const DB = {
       }
     }
     await tx.done;
+
+    // `trips` primero: en Supabase las hijas tienen clave ajena contra ella y
+    // la cola se vacía en orden de entrada. `media` no se encola: es local y
+    // no existe en el servidor.
+    const orden = ['trips', ...this.STORES.filter(t => t !== 'trips' && t !== 'media')];
+    let n = 0;
+    for (const t of orden) {
+      if (!Array.isArray(data[t])) continue;
+      for (const row of data[t]) { await this._enqueue(t, row); n++; }
+    }
+    SYNC.scheduleFlush();
+    return n;
   },
 };
 
@@ -3760,9 +3794,44 @@ const DB = {
    anonKey publicada en este archivo, dejaba la base abierta a cualquiera.
    La contraparte de servidor está en schema-auth.sql.
    ============================================================ */
+// uuid -> nombre visible. Hace falta para poder decir "editado por Sergio" en
+// vez de escupir un uuid. Se llena de app_users, que desde schema-autoria.sql
+// puede leer cualquiera con sesión (solo quién existe y cómo se llama; los
+// correos siguen sin salir de auth.users).
+const PERSONAS = {
+  mapa: {},
+  async cargar() {
+    try {
+      const c = AUTH.init(); if (!c) return;
+      const { data } = await c.from('app_users').select('user_id, profile, nombre');
+      (data || []).forEach(r => {
+        const p = PROFILES.find(x => x.id === r.profile);
+        this.mapa[r.user_id] = r.nombre || p?.name || r.profile || 'alguien';
+      });
+    } catch (e) { console.warn('personas', e); }
+  },
+  nombre(uid) { return uid ? (this.mapa[uid] || 'otra persona') : null; },
+};
+
+// "hace 2 h". Para una línea de autoría no hace falta más precisión.
+function haceQue(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - Date.parse(iso);
+  if (!isFinite(ms) || ms < 0) return '';
+  const m = Math.round(ms / 60000);
+  if (m < 1)  return 'ahora mismo';
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  if (d < 31) return `hace ${d} ${d === 1 ? 'día' : 'días'}`;
+  return 'el ' + fmtDateShort(String(iso).slice(0, 10));
+}
+
 const AUTH = {
   client: null,
   lastError: null,
+  uid: null,        // id de la cuenta con la sesión abierta
   PROFILE_KEY: 'viajes_profile',
 
   // Cliente único de Supabase, compartido con SYNC. Dos clientes sobre el
@@ -3824,6 +3893,7 @@ const AUTH = {
       const { data: ses } = await c.auth.getSession();   // local, no va a la red
       const uid = ses?.session?.user?.id;
       if (!uid) return this.cachedProfile();
+      this.uid = uid;
       const { data, error } = await c.from('app_users')
         .select('profile').eq('user_id', uid).maybeSingle();
       if (error) throw error;
@@ -3865,6 +3935,7 @@ const SYNC = {
   client: null,
   enabled: false,
   flushTimer: null,
+  pendientes: 0,  // cambios en cola, para que el pill lo diga sin que preguntes
   status: 'idle', // 'idle'|'syncing'|'offline'|'error'
   lastError: null,    // último mensaje de error de upsert/pull (para mostrarlo en el pill)
   lastErrorTable: null,
@@ -3891,8 +3962,26 @@ const SYNC = {
   },
 
   _setStatus(s) {
+    // Un fallo de sincronización se quedaba en un console.warn. Es justo lo que
+    // hace que dejes de fiarte y busques botones que pulsar: si falla, se dice.
+    if (s === 'error' && this.status !== 'error') {
+      try { UI.toast('No se pudo sincronizar. Toca el indicador para ver el detalle.'); } catch (_) {}
+    }
     this.status = s;
     UI.updateSyncPill();
+  },
+
+  // Repintar el pill como mucho una vez cada 150 ms: un import encola cientos
+  // de filas seguidas y no hace falta tocar el DOM en cada una.
+  _pillPronto() {
+    clearTimeout(this._pillT);
+    this._pillT = setTimeout(() => { try { UI.updateSyncPill(); } catch (_) {} }, 150);
+  },
+
+  async recontar() {
+    try { this.pendientes = (await DB.db.getAll('_pending')).length; }
+    catch (_) { this.pendientes = 0; }
+    try { UI.updateSyncPill(); } catch (_) {}
   },
 
   scheduleFlush() {
@@ -3908,7 +3997,7 @@ const SYNC = {
     const store = tx.objectStore('_pending');
     const all = await store.getAll();
     await tx.done;
-    if (!all.length) { this._setStatus('idle'); return; }
+    if (!all.length) { this.pendientes = 0; this._setStatus('idle'); return; }
 
     this._setStatus('syncing');
     let blocked = false;   // error transitorio (red…) → parar y reintentar luego
@@ -3935,6 +4024,10 @@ const SYNC = {
         break;
       }
     }
+    // Recontar SIEMPRE al salir, salga como salga: el contador es lo que dice
+    // el indicador, y si no baja al vaciarse la cola sigue diciendo "3 sin
+    // subir" con todo subido, que es peor que no contar nada.
+    await this.recontar();
     if (blocked) return;                              // ya en estado error
     if (skipped > 0) { this._setStatus('error'); return; }  // el resto sí se subió; queda el error visible
     // Si llegamos aquí, todo fue OK
@@ -4233,9 +4326,13 @@ const UI = {
       p.onclick = null;
       return;
     }
-    if (SYNC.status === 'offline') { p.classList.add('offline'); t.textContent = 'Sin conexión'; }
+    const pend = SYNC.pendientes > 0 ? ' · ' + SYNC.pendientes + ' sin subir' : '';
+    if (SYNC.status === 'offline') { p.classList.add('offline'); t.textContent = 'Sin conexión' + pend; }
     else if (SYNC.status === 'syncing') { p.classList.add('online'); t.textContent = 'Sincronizando…'; }
-    else if (SYNC.status === 'error') { p.classList.add('error'); t.textContent = 'Error sync'; }
+    else if (SYNC.status === 'error') { p.classList.add('error'); t.textContent = 'Error' + (pend || ' de sync'); }
+    // Decir "Sincronizado" con cosas en cola es mentir, y es la razón de fondo
+    // por la que no te fías de la sincronización automática.
+    else if (pend) { p.classList.add('online'); t.textContent = SYNC.pendientes + ' sin subir'; }
     else { p.classList.add('online'); t.textContent = 'Sincronizado'; }
     // En estado "error" hacemos el pill clickable: muestra detalle + permite acciones.
     p.style.cursor = 'pointer';
@@ -4876,6 +4973,7 @@ const ProfilePicker = {
     STATE.profile = profileId;
     localStorage.setItem('viajes_profile', profileId);
     SYNC.init();
+    PERSONAS.cargar().catch(() => {});
     // Pull en background — no bloquea la entrada a la app.
     // Cuando termine, llama a Router.render() para que aparezcan los datos remotos.
     if (SYNC.enabled) {
@@ -4973,7 +5071,7 @@ const Trips = {
     const all = await DB.listByProfile('trips', dataProfile());
 
     // contadores por filtro
-    const groups = { todos:[], curso:[], prep:[], prox:[], pas:[], aplazado:[], cancelado:[] };
+    const groups = { todos:[], curso:[], prep:[], prox:[], pas:[], sinfecha:[], aplazado:[], cancelado:[] };
     const today = todayIso();
     for (const t of all) {
       groups.todos.push(t);
@@ -4993,6 +5091,8 @@ const Trips = {
     if (!defaultFilter || !groups[defaultFilter] || (defaultFilter === 'curso' && groups.curso.length === 0)) {
       if (groups.curso.length) defaultFilter = 'curso';
       else if (groups.prep.length) defaultFilter = 'prep';
+      else if (groups.prox.length) defaultFilter = 'prox';
+      else if (groups.sinfecha.length) defaultFilter = 'sinfecha';
       else defaultFilter = 'prox';
     }
     STATE.filter = defaultFilter;
@@ -5003,6 +5103,8 @@ const Trips = {
     chips.push({id:'prep', label:'En preparación', n:groups.prep.length});
     chips.push({id:'prox', label:'Próximos', n:groups.prox.length});
     chips.push({id:'pas',  label:'Pasados', n:groups.pas.length});
+    // Solo si hay alguno: una pestaña vacía permanente es ruido.
+    if (groups.sinfecha.length) chips.push({id:'sinfecha', label:'Sin fecha', n:groups.sinfecha.length});
     if (groups.aplazado.length)  chips.push({id:'aplazado',  label:'Aplazados',  n:groups.aplazado.length});
     if (groups.cancelado.length) chips.push({id:'cancelado', label:'Cancelados', n:groups.cancelado.length});
     chips.push({id:'todos',label:'Todos', n:groups.todos.length});
@@ -5854,6 +5956,25 @@ const Trips = {
    VIEW — Trip detail
    ============================================================ */
 const TripDetail = {
+  // Última edición hecha por OTRA persona. Si el último en tocar fuiste tú no
+  // se enseña nada: sabes lo que has hecho, y una línea que siempre está deja
+  // de leerse.
+  async _ultimaEdicion(t) {
+    const mio = AUTH.uid;
+    if (!mio) return null;
+    const filas = [t];
+    for (const tbl of ['planning_items','budget_items','bookings','day_notes','packing_items','diary']) {
+      filas.push(...await DB.listByTrip(tbl, t.id).catch(() => []));
+    }
+    let mejor = null;
+    for (const r of filas) {
+      if (!r || !r.updated_by || r.updated_by === mio) continue;
+      if (!mejor || String(r.updated_at || '') > String(mejor.updated_at || '')) mejor = r;
+    }
+    if (!mejor) return null;
+    return { nombre: PERSONAS.nombre(mejor.updated_by), cuando: mejor.updated_at };
+  },
+
   // Contexto geográfico del viaje: ciudad de cada día y su centro, para
   // geocodificar con sentido y para validar lo que ya está guardado.
   async _geoContext(t) {
@@ -6225,10 +6346,6 @@ const TripDetail = {
         onclick: () => { UI.closeSheet(); TripDetail.openDupes(t); }
       });
       items.push({
-        icon: svg('upload'), label: 'Subir este viaje a la nube',
-        onclick: () => { UI.closeSheet(); TripDetail.openCloudPush(t); }
-      });
-      items.push({
         icon: svg('copy'), label: 'Duplicar viaje',
         onclick: () => { UI.closeSheet(); TripDetail._duplicateTrip(t); }
       });
@@ -6244,111 +6361,6 @@ const TripDetail = {
       title: t.name,
       body: list,
       footer: [el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar')],
-    });
-  },
-
-  // Sube este viaje y todos sus hijos a Supabase metiéndolos en la cola `_pending`,
-  // que es la misma vía por la que viaja cualquier cambio hecho dentro de la app.
-  // Hace falta porque `importProfile` escribe directo en IndexedDB sin encolar: un
-  // viaje traído de un JSON se queda en el dispositivo donde se importó y no llega
-  // a los demás. El import general sigue sin encolar a propósito — restaurar un
-  // backup viejo pisaría con datos caducos lo que haya más nuevo en el servidor.
-  // Aquí no hay ese riesgo: se sube un viaje concreto porque tú lo pides.
-  async openCloudPush(t) {
-    if (!canEdit()) { UI.toast('Modo lector — no puedes subir nada'); return; }
-
-    const TABLA_LABEL = {
-      trip_legs:'Tramos', planning_items:'Paradas', budget_items:'Gastos',
-      bookings:'Reservas', inquiries:'Consultas', wishlist_items:'Lista de deseos',
-      day_notes:'Notas de día', packing_items:'Maleta', addresses:'Direcciones',
-      destination_info:'Ficha del destino', emergency_contacts:'Contactos de emergencia',
-      phrases:'Frases', shared_expenses:'Gastos compartidos', diary:'Diario',
-      wardrobe_items:'Armario', wardrobe_catalog:'Catálogo del armario',
-    };
-    // Se deriva de DB.STORES para que una tabla nueva entre sola. Fuera: las que van
-    // por perfil (no cuelgan de un viaje) y `media`, que es local y no sincroniza.
-    const PERFIL = ['trips','packing_templates','travel_docs','visited_countries'];
-    const hijas = DB.STORES.filter(x => !PERFIL.includes(x) && x !== 'media');
-
-    // Se incluyen las filas de la papelera (`deleted_at`): así lo remoto queda igual
-    // que lo local y un borrado no reaparece en el siguiente pull.
-    const porTabla = {};
-    let total = 1;                                    // el propio viaje
-    for (const tbl of hijas) {
-      const rows = await DB.db.getAllFromIndex(tbl, 'by_trip', t.id).catch(() => []);
-      if (rows.length) { porTabla[tbl] = rows; total += rows.length; }
-    }
-
-    const resumen = el('div', { class:'card' }, [
-      el('div', { class:'kv' }, [ el('span', {class:'k', text:'Viaje'}), el('span', {class:'v', text:'1'}) ]),
-      ...Object.keys(porTabla).map(tbl => el('div', { class:'kv' }, [
-        el('span', { class:'k', text: TABLA_LABEL[tbl] || tbl }),
-        el('span', { class:'v', text: String(porTabla[tbl].length) }),
-      ])),
-    ]);
-
-    const body = el('div', {}, [
-      el('p', { class:'muted', style:{marginTop:0}, text:
-        'Pone este viaje entero en la cola de envío. Al terminar, los demás dispositivos lo '
-        + 'descargan solos la próxima vez que abras la app en ellos: no hay que importar nada allí.' }),
-      resumen,
-      SYNC.enabled ? null : el('div', { class:'field-hint', style:{marginTop:'10px'}, text:
-        'Este dispositivo no tiene Supabase configurado, así que no hay nube a la que subir. '
-        + 'Rellena CFG.supabaseUrl y CFG.supabaseAnonKey en index.html.' }),
-      (SYNC.enabled && !navigator.onLine) ? el('div', { class:'field-hint', style:{marginTop:'10px'}, text:
-        'Ahora mismo estás sin conexión: las filas se quedarán en cola y saldrán solas al volver la red.' }) : null,
-      el('div', { class:'field-hint', style:{marginTop:'10px'}, text:
-        'No borra ni cambia nada: cada fila se escribe por su id, así que repetirlo es inofensivo.' }),
-      el('div', { id:'cp-prog', class:'field-hint', style:{marginTop:'12px', whiteSpace:'pre-wrap'} }),
-    ].filter(Boolean));
-
-    const run = async () => {
-      const prog = $('#cp-prog');
-      const btn = $('#cp-run');
-      if (btn) { btn.disabled = true; btn.textContent = 'Subiendo…'; }
-      let n = 0;
-      const paso = () => { if (prog) prog.textContent = `Encolando ${n} / ${total}…`; };
-      try {
-        // El viaje SIEMPRE primero: en Supabase los hijos tienen FK contra `trips`,
-        // y la cola se vacía en orden de entrada.
-        await DB.put('trips', t); n++; paso();
-        for (const tbl of Object.keys(porTabla)) {
-          for (const row of porTabla[tbl]) {
-            await DB.put(tbl, row); n++;
-            if (n % 25 === 0) { paso(); await new Promise(r => setTimeout(r, 0)); }
-          }
-        }
-      } catch (e) {
-        console.error('cloud push', e);
-        if (prog) prog.textContent = 'Error al encolar: ' + (e?.message || e);
-        if (btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
-        return;
-      }
-      if (!SYNC.enabled) {
-        if (prog) prog.textContent = `${n} filas en cola. Se enviarán en cuanto configures Supabase.`;
-        if (btn) { btn.disabled = false; btn.textContent = 'Subir de nuevo'; }
-        return;
-      }
-      if (prog) prog.textContent = `${n} filas en cola. Enviando…`;
-      await SYNC.flush().catch(err => console.warn('cloud push flush', err));
-      const quedan = (await DB.db.getAll('_pending')).length;
-      if (prog) {
-        prog.textContent = quedan === 0
-          ? `Listo: ${n} filas subidas.\n\nAbre la app en los otros dispositivos y el viaje aparecerá solo.`
-          : `Quedan ${quedan} filas en la cola de envío (la cola es de todo el perfil, no solo de este viaje).`
-            + (SYNC.lastError ? `\n\nÚltimo error [${SYNC.lastErrorTable || '?'}]: ${SYNC.lastError}` : '')
-            + '\n\nSe reintenta sola al volver la conexión.';
-      }
-      if (btn) { btn.disabled = false; btn.textContent = quedan === 0 ? 'Subir de nuevo' : 'Reintentar'; }
-    };
-
-    const runBtn = el('button', { class:'btn btn-primary', id:'cp-run', onclick: run },
-      [ el('span', { html: svg('upload') }), `Subir ${total} ${total === 1 ? 'fila' : 'filas'}` ]);
-
-    UI.openSheet({
-      title:'Subir este viaje a la nube',
-      body,
-      footer:[ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cerrar'), runBtn ],
     });
   },
 
@@ -6452,6 +6464,16 @@ const TripDetail = {
     // Título grande estilo Apple (como las recetas) + subtítulo con fechas + faltan X días.
     // Sin destino (ya estaba duplicado con el nombre del viaje en muchos casos).
     root.appendChild(el('h1', { class:'trip-detail-title', text: t.name }));
+    // Quién tocó esto por última vez, si no fuiste tú. Se mira el viaje y sus
+    // hijas: `trips.updated_by` solo cambia al editar la cabecera, y lo que se
+    // toca de verdad son las paradas y las reservas.
+    const autor = await TripDetail._ultimaEdicion(t);
+    if (autor) {
+      root.appendChild(el('div', { class:'trip-detail-autor' }, [
+        el('span', { html: svg('edit') }),
+        el('span', { text: `Última edición de ${autor.nombre} · ${haceQue(autor.cuando)}` }),
+      ]));
+    }
     const subDates = (t.start_date && t.end_date)
       ? `${fmtDateShort(t.start_date)} – ${fmtDateShort(t.end_date)}` : 'Sin fechas';
     root.appendChild(el('div', { class:'trip-detail-sub' }, [
@@ -13196,8 +13218,20 @@ const AdminView = {
     } catch (e) {
       throw new Error('No se pudo contactar con la función admin-usuarios. ¿Está desplegada?');
     }
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(j.error || ('La función respondió ' + res.status));
+    const txt = await res.text();
+    let j = {}; try { j = JSON.parse(txt); } catch (_) {}
+    if (!res.ok) {
+      // Supabase rechaza con {message}, no con {error}: sin mirar los dos, un
+      // 401 de la pasarela se quedaba en "La función respondió 401" y no había
+      // por dónde tirar.
+      const detalle = j.error || j.message || j.msg || String(txt || '').slice(0, 200);
+      if (res.status === 401) {
+        throw new Error('La función rechazó la sesión (401). Si acabas de desplegarla, apaga '
+          + '"Verify JWT" en sus ajustes: la comprobación de administrador va dentro de la '
+          + 'función y es más estricta. Detalle: ' + (detalle || 'sin cuerpo'));
+      }
+      throw new Error(detalle || ('La función respondió ' + res.status));
+    }
     return j;
   },
 
@@ -13274,7 +13308,7 @@ const AdminView = {
       const esAdmin = u.perfil === 'ruben';
       lista.appendChild(el('div', { class:'list-item' }, [
         el('div', { class:'li-main', onclick: () => { if (!esAdmin) { AdminView.sel = u.id; Router.render(); } } }, [
-          el('div', { class:'li-title', text: u.email || u.id }),
+          el('div', { class:'li-title', text: PERSONAS.mapa[u.id] ? PERSONAS.mapa[u.id] + ' · ' + (u.email || '') : (u.email || u.id) }),
           el('div', { class:'li-sub', text: AdminView.resumen(u) }),
           el('div', { class:'li-sub', text: u.ultimo_acceso
             ? 'Última entrada: ' + fmtDateShort(String(u.ultimo_acceso).slice(0, 10))
@@ -13694,10 +13728,10 @@ const PerfilView = {
       el('button', { class:'btn', onclick: async () => {
         try { await FX.load(); UI.toast('Tasas actualizadas'); } catch(e) { UI.toast('Sin conexión'); }
       } }, [ el('span',{html:svg('refresh')}), 'Actualizar divisas' ]),
-      SYNC.enabled ? el('button', { class:'btn', onclick: async () => {
-        try { await SYNC.pullAll(); await SYNC.flush(); UI.toast('Sync completa'); Router.render(); }
-        catch(e) { UI.toast('Error sync'); }
-      } }, [ el('span',{html:svg('refresh')}), 'Sincronizar ahora' ]) : null,
+      // "Sincronizar ahora" ya no está: la app sincroniza sola —al guardar, al
+      // volver a la pantalla, al recuperar la red y cada pocos segundos— y el
+      // indicador de la barra dice si queda algo. Tener un botón que repite lo
+      // que ya pasa solo es lo que hacía dudar de si había que pulsarlo.
     ].filter(Boolean));
     root.appendChild(dataBtns);
 
@@ -16141,6 +16175,9 @@ async function boot() {
 
   // 4) FX — opcional, nunca debe bloquear.
   if (dbOk) { try { await FX.load(); } catch (e) { console.warn('FX', e); } }
+  // Cuántos cambios quedaron en cola de la sesión anterior. Se cuenta una vez
+  // al arrancar; a partir de ahí se lleva la cuenta en memoria.
+  if (dbOk) { SYNC.recontar().catch(() => {}); }
 
   // 5) Auto-login con el perfil guardado, si lo hay y la BD está OK.
   if (dbOk) {
