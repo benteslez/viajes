@@ -303,36 +303,50 @@ Si no hay conexión, la app usa la última tasa cacheada o la tasa manual que po
 
 ## Exportar PDF — guía de viaje
 
-*Detalle del viaje → menú «…» → Exportar PDF*. Genera un documento maquetado con **todo** lo que
-hay del viaje: portada con índice y cifras clave, resumen y tramos, itinerario día a día,
-reservas, presupuesto con barras, gastos compartidos y saldos, direcciones útiles, ficha del
-destino con contactos y frases, maleta como checklist y diario. Las secciones vacías no
-aparecen, y el índice de la portada se genera a partir de las que sí.
+*Detalle del viaje → menú «…» → Exportar PDF*. No es un volcado de datos con estilo: es un
+folleto. Portada con foto a sangre, índice con números de página, y todo lo que hay del viaje —
+resumen y tramos, itinerario día a día, reservas, presupuesto, gastos compartidos, direcciones,
+ficha del destino, maleta y diario. Las secciones vacías no aparecen y el índice se genera de
+las que sí.
 
-Se dibuja con las primitivas de jsPDF —rectángulos y texto—, **no** con una captura de
-pantalla. El texto sigue siendo texto: se busca, se copia y pesa unas decenas de KB en vez de
-varios MB.
+Tres decisiones sostienen el aspecto. Conviene no deshacerlas sin pensarlo:
 
-Dos limitaciones que vienen del formato, no del código:
+1. **Foto a sangre en portada.** Es lo que separa un documento de una propuesta de viaje. Sale
+   de `cover_blob_id` (IndexedDB) o de `cover_photo_url`. Sin foto hay una portada de color que
+   aguanta el tipo, pero con foto cambia todo.
+2. **Dos familias.** Times para lo que se lee de lejos —título, secciones, días— y Helvetica
+   para lo que se lee de cerca. El contraste serifa / palo seco no cuesta un byte: las dos van
+   en las fuentes base de PDF.
+3. **Itinerario en línea de tiempo.** Hora a la izquierda, filete vertical, contenido a la
+   derecha. Las tarjetas con borde eran una interfaz de app metida en un papel.
 
-| Limitación | Motivo |
+La paleta es cálida (verde profundo + terracota) a propósito, y no la azul de la app: el azul de
+interfaz devuelve el documento al terreno corporativo.
+
+Se dibuja con las primitivas de jsPDF, **no** con una captura de pantalla. El texto sigue siendo
+texto: se busca y se copia, y el archivo pesa unas decenas de KB más la foto (~65 KB con foto,
+~20 KB sin ella) en vez de varios MB.
+
+### Cosas a respetar si se toca
+
+| Detalle | Por qué |
 |---|---|
-| Solo cp1252 (latín occidental) | Las fuentes base de PDF no llevan más. `pdfTexto()` traduce lo traducible (`→` → `>`, `−` → `-`) y descarta el resto: un topónimo en kanji sale sin los kanji. Embeber una fuente CJK son megabytes en un archivo que ya pesa 900 KB |
-| Sin degradados | jsPDF no los tiene. La banda de portada son dos tonos apilados, que se lee como una franja intencionada |
+| **Se maqueta dos veces** (`_maquetar`) | La primera pasada averigua en qué página cae cada sección; la segunda escribe esos números en el índice. Los datos y la foto se preparan una sola vez, así que la segunda es solo dibujo |
+| **Versalitas con `setCharSpace`**, nunca inyectando espacios | Con espacios entre letras el papel se ve igual, pero el texto extraído salía como `\x00U \t\x00R \t…`: copiar un titular daba un churro y ninguna búsqueda encontraba nada |
+| **El degradado se acumula hacia el pie**, no en franjas | jsPDF no tiene degradados. Con franjas sueltas se veían las costuras sobre la foto; con rectángulos que van desde su altura hasta el final, la opacidad suma sin saltos |
+| **El alto de cada bloque se calcula antes de dibujarlo** (`pdfEventoAlto`) | Medir después obligaría a repintar o a partir el bloque entre dos hojas |
+| **Los bloques de texto libre tienen tope** (notas 8 líneas, nota del día 10) | Un bloque más alto que una página no lo salva ningún salto de página |
+| **El texto largo va por `parrafo()`, no por `txt()`** | `txt()` pinta todas las líneas donde le digas; una entrada de diario de dos folios se saldría por debajo del papel |
+| **`PDF_ETIQUETAS` fija a mano los ids ambiguos** | El mismo `localizador` es «Localizador» en un vuelo y «Referencia» en un transporte; en una reserva no hay tipo del que deducirlo, y sin fijarlo ganaba la última etiqueta recorrida |
+| **El dedupe título/dato es por igualdad exacta** | Con «uno contiene al otro», un seguro titulado «IATI» se comía su propio «Póliza: IATI-99231» |
 
-Cosas a respetar si se toca:
+### Limitaciones, que vienen del formato
 
-- **La altura de cada tarjeta se calcula antes de dibujarla** (`pdfEventoAlto`). Medir después
-  obligaría a repintar o a partir la tarjeta entre dos hojas.
-- **Los bloques de texto libre tienen tope** (notas, 8 líneas; nota del día, 10). Una tarjeta
-  más alta que una página no la salva ningún salto de página.
-- **El texto largo va por `parrafo()`, no por `txt()`.** `txt()` pinta todas las líneas donde le
-  digas; una entrada de diario de dos folios se saldría por debajo del papel.
-- **`PDF_ETIQUETAS` fija a mano los ids ambiguos.** El mismo `localizador` es «Localizador» en un
-  vuelo y «Referencia» en un transporte; en una reserva no hay tipo del que deducirlo, y sin
-  fijarlo ganaba la última etiqueta recorrida.
-- **El dedupe título/dato es por igualdad exacta.** Con «uno contiene al otro», un seguro
-  titulado «IATI» se comía su propio «Póliza: IATI-99231».
+- **Solo cp1252 (latín occidental).** Las fuentes base de PDF no llevan más. `pdfTexto()` traduce
+  lo traducible (`→` → `>`, `−` → `-`) y descarta el resto: un topónimo en kanji sale sin los
+  kanji. Embeber una fuente CJK son megabytes en un archivo que ya pesa 900 KB.
+- **Una foto externa (`cover_photo_url`) puede no cargarse** si el servidor no da CORS. Falla en
+  silencio y queda la portada de color: una guía sin imagen se sigue leyendo.
 
 ## Exportar / Importar
 
