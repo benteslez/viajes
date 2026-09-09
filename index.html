@@ -13210,6 +13210,7 @@ const ADMIN_CATS = [
 
 const AdminView = {
   usuarios: [], shares: [], viajes: [], perfiles: [],
+  avisoLista: null,   // por qué la lista no viene de la Edge Function
   sel: null,          // id de la persona abierta, o null en el listado
   error: null,
   cargado: false,     // cada toque de un permiso repinta la vista; sin esto,
@@ -13281,10 +13282,44 @@ const AdminView = {
     const { data: sh, error } = await c.from('trip_shares').select('*');
     if (error) throw new Error('No se pudieron leer los permisos: ' + error.message);
     this.shares = sh || [];
-    const { data: perfiles } = await c.from('app_users').select('user_id, nombre, ocultar_personales');
-    this.perfiles = perfiles || [];
-    const r = await this._fn('list');
-    this.usuarios = r.usuarios || [];
+    const { data: perfiles } = await c.from('app_users')
+      .select('user_id, profile, nombre, ocultar_personales');
+    // Array.isArray y no `|| []`: si la consulta devuelve algo que no es una
+    // lista (un objeto de error, un null), `this.perfiles.find` revienta en
+    // mitad del pintado y la pantalla se queda a medias sin decir por qué.
+    this.perfiles = Array.isArray(perfiles) ? perfiles : [];
+
+    // La Edge Function es la única vía para los correos (viven en auth.users,
+    // que no se expone) y para dar altas y bajas. Pero si falla o vuelve vacía,
+    // la pantalla no puede quedarse en blanco: se cae a `app_users`, que el
+    // admin sí lee por RLS. Sin correos, pero con lo necesario para repartir
+    // permisos, que es a lo que se viene aquí.
+    let respuesta = null, fallo = null;
+    try { respuesta = await this._fn('list'); }
+    catch (e) { fallo = e?.message || String(e); }
+    const deFuncion = Array.isArray(respuesta?.usuarios) ? respuesta.usuarios : [];
+
+    if (deFuncion.length) {
+      this.usuarios = deFuncion;
+      this.avisoLista = null;
+    } else {
+      this.usuarios = this.perfiles.map(pf => ({
+        id: pf.user_id, email: null, perfil: pf.profile || null, ultimo_acceso: null,
+      }));
+      const porQue = fallo
+        ? 'La función admin-usuarios ha fallado: ' + fallo.replace(/\.?$/, '.')
+        : 'La función admin-usuarios respondió sin cuentas'
+          + (respuesta ? ' — ' + JSON.stringify(respuesta).slice(0, 240) : '') + '.';
+      // Que app_users venga vacía TAMBIÉN es un dato, y apunta a otro sitio: no
+      // a la función, sino a que las filas de perfil no existen o la RLS no te
+      // deja leerlas. Sin distinguir los dos casos, el aviso no sirve de nada.
+      this.avisoLista = porQue + (this.perfiles.length
+        ? ' La lista de abajo sale de app_users (' + this.perfiles.length + ' filas): '
+          + 'sirve para repartir permisos, pero no verás los correos ni podrás dar de alta '
+          + 'o de baja desde aquí.'
+        : ' Y app_users tampoco devuelve ninguna fila, así que no hay a quién dar permisos. '
+          + 'Comprueba en el editor SQL: select user_id, profile from app_users;');
+    }
     this.cargado = true;
   },
 
@@ -13343,16 +13378,22 @@ const AdminView = {
     root.appendChild(el('h1', { class:'view-title', text:'Personas y permisos' }));
     root.appendChild(el('p', { class:'view-sub', text:'Quién entra en la app y qué viajes ve. Los permisos los aplica la base de datos; aquí solo se editan.' }));
 
+    if (this.avisoLista) {
+      root.appendChild(el('div', { class:'readonly-banner', style:{marginBottom:'14px'} }, [
+        el('span', { class:'ico', html: svg('warn') }),
+        el('span', { text: this.avisoLista }),
+      ]));
+    }
+
     const lista = el('div', { class:'list' });
     this.usuarios.forEach(u => {
       const esAdmin = u.perfil === 'ruben';
       lista.appendChild(el('div', { class:'list-item' }, [
         el('div', { class:'li-main', onclick: () => { if (!esAdmin) { AdminView.sel = u.id; Router.render(); } } }, [
-          el('div', { class:'li-title', text: PERSONAS.mapa[u.id] ? PERSONAS.mapa[u.id] + ' · ' + (u.email || '') : (u.email || u.id) }),
+          el('div', { class:'li-title', text: [PERSONAS.mapa[u.id], u.email].filter(Boolean).join(' · ') || u.id }),
           el('div', { class:'li-sub', text: AdminView.resumen(u) }),
-          el('div', { class:'li-sub', text: u.ultimo_acceso
-            ? 'Última entrada: ' + fmtDateShort(String(u.ultimo_acceso).slice(0, 10))
-            : 'No ha entrado nunca' }),
+          u.ultimo_acceso ? el('div', { class:'li-sub',
+            text: 'Última entrada: ' + fmtDateShort(String(u.ultimo_acceso).slice(0, 10)) }) : null,
           !u.perfil ? el('div', { class:'tag', style:{marginTop:'6px', color:'var(--danger)'},
             text:'Sin perfil en app_users: no puede entrar' }) : null,
         ].filter(Boolean)),
@@ -13375,7 +13416,8 @@ const AdminView = {
     const u = this.usuarios.find(x => x.id === this.sel);
     if (!u) { this.sel = null; return this._listado(root); }
 
-    root.appendChild(el('h1', { class:'view-title', text: u.email || u.id }));
+    root.appendChild(el('h1', { class:'view-title', text: PERSONAS.mapa[u.id] || u.email || u.id }));
+    if (u.email) root.appendChild(el('p', { class:'field-hint', style:{margin:'-6px 0 6px'}, text: u.email }));
     root.appendChild(el('p', { class:'view-sub', text: this.resumen(u) }));
 
     root.appendChild(el('div', { class:'adm-acciones' }, [
