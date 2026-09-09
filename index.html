@@ -637,6 +637,21 @@ h2.section-title {
   .adm-trip .cat-chip { min-height:28px; padding:3px 10px; font-size:11.5px; }
 }
 .adm-acciones { display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 16px; }
+
+/* Fotos del día ----------------------------------------------------------- */
+.fotos-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(84px, 1fr)); gap:8px; }
+.foto-mini { position:relative; aspect-ratio:4/3; border-radius:8px; overflow:hidden;
+  background:var(--bg-soft); border:1px solid var(--line); }
+.foto-mini img { width:100%; height:100%; object-fit:cover; display:block; }
+.foto-mini .quitar {
+  position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%;
+  border:none; background:rgba(12,18,28,.72); color:#fff; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0;
+}
+.foto-mini .quitar svg { width:13px; height:13px; }
+.foto-orden { position:absolute; bottom:4px; left:5px; font-size:10px; font-weight:700;
+  color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.6); }
+.day-fotos-btn.tiene { color:var(--accent); }
 .adm-cab-viajes {
   display:flex; align-items:center; justify-content:space-between;
   gap:10px; flex-wrap:wrap; margin:20px 0 10px;
@@ -4376,11 +4391,76 @@ const MediaCache = {
     this._byId.set(id, { url, blob: rec.blob });
     return url;
   },
+  // Al borrar una foto hay que soltar SU url, no todas: revokeAll() dejaría
+  // sin imagen al resto de miniaturas que estén en pantalla.
+  olvidar(id) {
+    const e = this._byId.get(id);
+    if (!e) return;
+    try { URL.revokeObjectURL(e.url); } catch (_) {}
+    this._byId.delete(id);
+  },
   revokeAll() {
     for (const { url } of this._byId.values()) {
       try { URL.revokeObjectURL(url); } catch (_) {}
     }
     this._byId.clear();
+  },
+};
+
+/* ============================================================
+   Fotos del día
+   ============================================================
+   Van en el store `media`, que ya existe para las portadas y que es LOCAL:
+   nunca se sincroniza. Se aprovecha su índice `by_trip`, así que no hace falta
+   ni un store nuevo ni tocar el esquema de Supabase.
+
+   Consecuencia que hay que tener clara: una foto subida en el móvil NO aparece
+   en el portátil ni la ve nadie más. Es deliberado — sincronizar binarios por
+   PostgREST es caro y frágil— y por eso la guía tiene que verse bien sin ellas.
+   ============================================================ */
+
+// Las fotos del móvil pesan de 4 a 12 MB y aquí no hacen falta: a 1600 px de
+// lado mayor y JPEG 0.82 se imprimen bien y ocupan unos 250 KB. Sin esto, media
+// docena de fotos por día se come la cuota de IndexedDB en un viaje.
+async function comprimirImagen(file, maxLado, calidad) {
+  const bmp = await createImageBitmap(file);
+  const lado = Math.max(bmp.width, bmp.height);
+  const k = lado > (maxLado || 1600) ? (maxLado || 1600) / lado : 1;
+  const w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  try { bmp.close(); } catch (_) {}
+  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', calidad || 0.82));
+  return blob || file;
+}
+
+const DayPhotos = {
+  async delViaje(tripId) {
+    try { return (await DB.db.getAllFromIndex('media', 'by_trip', tripId)) || []; }
+    catch (_) { return []; }
+  },
+  async list(tripId, fecha) {
+    return (await this.delViaje(tripId))
+      .filter(m => m && m.blob && m.day_date === fecha)
+      .sort((a, b) => (a.order_index || 0) - (b.order_index || 0)
+        || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  },
+  async add(tripId, fecha, file) {
+    const blob = await comprimirImagen(file, 1600, 0.82);
+    const ya = await this.list(tripId, fecha);
+    const id = uuid();
+    // DB.db.put y no DB.put: este último encola la fila para subirla a
+    // Supabase, y lo que se subiría es un blob de 250 KB por PostgREST.
+    await DB.db.put('media', {
+      id, profile: STATE.profile, trip_id: tripId, day_date: fecha,
+      order_index: ya.length, blob, mime: 'image/jpeg', created_at: nowIso(),
+    });
+    return id;
+  },
+  async remove(id) {
+    MediaCache.olvidar(id);
+    try { await DB.db.delete('media', id); } catch (_) {}
   },
 };
 
@@ -4418,6 +4498,7 @@ const ICONS = {
   map:     '<polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21 1 6"/><line x1="8" y1="3" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="21"/>',
   globe:   '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/>',
   book:    '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+  imagen:  '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
   users:   '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   pdf:     '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h6"/>',
   search:  '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
@@ -6172,6 +6253,16 @@ const Trips = {
       const rows = await DB.db.getAllFromIndex(t, 'by_trip', tripId);
       for (const r of rows) await DB.remove(t, r.id);
     }
+    // Las fotos del día son binarios locales: si no se borran aquí se quedan
+    // en IndexedDB para siempre, ocupando megas de un viaje que ya no existe.
+    // Borrado directo, no DB.remove(): `media` no se sincroniza y marcarla como
+    // borrada solo dejaría la basura con una etiqueta.
+    try {
+      for (const m of await DayPhotos.delViaje(tripId)) {
+        MediaCache.olvidar(m.id);
+        await DB.db.delete('media', m.id);
+      }
+    } catch (e) { console.warn('borrar fotos del viaje', e); }
     await DB.remove('trips', tripId);
   },
 };
@@ -8864,9 +8955,24 @@ const TripDetail = {
         _headWx.children.length ? _headWx : null,
       ].filter(Boolean));
       if (canEdit() && k !== 'sin-fecha') TripDetail._attachLongPress(headMain, () => TripDetail.openDayEditor(t, k, dayMeta));
+      // Botón visible para las fotos: la pulsación larga sobre la cabecera abre
+      // el mismo editor, pero nadie la descubre solo. Enseña cuántas hay.
+      const btnFotos = (canEdit() && k !== 'sin-fecha') ? el('button', {
+        class:'icon-btn day-fotos-btn', title:'Fotos del día', 'aria-label':'Fotos de este día',
+        html: svg('imagen'), onclick: () => TripDetail.openDayEditor(t, k, dayMeta),
+      }) : null;
+      if (btnFotos) {
+        DayPhotos.list(t.id, k).then(fs => {
+          if (!fs.length) return;
+          btnFotos.classList.add('tiene');
+          btnFotos.title = fs.length === 1 ? '1 foto' : fs.length + ' fotos';
+          btnFotos.setAttribute('aria-label', btnFotos.title);
+        }).catch(() => {});
+      }
       const head = el('div', { class:'day-head' }, [
         headMain,
         el('div', { class:'day-actions' }, [
+          btnFotos,
           // Optimizar el orden de las paradas del día por cercanía (si hay ≥3 con coords).
           (canEdit() && k !== 'sin-fecha' && byDay[k].filter(i => i.lat != null && i.lng != null && !i._virtual).length >= 3) ? el('button', {
             class:'icon-btn', title:'Optimizar orden del día (por cercanía)',
@@ -9975,6 +10081,52 @@ const TripDetail = {
     const n = existing || { id: uuid(), trip_id: t.id, date: dateKey, title:'', color:null, text:'' };
     let currentColor = n.color || 'azul';
 
+    // --- Fotos del día -------------------------------------------------
+    // Se guardan y se borran AL MOMENTO, no al pulsar "Guardar": son binarios
+    // y no cuelgan de la fila de la nota, así que un día puede tener fotos sin
+    // tener ni título ni texto.
+    const gridFotos = el('div', { class:'fotos-grid' });
+    const avisoFotos = el('span', { class:'field-hint', style:{margin:0} });
+    const pintarFotos = async () => {
+      const fotos = await DayPhotos.list(t.id, dateKey);
+      gridFotos.innerHTML = '';
+      if (!fotos.length) {
+        gridFotos.appendChild(el('div', { class:'field-hint', style:{gridColumn:'1/-1', margin:0},
+          text:'Sin fotos todavía.' }));
+      }
+      for (const f of fotos) {
+        const img = el('img', { alt:'', decoding:'async' });
+        MediaCache.urlFor(f.id).then(u => { if (u) img.src = u; });
+        gridFotos.appendChild(el('div', { class:'foto-mini' }, [
+          img,
+          el('span', { class:'foto-orden', text: String(fotos.indexOf(f) + 1) }),
+          el('button', { class:'quitar', type:'button', title:'Quitar foto', 'aria-label':'Quitar foto',
+            html: svg('close'), onclick: async () => { await DayPhotos.remove(f.id); pintarFotos(); } }),
+        ]));
+      }
+    };
+    const entrada = el('input', {
+      type:'file', accept:'image/*', multiple:'multiple', style:{display:'none'},
+      onchange: async (e) => {
+        const files = [...(e.target.files || [])];
+        e.target.value = '';
+        if (!files.length) return;
+        avisoFotos.textContent = 'Procesando…';
+        let n2 = 0;
+        for (const f of files) {
+          if (!/^image\//.test(f.type)) continue;
+          // 25 MB es una foto de móvil moderna en RAW o un vídeo mal elegido:
+          // por encima de eso, createImageBitmap puede tumbar la pestaña.
+          if (f.size > 25 * 1024 * 1024) { UI.toast('Una foto era demasiado grande y se ha saltado'); continue; }
+          try { await DayPhotos.add(t.id, dateKey, f); n2++; }
+          catch (err) { console.warn('foto', err); UI.toast('No se pudo añadir una foto'); }
+        }
+        avisoFotos.textContent = n2 ? (n2 === 1 ? '1 foto añadida' : n2 + ' fotos añadidas') : '';
+        pintarFotos();
+      },
+    });
+    pintarFotos();
+
     // Picker visual de colores
     const grid = el('div', { class:'color-grid' });
     DAY_COLORS.forEach(c => {
@@ -10011,6 +10163,17 @@ const TripDetail = {
         el('label', { text:'Nota del día' }),
         el('textarea', { id:'dt-text', style:{minHeight:'120px'} }, n.text || ''),
         el('div', { class:'field-hint', text:'Recordatorios, ideas o contexto del día (no son paradas del itinerario).' }),
+      ]),
+      el('div', { class:'form-row' }, [
+        el('label', { text:'Fotos del día' }),
+        gridFotos,
+        el('div', { style:{display:'flex', gap:'8px', alignItems:'center', marginTop:'8px', flexWrap:'wrap'} }, [
+          entrada,
+          el('button', { class:'btn btn-sm', type:'button', onclick: () => entrada.click() },
+            [ el('span', { html: svg('imagen') }), 'Añadir fotos' ]),
+          avisoFotos,
+        ]),
+        el('div', { class:'field-hint', text:'Ilustran este día en el PDF. Se guardan solo en este dispositivo: no se sincronizan ni las ve nadie más.' }),
       ]),
     ]);
 
@@ -15112,162 +15275,13 @@ async function pdfBlobAJpeg(blob, anchoPx, altoPx) {
   } catch (e) { console.warn('pdf imagen', e); return null; }
 }
 
-/* ---------- Foto de portada automática ---------------------------------
-   Si el viaje no tiene foto propia, se busca una de alguno de sus lugares en
-   Wikipedia. La imagen sale de Wikimedia Commons, así que lleva crédito: se
-   imprime debajo de la portada.
-
-   TODO ESTO ES OPCIONAL Y FALLA EN SILENCIO. Sin red, con la API caída, con
-   una respuesta de forma distinta a la esperada o sin ninguna imagen decente,
-   se devuelve null y queda la portada de color, que se lee igual de bien. Una
-   guía de viaje no puede depender de que Wikipedia conteste.
-   ------------------------------------------------------------------------ */
-
-const WIKI_API = 'https://es.wikipedia.org/w/api.php';
-
-// Escudos, banderas, mapas y logos son lo que más devuelve una búsqueda de una
-// ciudad, y son la peor portada posible. Se descartan por el nombre del
-// archivo, que es lo único que se sabe de la imagen antes de bajarla.
-const WIKI_DESCARTE = /(flag|bandera|escudo|coat[_ ]of[_ ]arms|blason|map|mapa|location|locator|logo|seal|emblem|orthographic|\.svg$)/i;
-
-async function wikiJson(params, ms) {
-  const ctrl = new AbortController();
-  const reloj = setTimeout(() => ctrl.abort(), ms || 7000);
-  try {
-    const url = WIKI_API + '?' + new URLSearchParams(
-      Object.assign({ action: 'query', format: 'json', origin: '*' }, params)).toString();
-    const r = await fetch(url, { signal: ctrl.signal });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch (_) { return null; }
-  finally { clearTimeout(reloj); }
-}
-
-// Busca una foto para un término. Devuelve {url, archivo} o null.
-async function wikiFoto(termino) {
-  const j = await wikiJson({
-    generator: 'search', gsrsearch: termino, gsrlimit: '6', gsrnamespace: '0',
-    prop: 'pageimages', piprop: 'thumbnail|name', pithumbsize: '1600',
-  });
-  const paginas = j && j.query && j.query.pages;
-  if (!paginas) return null;
-  const cands = Object.values(paginas)
-    // `index` conserva el orden de relevancia de la búsqueda; el objeto de
-    // páginas viene indexado por pageid, que no lo respeta.
-    .sort((a, b) => (a.index || 99) - (b.index || 99))
-    .filter(pg => pg && pg.thumbnail && pg.thumbnail.source && pg.pageimage
-      && !WIKI_DESCARTE.test(pg.pageimage)
-      && pg.thumbnail.width >= 900
-      // Apaisada: una portada vertical se recorta a tiras y no se reconoce nada.
-      && pg.thumbnail.width > pg.thumbnail.height);
-  if (!cands.length) return null;
-  return { url: cands[0].thumbnail.source, archivo: cands[0].pageimage };
-}
-
-// Autoría y licencia del archivo, para el crédito. Si no se puede averiguar,
-// se acredita a Wikimedia Commons a secas: mejor eso que nada.
-async function wikiCredito(archivo) {
-  const j = await wikiJson({
-    titles: 'File:' + archivo, prop: 'imageinfo', iiprop: 'extmetadata',
-    iiextmetadatafilter: 'Artist|LicenseShortName',
-  }, 5000);
-  const paginas = j && j.query && j.query.pages;
-  const pg = paginas && Object.values(paginas)[0];
-  const meta = pg && pg.imageinfo && pg.imageinfo[0] && pg.imageinfo[0].extmetadata;
-  const limpiar = (v) => String(v || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-  const autor = limpiar(meta && meta.Artist && meta.Artist.value).slice(0, 60);
-  const lic = limpiar(meta && meta.LicenseShortName && meta.LicenseShortName.value).slice(0, 24);
-  return ['Foto:', autor || null, lic ? '(' + lic + ')' : null, '· Wikimedia Commons']
-    .filter(Boolean).join(' ');
-}
-
-// Términos por los que buscar, del más específico al más genérico. Un tramo
-// ("Iguazú, Brasil") describe un lugar concreto; el nombre del viaje suele ser
-// una frase y va el último.
-function wikiTerminos(t, legs) {
-  const out = [];
-  const push = (v) => { const x = String(v || '').trim(); if (x && !out.includes(x)) out.push(x); };
-  (legs || []).forEach(l => { if (l.city) push(l.city + ' ' + (l.country || '')); });
-  (legs || []).forEach(l => push(l.city));
-  String(t.city || '').split(',').forEach(push);
-  String(t.country || '').split(',').forEach(push);
-  push(t.name);
-  return out.slice(0, 6);
-}
-
-// Se guarda en `media`, que es local y no se sincroniza, con un id derivado del
-// viaje. Así la segunda exportación no vuelve a la red y funciona sin cobertura.
-const wikiCacheId = (tripId) => 'wikicover-' + tripId;
-
-async function pdfFotoAuto(t, legs, anchoPx, altoPx) {
-  const id = wikiCacheId(t.id);
-  const clave = 'viajes_wikicover_' + t.id;
-  try {
-    const guardada = await DB.db.get('media', id);
-    if (guardada && guardada.blob) {
-      let credito = null;
-      try { credito = localStorage.getItem(clave) || null; } catch (_) {}
-      return { dataUrl: await pdfBlobAJpeg(guardada.blob, anchoPx, altoPx), credito };
-    }
-  } catch (_) {}
-
-  if (!navigator.onLine) return null;
-
-  // Si ya se buscó y no había nada, no se vuelve a intentar en una semana.
-  // Sin esto, un viaje cuyos lugares Wikipedia no ilustra pagaba la búsqueda
-  // entera —cinco términos— en CADA exportación.
-  const claveFallo = 'viajes_wikicover_no_' + t.id;
-  try {
-    const ultimo = Number(localStorage.getItem(claveFallo) || 0);
-    if (ultimo && Date.now() - ultimo < 7 * 24 * 3600 * 1000) return null;
-  } catch (_) {}
-
-  // Presupuesto de tiempo para TODA la búsqueda. Exportar un PDF no puede
-  // quedarse medio minuto esperando a que contesten cinco consultas: pasado
-  // el plazo se sigue sin foto y ya está.
-  const plazo = Date.now() + 9000;
-  let foto = null;
-  for (const term of wikiTerminos(t, legs)) {
-    if (Date.now() > plazo) break;
-    foto = await wikiFoto(term);
-    if (foto) break;
-  }
-  if (!foto) {
-    try { localStorage.setItem(claveFallo, String(Date.now())); } catch (_) {}
-    return null;
-  }
-
-  let blob = null;
-  try {
-    const ctrl = new AbortController();
-    const reloj = setTimeout(() => ctrl.abort(), 12000);
-    // upload.wikimedia.org sirve con CORS abierto; si algún día dejara de
-    // hacerlo, el canvas quedaría contaminado y toDataURL lanzaría. Las dos
-    // cosas acaban en el catch y en portada de color.
-    const r = await fetch(foto.url, { mode: 'cors', signal: ctrl.signal });
-    clearTimeout(reloj);
-    if (!r.ok) return null;
-    blob = await r.blob();
-  } catch (_) { return null; }
-  if (!blob || !/^image\//.test(blob.type || '')) return null;
-
-  const credito = await wikiCredito(foto.archivo);
-  try {
-    await DB.db.put('media', { id, profile: STATE.profile, blob, mime: blob.type, created_at: nowIso() });
-    localStorage.setItem(clave, credito);
-    localStorage.removeItem('viajes_wikicover_no_' + t.id);
-  } catch (_) {}
-  const dataUrl = await pdfBlobAJpeg(blob, anchoPx, altoPx);
-  return dataUrl ? { dataUrl, credito } : null;
-}
-
-// Foto de portada. Manda la del viaje; si no hay, se busca una de sus lugares.
-// Devuelve { dataUrl, credito } o null.
+// Foto de portada. Solo de lo que haya subido a la app: la portada del viaje
+// y, si no hay, la primera foto de día que exista. Nada de buscar en internet.
 //
-// Puede fallar de muchas maneras —sin blob, una URL externa sin CORS, un canvas
-// contaminado, Wikipedia sin contestar— y todas acaban igual: sin foto y con la
-// portada de color, porque una guía sin imagen se sigue leyendo.
-async function pdfFotoPortada(t, legs, anchoPx, altoPx) {
+// Puede fallar —sin blob, una URL externa sin CORS, un canvas contaminado— y
+// siempre acaba igual: sin foto y con la portada de color, porque una guía sin
+// imagen se sigue leyendo.
+async function pdfFotoPortada(t, fotosDia, anchoPx, altoPx) {
   try {
     let blob = null;
     if (t.cover_blob_id) {
@@ -15278,14 +15292,77 @@ async function pdfFotoPortada(t, legs, anchoPx, altoPx) {
       const r = await fetch(t.cover_photo_url, { mode: 'cors' });
       if (r.ok) blob = await r.blob();
     }
-    if (blob) {
-      const dataUrl = await pdfBlobAJpeg(blob, anchoPx, altoPx);
-      // La foto que has elegido tú no lleva crédito: es tuya.
-      if (dataUrl) return { dataUrl, credito: null };
+    // Sin portada propia, la primera foto de día hace de portada. Es una foto
+    // del viaje que ya está aquí: mejor eso que un rectángulo de color.
+    if (!blob && fotosDia && fotosDia.length) blob = fotosDia[0].blob;
+    if (!blob) return null;
+    const dataUrl = await pdfBlobAJpeg(blob, anchoPx, altoPx);
+    return dataUrl ? { dataUrl, credito: null } : null;
+  } catch (e) { console.warn('pdf portada', e); return null; }
+}
+
+/* ---------- Fotos de un día, maquetadas ---------------------------------
+   La diferencia entre ilustrar y pegar fotos está en que ocupen un bloque con
+   forma propia. Una sola va a banda ancha; dos, a media calle; tres, en
+   mosaico con una grande; de cuatro en adelante, en filas de dos. Todas
+   recortadas al marco (`object-fit: cover`), nunca deformadas.
+   ------------------------------------------------------------------------ */
+function pdfPlanFotos(n, CW) {
+  const g = 7;                       // hueco entre fotos
+  if (n === 1) return [[{ x: 0, y: 0, w: CW, h: 176 }]];
+  if (n === 2) { const w = (CW - g) / 2; return [[{ x: 0, y: 0, w, h: 152 }, { x: w + g, y: 0, w, h: 152 }]]; }
+  if (n === 3) {
+    const wG = Math.round(CW * 0.615), wP = CW - wG - g, hT = 208, hP = (hT - g) / 2;
+    return [[{ x: 0, y: 0, w: wG, h: hT }, { x: wG + g, y: 0, w: wP, h: hP },
+             { x: wG + g, y: hP + g, w: wP, h: hP }]];
+  }
+  const w = (CW - g) / 2, filas = [];
+  for (let i = 0; i < n; i += 2) {
+    const fila = [{ x: 0, y: 0, w, h: 142 }];
+    if (i + 1 < n) fila.push({ x: w + g, y: 0, w, h: 142 });
+    else fila[0] = { x: 0, y: 0, w: CW, h: 152 };   // impar suelta: a banda ancha
+    filas.push(fila);
+  }
+  return filas;
+}
+
+// Codifica las fotos de un día a los tamaños que pide su maquetación. Se hace
+// ANTES de maquetar, y una sola vez, porque convertir un blob a JPEG es
+// asíncrono y el pintado del documento no lo es (y además se maqueta dos veces
+// para numerar el índice: codificar ahí sería hacerlo todo por duplicado).
+async function pdfPrepararFotos(fotos, CW) {
+  // Un tope por día: esto es una guía, no un álbum, y seis fotos ya empujan el
+  // itinerario a otra hoja.
+  const usar = (fotos || []).slice(0, 6);
+  if (!usar.length) return null;
+  const filas = pdfPlanFotos(usar.length, CW);
+  let k = 0;
+  const out = [];
+  for (const fila of filas) {
+    const celdas = [];
+    for (const c of fila) {
+      const f = usar[k++];
+      if (!f) break;
+      // 150 ppp para que impreso no se vea pastoso: 1 pt = 1/72", así que el
+      // ancho en píxeles es el ancho en puntos por 150/72 = 2.08.
+      const url = await pdfBlobAJpeg(f.blob, Math.round(c.w * 2.08), Math.round(c.h * 2.08));
+      if (url) celdas.push(Object.assign({ url }, c));
     }
-  } catch (e) { console.warn('pdf portada propia', e); }
-  try { return await pdfFotoAuto(t, legs, anchoPx, altoPx); }
-  catch (e) { console.warn('pdf portada automática', e); return null; }
+    if (celdas.length) out.push(celdas);
+  }
+  return out.length ? out : null;
+}
+
+function pdfFotosDia(doc, L, plan) {
+  if (!plan) return;
+  plan.forEach(fila => {
+    const alto = Math.max(...fila.map(c => c.y + c.h));
+    L.sitio(alto + 10);
+    const base = L.y;
+    fila.forEach(c => doc.addImage(c.url, 'JPEG', L.M + c.x, base + c.y, c.w, c.h, undefined, 'FAST'));
+    L.y = base + alto + 10;
+  });
+  L.y += 4;
 }
 
 // Lienzo: geometría, saltos de página y primitivas. Todo el estado (y, página,
@@ -15725,7 +15802,21 @@ const PdfGuia = {
       diary:     await DB.listByTrip('diary', t.id),
       info:      (await DB.listByTrip('destination_info', t.id))[0] || null,
     };
-    const foto = await pdfFotoPortada(t, d.legs, 1240, 980);
+    // Todas las fotos del viaje de un tirón: una sola lectura del store en vez
+    // de una por día.
+    const fotosViaje = (await DayPhotos.delViaje(t.id))
+      .filter(m => m && m.blob && m.day_date)
+      .sort((a, b) => String(a.day_date).localeCompare(String(b.day_date))
+        || (a.order_index || 0) - (b.order_index || 0));
+    const porDia = {};
+    fotosViaje.forEach(m => { (porDia[m.day_date] = porDia[m.day_date] || []).push(m); });
+    d.fotosPorDia = {};
+    for (const fecha of Object.keys(porDia)) {
+      const plan = await pdfPrepararFotos(porDia[fecha], 595.28 - 54 * 2);
+      if (plan) d.fotosPorDia[fecha] = plan;
+    }
+
+    const foto = await pdfFotoPortada(t, fotosViaje, 1240, 980);
     const primera = this._maquetar(t, d, foto, null);
     return this._maquetar(t, d, foto, primera.paginas).doc;
   },
@@ -15867,6 +15958,14 @@ const PdfGuia = {
     };
     const byDay = {};
     d.planning.forEach(p => { const k = p.day_date || 'sin-fecha'; (byDay[k] = byDay[k] || []).push(p); });
+    // Un día puede no tener ninguna parada y aun así tener contenido: una nota
+    // o unas fotos. Sin esto, subías fotos a un día libre y no salían en la
+    // guía por ningún lado.
+    Object.keys(d.fotosPorDia || {}).forEach(k => { byDay[k] = byDay[k] || []; });
+    d.notes.forEach(n => {
+      if (!n.date) return;
+      if ((n.text && n.text.trim()) || n.title) byDay[n.date] = byDay[n.date] || [];
+    });
     const dias = Object.keys(byDay).sort((a, b) => (a === 'sin-fecha') - (b === 'sin-fecha') || a.localeCompare(b));
     const primerDia = dias.find(x => x !== 'sin-fecha');
 
@@ -15878,7 +15977,14 @@ const PdfGuia = {
         return String(a.time || '~').localeCompare(String(b.time || '~'))
             || (a.order_index || 0) - (b.order_index || 0);
       });
-      L.sitio(120);
+      // Reservar la cabecera Y lo primero que va debajo. Con un valor fijo, un
+      // día con mosaico de tres fotos dejaba el titular solo al pie de una
+      // página y las fotos empezaban en la siguiente.
+      const planFotos = (d.fotosPorDia || {})[iso];
+      const hPrimero = planFotos
+        ? Math.max(...planFotos[0].map(c => c.y + c.h)) + 12
+        : 92;
+      L.sitio(Math.min(72 + hPrimero, L.BOT - L.TOP));
       L.y += 10;
 
       // Cabecera del día: antetítulo "DÍA 03 · MONTEVIDEO", fecha grande con
@@ -15935,6 +16041,10 @@ const PdfGuia = {
           size: 9.6, fam: 'serif', italic: true, color: C.ink, w: w, max: 10, lh: 1.45 });
         L.y += h + 14;
       }
+
+      // Las fotos presentan el día: van tras la cabecera y la nota, y antes de
+      // las paradas. Metidas entre paradas cortarían el recorrido en dos.
+      pdfFotosDia(doc, L, planFotos);
 
       items.forEach((p, i) => pdfEvento(doc, L, this._evento(p, t),
         i === items.length - 1, i === 0));
