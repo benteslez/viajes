@@ -13534,13 +13534,25 @@ const GeoCities = {
 const ShareLinks = {
   CFG_KEY: 'viajes_share_gh',
   REG_KEY: 'viajes_share_links',
+  BUCKET: 'compartir',
 
   cfg() {
     try { return JSON.parse(localStorage.getItem(this.CFG_KEY) || '{}'); }
     catch (_) { return {}; }
   },
   saveCfg(c) { localStorage.setItem(this.CFG_KEY, JSON.stringify(c)); },
-  isReady() { const c = this.cfg(); return !!(c.owner && c.repo && c.token); },
+
+  // Dos destinos posibles para el HTML publicado:
+  //   'sb' — Supabase Storage. La credencial es la sesión que ya tienes
+  //          abierta: no caduca a plazo fijo ni hay nada que copiar en cada
+  //          dispositivo. Es el destino de los enlaces nuevos.
+  //   'gh' — la API de GitHub con un token personal. Se conserva porque los
+  //          enlaces ya repartidos viven ahí y tienen que seguir vivos.
+  // Una entrada sin `store` es de antes de esto, o sea 'gh'.
+  storageReady() { return !!(CFG.supabaseUrl && CFG.supabaseAnonKey && AUTH.init()); },
+  ghReady() { const c = this.cfg(); return !!(c.owner && c.repo && c.token); },
+  isReady() { return this.storageReady() || this.ghReady(); },
+  storeOf(entry) { return entry ? (entry.store || 'gh') : (this.storageReady() ? 'sb' : 'gh'); },
 
   registry() {
     try { return JSON.parse(localStorage.getItem(this.REG_KEY) || '{}'); }
@@ -13571,11 +13583,17 @@ const ShareLinks = {
   // pegando su URL: así se actualiza en su sitio en vez de crear uno nuevo.
   async adopt(trip, url) {
     const u = String(url || '').trim();
-    const base = this.pagesBase();
-    if (!u.startsWith(base + '/')) throw new Error('El enlace no empieza por ' + base);
+    // Se acepta cualquiera de los dos destinos: el enlace que pegas ya dice
+    // dónde vive, y de ahí sale dónde hay que actualizarlo después.
+    const sb = this.storageBase();
+    const gh = this.pagesBase();
+    let base = null, store = null;
+    if (sb && u.startsWith(sb + '/'))      { base = sb; store = 'sb'; }
+    else if (gh && u.startsWith(gh + '/')) { base = gh; store = 'gh'; }
+    else throw new Error('El enlace no empieza por ' + (sb ? sb + ' ni por ' : '') + gh);
     const path = u.slice(base.length + 1).replace(/^\/+/, '');
     if (!path.endsWith('.html')) throw new Error('El enlace no apunta a un archivo .html');
-    const entry = { path, url: u, at: new Date().toISOString() };
+    const entry = { path, url: u, at: new Date().toISOString(), store };
     await this._remember(trip, entry);
     return entry;
   },
@@ -13583,6 +13601,12 @@ const ShareLinks = {
   // URL pública que tendrá el archivo. Por defecto la de GitHub Pages del repo.
   pagesBase(c = this.cfg()) {
     return (c.pagesBase || `https://${c.owner}.github.io/${c.repo}`).replace(/\/+$/, '');
+  },
+
+  // Prefijo público del bucket de Storage.
+  storageBase() {
+    if (!CFG.supabaseUrl) return '';
+    return `${CFG.supabaseUrl.replace(/\/+$/, '')}/storage/v1/object/public/${this.BUCKET}`;
   },
 
   // btoa() solo acepta latin1: hay que pasar por UTF-8 a mano o los acentos
@@ -13628,11 +13652,56 @@ const ShareLinks = {
     return `Error ${res.status}: ${(body && body.message) || 'desconocido'}`;
   },
 
-  // Sube (o reemplaza) el HTML y devuelve { path, url }.
-  async publish(trip, html) {
+  // Sube (o reemplaza) el HTML y devuelve { path, url, store }.
+  // `forceStore` solo lo usa la mudanza a Supabase: cambiar de destino cambia
+  // la URL, así que nunca pasa por decisión de la app, solo si lo pides.
+  async publish(trip, html, { forceStore } = {}) {
+    const existing = this.linkFor(trip);
+    // Un enlace ya repartido se actualiza donde vive: mudarlo de sitio dejaría
+    // muerta la URL que mandaste. Solo los nuevos eligen destino.
+    const store = forceStore || this.storeOf(existing);
+    if (store === 'sb') {
+      // Al mudar desde GitHub no se reaprovecha la ruta: son espacios
+      // distintos y la vieja lleva el prefijo de carpeta del repo.
+      return this._publishStorage(trip, html, existing?.store === 'sb' ? existing : null);
+    }
+    return this._publishGitHub(trip, html, existing?.store === 'sb' ? null : existing);
+  },
+
+  async _publishStorage(trip, html, existing) {
+    const sb = AUTH.init();
+    if (!sb) throw new Error('Supabase no está configurado en este dispositivo.');
+    // Sin carpeta: el bucket ya se llama `compartir` y anidar otra igual daba
+    // rutas del tipo .../compartir/compartir/viaje.html.
+    const path = existing?.path || `${this._slug(trip.name)}-${this._rand()}.html`;
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const { error } = await sb.storage.from(this.BUCKET).upload(path, blob, {
+      upsert: true,
+      contentType: 'text/html; charset=utf-8',
+      // Un minuto: al pulsar "Actualizar enlace" quien lo abra debe ver el
+      // cambio enseguida, no dentro de una hora (el defecto de Storage).
+      cacheControl: '60',
+    });
+    if (error) throw new Error(this._storeErrMsg(error));
+    const { data } = sb.storage.from(this.BUCKET).getPublicUrl(path);
+    const entry = { path, url: data.publicUrl, at: new Date().toISOString(), store: 'sb' };
+    await this._remember(trip, entry);
+    return entry;
+  },
+
+  _storeErrMsg(error) {
+    const m = String(error?.message || error?.error || '');
+    if (/bucket not found/i.test(m)) return 'Falta el bucket "compartir" en Supabase Storage. Ejecuta schema-storage.sql.';
+    if (/row-level security|not authorized|violates|403/i.test(m)) return 'Tu sesión no tiene permiso para publicar (solo el perfil "ruben" puede).';
+    if (/jwt|expired|invalid token|401/i.test(m)) return 'La sesión ha caducado. Cierra sesión y vuelve a entrar.';
+    if (/payload too large|exceeded the maximum/i.test(m)) return 'El archivo pasa del límite del bucket (10 MB).';
+    if (/failed to fetch|network/i.test(m)) return 'Sin conexión.';
+    return m || 'No se pudo subir el archivo.';
+  },
+
+  async _publishGitHub(trip, html, existing) {
     const c = this.cfg();
     const dir = (c.dir || 'compartir').replace(/^\/+|\/+$/g, '');
-    const existing = this.linkFor(trip);
     // Reutilizar la ruta si ya había enlace: así "actualizar" no cambia la URL
     // que ya mandaste a alguien.
     const path = existing?.path || `${dir}/${this._slug(trip.name)}-${this._rand()}.html`;
@@ -13654,16 +13723,28 @@ const ShareLinks = {
     if (!res.ok) throw new Error(this._errMsg(res, await res.json().catch(() => null)));
 
     const url = `${this.pagesBase(c)}/${path}`;
-    const entry = { path, url, at: new Date().toISOString() };
+    const entry = { path, url, at: new Date().toISOString(), store: 'gh' };
     await this._remember(trip, entry);
     return entry;
   },
 
-  // Revocar = borrar el archivo del repo. El enlace deja de funcionar.
+  // Revocar = borrar el archivo de donde esté. El enlace deja de funcionar.
   async revoke(trip) {
-    const c = this.cfg();
     const entry = this.linkFor(trip);
     if (!entry) return;
+    if (this.storeOf(entry) === 'sb') {
+      const sb = AUTH.init();
+      if (!sb) throw new Error('Supabase no está configurado en este dispositivo.');
+      const { error } = await sb.storage.from(this.BUCKET).remove([entry.path]);
+      // Si el objeto ya no estaba, el enlace igualmente está muerto: se quita
+      // del registro en vez de dejar al usuario sin poder limpiarlo.
+      if (error && !/not found/i.test(String(error.message || ''))) {
+        throw new Error(this._storeErrMsg(error));
+      }
+      await this._remember(trip, null);
+      return;
+    }
+    const c = this.cfg();
     const head = await this._api(`${encodeURI(entry.path)}?ref=${encodeURIComponent(c.branch || 'main')}`);
     if (head.ok) {
       const j = await head.json();
@@ -13944,7 +14025,9 @@ const ShareLinks = {
       hint ? el('div', { class:'field-hint', text: hint }) : null,
     ].filter(Boolean));
     const body = el('div', {}, [
-      el('p', { class:'muted', style:{marginTop:0}, text:'Para crear enlaces, la app sube el HTML a tu repo de GitHub y usa la URL de GitHub Pages.' }),
+      el('p', { class:'muted', style:{marginTop:0}, text: ShareLinks.storageReady()
+        ? 'Los enlaces nuevos se publican en Supabase con tu sesión: aquí no hace falta tocar nada. Esto es solo para los enlaces antiguos, los que viven en tu repo de GitHub.'
+        : 'Para crear enlaces, la app sube el HTML a tu repo de GitHub y usa la URL de GitHub Pages.' }),
       el('div', { class:'form-grid-2' }, [
         row('gh-owner', 'Usuario u organización', c.owner, 'benteslez'),
         row('gh-repo', 'Repositorio', c.repo, 'viajes'),
@@ -14029,7 +14112,9 @@ const ShareLinks = {
         el('label', { text:'Enlace' }),
         el('input', { id:'sl-url', type:'text', value: entry.url, readonly:'readonly', onclick: (e) => e.target.select() }),
       ]),
-      el('div', { class:'field-hint', text:'GitHub Pages tarda alrededor de un minuto en publicar el archivo. Si al abrirlo da 404, espera y recarga.' }),
+      el('div', { class:'field-hint', text: ShareLinks.storeOf(entry) === 'sb'
+        ? 'Está disponible al momento. Si lo actualizas, quien ya lo tenga abierto verá el cambio en un minuto como mucho.'
+        : 'GitHub Pages tarda alrededor de un minuto en publicar el archivo. Si al abrirlo da 404, espera y recarga.' }),
       el('div', { class:'readonly-banner', style:{marginTop:'12px'} }, [
         el('span', { class:'ico', html: svg('lock') }),
         el('span', { text:'Es una foto fija: si cambias el viaje, pulsa "Actualizar" para regenerar el archivo. La URL no cambia.' }),
@@ -14042,7 +14127,9 @@ const ShareLinks = {
     const open = el('button', { class:'btn', onclick: () => window.open(entry.url, '_blank', 'noopener') },
       [ el('span', { html: svg('external') }), 'Abrir' ]);
     const revoke = el('button', { class:'btn btn-danger', onclick: async () => {
-      const ok = await UI.confirm('¿Borrar el archivo del repo? El enlace dejará de funcionar.');
+      const ok = await UI.confirm(ShareLinks.storeOf(entry) === 'sb'
+        ? '¿Borrar el archivo publicado? El enlace dejará de funcionar.'
+        : '¿Borrar el archivo del repo? El enlace dejará de funcionar.');
       if (!ok) return;
       try { await ShareLinks.revoke(trip); UI.closeSheet(); UI.toast('Enlace revocado'); }
       catch (err) { console.error('revoke', err); UI.toast('No se pudo revocar: ' + (err?.message || '')); }
@@ -14208,9 +14295,42 @@ const Exporter = {
       }
     }}, [ el('span', { html: svg('upload') }), existingLink ? 'Actualizar enlace' : 'Crear enlace' ]);
 
-    const ghCfg = el('button', { class:'btn btn-sm btn-ghost', title:'Repo y token para publicar enlaces',
+    // Enlace viejo (en el repo) con sesión disponible: se puede mudar a
+    // Supabase y dejar de depender del token. Cambia la URL, así que se pide
+    // a mano y se avisa; no es algo que la app deba hacer por su cuenta.
+    const mudar = (existingLink && ShareLinks.storeOf(existingLink) === 'gh' && ShareLinks.storageReady())
+      ? el('button', { class:'btn btn-sm',
+          title:'Publicarlo en Supabase y dejar de depender del token de GitHub',
+          onclick: async () => {
+            // Los interruptores se leen ANTES de preguntar: UI.confirm abre su
+            // propia hoja encima y se lleva por delante los campos de esta.
+            const opts = readOpts();
+            const ok = await UI.confirm('El enlace pasará a publicarse en Supabase y tendrá una URL nueva. '
+              + 'La actual dejará de actualizarse (el archivo sigue en tu repo hasta que lo borres a mano). '
+              + '¿Seguir?', 'Mover el enlace');
+            if (!ok) return;
+            // La hoja de confirmación se ha llevado la de compartir, así que el
+            // aviso de que algo está pasando va por toast, no por el botón.
+            UI.toast('Publicando en Supabase…');
+            try {
+              const html = Exporter._buildShareHtml(t, await Exporter._gatherTrip(t), opts);
+              const entry = await ShareLinks.publish(t, html, { forceStore: 'sb' });
+              UI.closeSheet();
+              setTimeout(() => ShareLinks.openLinkSheet(t, entry), 280);
+            } catch (err) {
+              console.error('mudar enlace', err);
+              UI.toast('No se pudo mudar: ' + (err?.message || ''));
+            }
+          } }, [ el('span', { html: svg('upload') }), 'Mover a Supabase' ])
+      : null;
+
+    // Con Storage no hay nada que configurar. El botón solo sigue haciendo
+    // falta si este enlace es de los viejos, o si no hay sesión con la que
+    // publicar y GitHub es la única salida.
+    const necesitaGh = !ShareLinks.storageReady() || ShareLinks.storeOf(existingLink) === 'gh';
+    const ghCfg = necesitaGh ? el('button', { class:'btn btn-sm btn-ghost', title:'Repo y token para publicar enlaces',
       onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openConfig(() => Exporter.openShareSheet(t)), 280); } },
-      [ el('span', { html: svg('shield') }), 'Ajustes del enlace' ]);
+      [ el('span', { html: svg('shield') }), 'Ajustes del enlace' ]) : null;
     // Si este dispositivo no conoce el enlace pero ya existe (se creó en otro),
     // pegar su URL evita publicar una segunda copia con otra dirección.
     const nDraft = ShareLinks._draftCount(t);
@@ -14223,7 +14343,7 @@ const Exporter = {
       onclick: () => { UI.closeSheet(); setTimeout(() => ShareLinks.openAdopt(t), 280); } },
       [ el('span', { html: svg('external') }), 'Ya tengo un enlace' ]) : null;
     body.appendChild(el('div', { style:{marginTop:'14px', display:'flex', gap:'8px', flexWrap:'wrap'} },
-      [ draftBtn, ghCfg, adoptar ].filter(Boolean)));
+      [ draftBtn, mudar, ghCfg, adoptar ].filter(Boolean)));
 
     UI.openSheet({ title:'Compartir viaje', body,
       footer:[el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), generate, makeLink] });
