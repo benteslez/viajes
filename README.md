@@ -61,15 +61,39 @@ La app funciona perfectamente sin Supabase. Si quieres sincronizar entre tu móv
    };
    ```
 
-4. Publica y recarga la PWA en cada dispositivo. Verás el pill de la barra superior pasar a
-   "Sincronizado".
+4. En **Authentication → Users → Add user**, crea una cuenta por persona (marca
+   *Auto Confirm User*). Anota los correos.
+
+5. En el **SQL editor**, ejecuta `schema-auth.sql`. Al final del archivo, descomenta los
+   dos `insert` y pon los correos del paso 4: es lo que asocia cada cuenta con su perfil
+   (`ruben`, `sergio`).
+
+6. Publica y recarga la PWA en cada dispositivo. Te pedirá correo y contraseña una vez;
+   después la sesión se guarda y el pill de la barra superior pasa a "Sincronizado".
 
 ### Modelo de aislamiento por perfil
 
-No hay autenticación. El cliente envía `x-app-profile: rubén|sergio|invitado` en cada petición.
-La función `app_profile()` y las políticas RLS filtran filas por esa cabecera. Como el frontend es
-trusted (solo lo usas tú), basta con esto. **No publiques la app sin antes pensar si esta
-asunción te sigue valiendo.**
+Cada perfil es una cuenta de **Supabase Auth**. La sesión se guarda en el dispositivo, y
+el servidor deduce el perfil de la tabla `app_users` a partir del JWT — que lo firma él y
+no se puede falsificar desde el navegador. `app_profile()` y las políticas RLS filtran
+las filas con eso. Sin sesión, `app_profile()` devuelve `NULL` y no se ve nada.
+
+- `ruben` es el dueño: único que puede escribir.
+- `sergio` lee los viajes de Rubén, pero no los modifica.
+- **`invitado` ya no existe.** Para enseñar un viaje a alguien, genera el enlace HTML
+  (*Compartir viaje*): sale ya redactado y no da acceso a la base.
+
+> **Por qué cambió.** El modelo original no tenía autenticación: el cliente mandaba una
+> cabecera `x-app-profile: ruben|sergio|invitado` y la RLS se fiaba de ella. Con la app
+> en local eso se sostiene. Publicada en GitHub Pages, no: la `anonKey` está en el HTML
+> a la vista y la cabecera la escribe quien quiera, así que **cualquiera podía leerlo
+> todo** con `curl -H "x-app-profile: ruben"`. Quitar `invitado` no lo arreglaba — la
+> rama `owner = app_profile()` seguía abierta. Un secreto que viaja en el HTML público
+> no es un secreto.
+
+Sin `supabaseUrl` configurada la app es puramente local: no hay servidor ni datos ajenos
+que proteger, así que la pantalla de entrada sigue siendo el selector de perfil de
+siempre, sin contraseña.
 
 ## Comportamiento offline
 
