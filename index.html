@@ -15096,13 +15096,178 @@ const pdfTinte = (c, f) => [
   Math.round(255 - (255 - c[2]) * (f || 0.12)),
 ];
 
-// Foto de portada, recortada al encuadre y pasada a JPEG.
+// Recorte centrado tipo `object-fit: cover` y paso a JPEG: llenar el marco
+// sin deformar la imagen.
+async function pdfBlobAJpeg(blob, anchoPx, altoPx) {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const escala = Math.max(anchoPx / bmp.width, altoPx / bmp.height);
+    const w = bmp.width * escala, h = bmp.height * escala;
+    const cv = document.createElement('canvas');
+    cv.width = anchoPx; cv.height = altoPx;
+    cv.getContext('2d').drawImage(bmp, (anchoPx - w) / 2, (altoPx - h) / 2, w, h);
+    const url = cv.toDataURL('image/jpeg', 0.82);
+    try { bmp.close(); } catch (_) {}
+    return url;
+  } catch (e) { console.warn('pdf imagen', e); return null; }
+}
+
+/* ---------- Foto de portada automática ---------------------------------
+   Si el viaje no tiene foto propia, se busca una de alguno de sus lugares en
+   Wikipedia. La imagen sale de Wikimedia Commons, así que lleva crédito: se
+   imprime debajo de la portada.
+
+   TODO ESTO ES OPCIONAL Y FALLA EN SILENCIO. Sin red, con la API caída, con
+   una respuesta de forma distinta a la esperada o sin ninguna imagen decente,
+   se devuelve null y queda la portada de color, que se lee igual de bien. Una
+   guía de viaje no puede depender de que Wikipedia conteste.
+   ------------------------------------------------------------------------ */
+
+const WIKI_API = 'https://es.wikipedia.org/w/api.php';
+
+// Escudos, banderas, mapas y logos son lo que más devuelve una búsqueda de una
+// ciudad, y son la peor portada posible. Se descartan por el nombre del
+// archivo, que es lo único que se sabe de la imagen antes de bajarla.
+const WIKI_DESCARTE = /(flag|bandera|escudo|coat[_ ]of[_ ]arms|blason|map|mapa|location|locator|logo|seal|emblem|orthographic|\.svg$)/i;
+
+async function wikiJson(params, ms) {
+  const ctrl = new AbortController();
+  const reloj = setTimeout(() => ctrl.abort(), ms || 7000);
+  try {
+    const url = WIKI_API + '?' + new URLSearchParams(
+      Object.assign({ action: 'query', format: 'json', origin: '*' }, params)).toString();
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (_) { return null; }
+  finally { clearTimeout(reloj); }
+}
+
+// Busca una foto para un término. Devuelve {url, archivo} o null.
+async function wikiFoto(termino) {
+  const j = await wikiJson({
+    generator: 'search', gsrsearch: termino, gsrlimit: '6', gsrnamespace: '0',
+    prop: 'pageimages', piprop: 'thumbnail|name', pithumbsize: '1600',
+  });
+  const paginas = j && j.query && j.query.pages;
+  if (!paginas) return null;
+  const cands = Object.values(paginas)
+    // `index` conserva el orden de relevancia de la búsqueda; el objeto de
+    // páginas viene indexado por pageid, que no lo respeta.
+    .sort((a, b) => (a.index || 99) - (b.index || 99))
+    .filter(pg => pg && pg.thumbnail && pg.thumbnail.source && pg.pageimage
+      && !WIKI_DESCARTE.test(pg.pageimage)
+      && pg.thumbnail.width >= 900
+      // Apaisada: una portada vertical se recorta a tiras y no se reconoce nada.
+      && pg.thumbnail.width > pg.thumbnail.height);
+  if (!cands.length) return null;
+  return { url: cands[0].thumbnail.source, archivo: cands[0].pageimage };
+}
+
+// Autoría y licencia del archivo, para el crédito. Si no se puede averiguar,
+// se acredita a Wikimedia Commons a secas: mejor eso que nada.
+async function wikiCredito(archivo) {
+  const j = await wikiJson({
+    titles: 'File:' + archivo, prop: 'imageinfo', iiprop: 'extmetadata',
+    iiextmetadatafilter: 'Artist|LicenseShortName',
+  }, 5000);
+  const paginas = j && j.query && j.query.pages;
+  const pg = paginas && Object.values(paginas)[0];
+  const meta = pg && pg.imageinfo && pg.imageinfo[0] && pg.imageinfo[0].extmetadata;
+  const limpiar = (v) => String(v || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  const autor = limpiar(meta && meta.Artist && meta.Artist.value).slice(0, 60);
+  const lic = limpiar(meta && meta.LicenseShortName && meta.LicenseShortName.value).slice(0, 24);
+  return ['Foto:', autor || null, lic ? '(' + lic + ')' : null, '· Wikimedia Commons']
+    .filter(Boolean).join(' ');
+}
+
+// Términos por los que buscar, del más específico al más genérico. Un tramo
+// ("Iguazú, Brasil") describe un lugar concreto; el nombre del viaje suele ser
+// una frase y va el último.
+function wikiTerminos(t, legs) {
+  const out = [];
+  const push = (v) => { const x = String(v || '').trim(); if (x && !out.includes(x)) out.push(x); };
+  (legs || []).forEach(l => { if (l.city) push(l.city + ' ' + (l.country || '')); });
+  (legs || []).forEach(l => push(l.city));
+  String(t.city || '').split(',').forEach(push);
+  String(t.country || '').split(',').forEach(push);
+  push(t.name);
+  return out.slice(0, 6);
+}
+
+// Se guarda en `media`, que es local y no se sincroniza, con un id derivado del
+// viaje. Así la segunda exportación no vuelve a la red y funciona sin cobertura.
+const wikiCacheId = (tripId) => 'wikicover-' + tripId;
+
+async function pdfFotoAuto(t, legs, anchoPx, altoPx) {
+  const id = wikiCacheId(t.id);
+  const clave = 'viajes_wikicover_' + t.id;
+  try {
+    const guardada = await DB.db.get('media', id);
+    if (guardada && guardada.blob) {
+      let credito = null;
+      try { credito = localStorage.getItem(clave) || null; } catch (_) {}
+      return { dataUrl: await pdfBlobAJpeg(guardada.blob, anchoPx, altoPx), credito };
+    }
+  } catch (_) {}
+
+  if (!navigator.onLine) return null;
+
+  // Si ya se buscó y no había nada, no se vuelve a intentar en una semana.
+  // Sin esto, un viaje cuyos lugares Wikipedia no ilustra pagaba la búsqueda
+  // entera —cinco términos— en CADA exportación.
+  const claveFallo = 'viajes_wikicover_no_' + t.id;
+  try {
+    const ultimo = Number(localStorage.getItem(claveFallo) || 0);
+    if (ultimo && Date.now() - ultimo < 7 * 24 * 3600 * 1000) return null;
+  } catch (_) {}
+
+  // Presupuesto de tiempo para TODA la búsqueda. Exportar un PDF no puede
+  // quedarse medio minuto esperando a que contesten cinco consultas: pasado
+  // el plazo se sigue sin foto y ya está.
+  const plazo = Date.now() + 9000;
+  let foto = null;
+  for (const term of wikiTerminos(t, legs)) {
+    if (Date.now() > plazo) break;
+    foto = await wikiFoto(term);
+    if (foto) break;
+  }
+  if (!foto) {
+    try { localStorage.setItem(claveFallo, String(Date.now())); } catch (_) {}
+    return null;
+  }
+
+  let blob = null;
+  try {
+    const ctrl = new AbortController();
+    const reloj = setTimeout(() => ctrl.abort(), 12000);
+    // upload.wikimedia.org sirve con CORS abierto; si algún día dejara de
+    // hacerlo, el canvas quedaría contaminado y toDataURL lanzaría. Las dos
+    // cosas acaban en el catch y en portada de color.
+    const r = await fetch(foto.url, { mode: 'cors', signal: ctrl.signal });
+    clearTimeout(reloj);
+    if (!r.ok) return null;
+    blob = await r.blob();
+  } catch (_) { return null; }
+  if (!blob || !/^image\//.test(blob.type || '')) return null;
+
+  const credito = await wikiCredito(foto.archivo);
+  try {
+    await DB.db.put('media', { id, profile: STATE.profile, blob, mime: blob.type, created_at: nowIso() });
+    localStorage.setItem(clave, credito);
+    localStorage.removeItem('viajes_wikicover_no_' + t.id);
+  } catch (_) {}
+  const dataUrl = await pdfBlobAJpeg(blob, anchoPx, altoPx);
+  return dataUrl ? { dataUrl, credito } : null;
+}
+
+// Foto de portada. Manda la del viaje; si no hay, se busca una de sus lugares.
+// Devuelve { dataUrl, credito } o null.
 //
-// Puede fallar de tres maneras distintas y todas acaban igual —sin foto y con
-// la portada de color—, porque una guía sin imagen se sigue leyendo: que no
-// haya blob, que la URL externa no dé CORS, o que el canvas quede contaminado
-// y toDataURL lance.
-async function pdfFotoPortada(t, anchoPx, altoPx) {
+// Puede fallar de muchas maneras —sin blob, una URL externa sin CORS, un canvas
+// contaminado, Wikipedia sin contestar— y todas acaban igual: sin foto y con la
+// portada de color, porque una guía sin imagen se sigue leyendo.
+async function pdfFotoPortada(t, legs, anchoPx, altoPx) {
   try {
     let blob = null;
     if (t.cover_blob_id) {
@@ -15113,19 +15278,14 @@ async function pdfFotoPortada(t, anchoPx, altoPx) {
       const r = await fetch(t.cover_photo_url, { mode: 'cors' });
       if (r.ok) blob = await r.blob();
     }
-    if (!blob) return null;
-    const bmp = await createImageBitmap(blob);
-    // Recorte centrado tipo `object-fit: cover`: llenar el marco sin deformar.
-    const escala = Math.max(anchoPx / bmp.width, altoPx / bmp.height);
-    const w = bmp.width * escala, h = bmp.height * escala;
-    const cv = document.createElement('canvas');
-    cv.width = anchoPx; cv.height = altoPx;
-    const cx = cv.getContext('2d');
-    cx.drawImage(bmp, (anchoPx - w) / 2, (altoPx - h) / 2, w, h);
-    const url = cv.toDataURL('image/jpeg', 0.82);
-    try { bmp.close(); } catch (_) {}
-    return url;
-  } catch (e) { console.warn('pdf portada', e); return null; }
+    if (blob) {
+      const dataUrl = await pdfBlobAJpeg(blob, anchoPx, altoPx);
+      // La foto que has elegido tú no lleva crédito: es tuya.
+      if (dataUrl) return { dataUrl, credito: null };
+    }
+  } catch (e) { console.warn('pdf portada propia', e); }
+  try { return await pdfFotoAuto(t, legs, anchoPx, altoPx); }
+  catch (e) { console.warn('pdf portada automática', e); return null; }
 }
 
 // Lienzo: geometría, saltos de página y primitivas. Todo el estado (y, página,
@@ -15288,8 +15448,8 @@ function pdfPortada(doc, L, t, stats, indice, foto) {
   const C = PDF_COLOR, W = L.W, H = L.H, M = L.M, CW = L.CW;
   const hFoto = 470;
 
-  if (foto) {
-    doc.addImage(foto, 'JPEG', 0, 0, W, hFoto, undefined, 'FAST');
+  if (foto && foto.dataUrl) {
+    doc.addImage(foto.dataUrl, 'JPEG', 0, 0, W, hFoto, undefined, 'FAST');
     // Velo oscuro para que el texto blanco se lea sobre cualquier foto. Un
     // degradado de verdad no existe en jsPDF, así que se acumula opacidad:
     // cada rectángulo va desde su altura HASTA EL PIE de la foto, no en
@@ -15307,6 +15467,7 @@ function pdfPortada(doc, L, t, stats, indice, foto) {
   } else {
     doc.setFillColor(C.deep[0], C.deep[1], C.deep[2]);
     doc.rect(0, 0, W, hFoto, 'F');
+    // eslint-disable-next-line no-unused-expressions
     // Sin foto, un par de arcos concéntricos evitan el rectángulo plano.
     doc.setGState(new doc.GState({ opacity: 0.10 }));
     doc.setFillColor(255, 255, 255);
@@ -15341,6 +15502,14 @@ function pdfPortada(doc, L, t, stats, indice, foto) {
 
   doc.setDrawColor(C.acc[0], C.acc[1], C.acc[2]); doc.setLineWidth(2.4);
   doc.line(48, 340 + lineas.length * 44 + 12, 48 + 54, 340 + lineas.length * 44 + 12);
+
+  // Crédito de la foto, si no es tuya. Las de Commons son libres pero piden
+  // atribución, y una línea de 6 pt no le quita nada a la portada.
+  if (foto && foto.credito) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+    doc.setTextColor(C.soft[0], C.soft[1], C.soft[2]);
+    doc.text(pdfTexto(foto.credito), W - M, hFoto + 10, { baseline: 'top', align: 'right' });
+  }
 
   // Tira de cifras: sin cajas, separadas por filetes. Una cifra grande con
   // serifa y su etiqueta en versalitas debajo.
@@ -15556,7 +15725,7 @@ const PdfGuia = {
       diary:     await DB.listByTrip('diary', t.id),
       info:      (await DB.listByTrip('destination_info', t.id))[0] || null,
     };
-    const foto = await pdfFotoPortada(t, 1240, 980);
+    const foto = await pdfFotoPortada(t, d.legs, 1240, 980);
     const primera = this._maquetar(t, d, foto, null);
     return this._maquetar(t, d, foto, primera.paginas).doc;
   },
@@ -15598,11 +15767,18 @@ const PdfGuia = {
       ini: t.start_date || null,
       fin: t.end_date || null,
       duracion: dias ? dias + (dias === 1 ? ' día' : ' días') : null,
+      // Sin presupuesto: la portada es el reclamo del viaje, y el precio
+      // pertenece a su sección, donde va con su desglose y se entiende.
+      //
+      // Tampoco "días planificados": junto a los "26 días" del rango de
+      // fechas, dos cifras de días en la misma portada obligan a pararse a
+      // pensar cuál es cuál. Los destinos no chocan con nada.
       tiles: [
+        d.legs.length
+          ? [String(d.legs.length), d.legs.length === 1 ? 'destino' : 'destinos']
+          : [String(nDias || '—'), nDias === 1 ? 'día planificado' : 'días planificados'],
         [String(d.planning.length), d.planning.length === 1 ? 'parada' : 'paradas'],
         [String(d.bookings.length), d.bookings.length === 1 ? 'reserva' : 'reservas'],
-        // Sin decimales: en una cifra de portada los céntimos solo estorban.
-        [totalEur ? fmtMoney(Math.round(totalEur), 'EUR').replace(/,00/, '') : '—', 'presupuesto'],
       ],
       ruta: d.legs.length > 1
         ? d.legs.slice().sort((a, b) => String(a.arrival_date || '').localeCompare(String(b.arrival_date || '')))

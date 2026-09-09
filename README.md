@@ -314,6 +314,10 @@ Tres decisiones sostienen el aspecto. Conviene no deshacerlas sin pensarlo:
 1. **Foto a sangre en portada.** Es lo que separa un documento de una propuesta de viaje. Sale
    de `cover_blob_id` (IndexedDB) o de `cover_photo_url`. Sin foto hay una portada de color que
    aguanta el tipo, pero con foto cambia todo.
+
+   Si el viaje no tiene foto propia, **se busca una de alguno de sus lugares en Wikipedia**
+   (ver más abajo). La portada NO lleva el presupuesto: es el reclamo del viaje, y el precio
+   pertenece a su sección, donde va con su desglose y se entiende.
 2. **Dos familias.** Times para lo que se lee de lejos —título, secciones, días— y Helvetica
    para lo que se lee de cerca. El contraste serifa / palo seco no cuesta un byte: las dos van
    en las fuentes base de PDF.
@@ -346,6 +350,32 @@ texto: se busca y se copia, y el archivo pesa unas decenas de KB más la foto (~
 | **Con tramos solapados gana el más corto** | Una escapada de tres días a Iguazú vive dentro de la estancia de una semana en Buenos Aires y las dos casan con esa fecha: con un `find` a secas ganaba la primera del array y el día de Iguazú salía rotulado «Buenos Aires» |
 | **`parrafo()` fija la fuente antes de partir en líneas** | `splitTextToSize` mide con la que esté activa: viniendo de un titular a 19 pt partía como si el texto fuera de 19 pt, y la entradilla salía en una columna a media anchura |
 | **En `kvPunteado` el valor se ajusta al hueco que deja la etiqueta** | Sin ajustarlo, un destino largo se metía encima de su propia etiqueta |
+
+### Foto de portada automática
+
+Cuando el viaje no tiene foto, `pdfFotoAuto()` busca una en la Action API de Wikipedia
+(`es.wikipedia.org/w/api.php`, con `origin=*` para CORS) y baja la imagen de
+`upload.wikimedia.org`. Los términos van del más específico al más genérico —tramo con país,
+tramo, ciudad del viaje, país, nombre del viaje— y se para en el primero que dé una foto
+utilizable.
+
+| Regla | Por qué |
+|---|---|
+| Se descartan banderas, escudos, mapas, logos y SVG por el nombre del archivo | Es lo que más devuelve la búsqueda de una ciudad, y es la peor portada posible. El nombre es lo único que se sabe antes de bajar la imagen |
+| Solo apaisadas y de 900 px para arriba | Una vertical se recorta a una tira y no se reconoce nada |
+| Presupuesto de 9 s para **toda** la búsqueda | Exportar no puede quedarse medio minuto esperando cinco consultas |
+| Si no encuentra nada, no se reintenta en 7 días (`viajes_wikicover_no_<id>`) | Un viaje que Wikipedia no ilustra pagaba la búsqueda entera en cada exportación |
+| La imagen se cachea en `media` con id `wikicover-<tripId>` | `media` es local y no se sincroniza. La segunda exportación no toca la red y funciona sin cobertura |
+| Se imprime el crédito bajo la portada | Commons es libre pero pide atribución. Una línea de 6 pt no le quita nada a la página |
+
+**Falla en silencio, siempre.** Sin red, con la API caída, con una respuesta de forma distinta
+a la esperada o sin ninguna imagen decente, se devuelve `null` y queda la portada de color. Una
+guía de viaje no puede depender de que Wikipedia conteste.
+
+> Esta integración **no se ha podido probar contra la Wikipedia real**: la política de salida
+> del entorno donde se desarrolló bloquea `es.wikipedia.org`. Está verificada contra una
+> simulación con la forma documentada de la respuesta, y por eso todos los caminos de fallo
+> acaban en la portada de color.
 
 ### Limitaciones, que vienen del formato
 
