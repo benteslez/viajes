@@ -317,8 +317,12 @@ Tres decisiones sostienen el aspecto. Conviene no deshacerlas sin pensarlo:
 2. **Dos familias.** Times para lo que se lee de lejos —título, secciones, días— y Helvetica
    para lo que se lee de cerca. El contraste serifa / palo seco no cuesta un byte: las dos van
    en las fuentes base de PDF.
-3. **Itinerario en línea de tiempo.** Hora a la izquierda, filete vertical, contenido a la
-   derecha. Las tarjetas con borde eran una interfaz de app metida en un papel.
+3. **Itinerario en línea de tiempo.** Filete vertical con un punto por parada y el contenido a
+   la derecha. Las tarjetas con borde eran una interfaz de app metida en un papel. **Sin horas**:
+   solo algunas paradas las tienen y una columna medio vacía descuadra la lectura.
+
+Cada día se rotula con la ciudad del tramo en el que cae, a la derecha de la fecha, y con la
+etiqueta del día detrás si hay sitio.
 
 La paleta es cálida (verde profundo + terracota) a propósito, y no la azul de la app: el azul de
 interfaz devuelve el documento al terreno corporativo.
@@ -339,6 +343,9 @@ texto: se busca y se copia, y el archivo pesa unas decenas de KB más la foto (~
 | **El texto largo va por `parrafo()`, no por `txt()`** | `txt()` pinta todas las líneas donde le digas; una entrada de diario de dos folios se saldría por debajo del papel |
 | **`PDF_ETIQUETAS` fija a mano los ids ambiguos** | El mismo `localizador` es «Localizador» en un vuelo y «Referencia» en un transporte; en una reserva no hay tipo del que deducirlo, y sin fijarlo ganaba la última etiqueta recorrida |
 | **El dedupe título/dato es por igualdad exacta** | Con «uno contiene al otro», un seguro titulado «IATI» se comía su propio «Póliza: IATI-99231» |
+| **Con tramos solapados gana el más corto** | Una escapada de tres días a Iguazú vive dentro de la estancia de una semana en Buenos Aires y las dos casan con esa fecha: con un `find` a secas ganaba la primera del array y el día de Iguazú salía rotulado «Buenos Aires» |
+| **`parrafo()` fija la fuente antes de partir en líneas** | `splitTextToSize` mide con la que esté activa: viniendo de un titular a 19 pt partía como si el texto fuera de 19 pt, y la entradilla salía en una columna a media anchura |
+| **En `kvPunteado` el valor se ajusta al hueco que deja la etiqueta** | Sin ajustarlo, un destino largo se metía encima de su propia etiqueta |
 
 ### Limitaciones, que vienen del formato
 
