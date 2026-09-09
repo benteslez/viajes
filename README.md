@@ -127,6 +127,27 @@ borrárselo.
 > `Exporter._buildShareHtml`— volcada a una tabla aparte que sea la única que lean los
 > invitados.
 
+### Altas y bajas de cuentas
+
+`supabase/functions/admin-usuarios/index.ts`. Crear o borrar una cuenta de Supabase Auth exige
+la clave `service_role`, que se salta toda la RLS y **no puede vivir en `index.html`**, que es
+público. Por eso hay una Edge Function: la clave se queda en el servidor y la app pide las cosas
+por HTTP.
+
+| Acción | Dónde se hace |
+|---|---|
+| Quitar el acceso (borrar de `trip_shares` / `app_users`) | En la app, con la anonKey. No necesita la función |
+| Crear cuenta, borrarla, cambiarle la contraseña | Edge Function |
+
+Acciones: `list`, `create`, `delete`, `password`. **Comprueba en el servidor que quien llama es
+el perfil `ruben`** — que el botón esté escondido en la app no protege nada, cualquiera puede
+llamar a la URL a mano.
+
+Instalación: *Edge Functions → Deploy a new function*, nombre `admin-usuarios`, pegar el archivo.
+`SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` las inyecta Supabase sola. Si el navegador se queja
+de CORS en la petición previa (OPTIONS), apagar *Verify JWT*: la comprobación interna es más
+estricta, porque además de una sesión válida exige que sea la del administrador.
+
 ## Comportamiento offline
 
 - Toda lectura/escritura va primero a IndexedDB.
