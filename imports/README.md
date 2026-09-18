@@ -1,0 +1,53 @@
+# imports/
+
+Viajes ya montados en el **mismo formato que produce «Exportar JSON»** de la app
+(`DB.exportProfile`). Se cargan desde **Ajustes → Importar JSON**.
+
+## Cómo importar
+
+1. Descarga el `.json` a tu dispositivo.
+2. Abre la app con el perfil **Rubén** (las filas llevan `profile: "ruben"`).
+3. **Ajustes → Importar JSON** → elige el archivo → confirma.
+4. Si hay sesión de Supabase, `DB.importProfile` encola las filas y se suben solas.
+
+Los `id` son UUID **deterministas** (v5 sobre una semilla fija): reimportar el
+mismo archivo **sobrescribe** las filas en vez de duplicar el viaje.
+
+## Archivos
+
+| Archivo | Viaje | Fechas | Contenido |
+|---|---|---|---|
+| `brasil-2025-2026.json` | Brasil | 20/12/2025 → 12/01/2026 (24 días) | 1 viaje, 8 tramos, 195 eventos, 1 país visitado |
+
+### `brasil-2025-2026.json`
+
+- **Estado**: viaje **pasado** — `in_preparation: false` y `end_date` anterior a hoy,
+  que es lo que hace que `tripStatus()` devuelva `'pas'`. No hay ningún campo
+  «pasado» que fijar a mano.
+- **Multi-destino**: `is_multi_destino: true`, con un `trip_legs` por ciudad
+  (São Paulo, Florianópolis, Salvador, Porto de Galinhas, Río de Janeiro, Paraty,
+  Ilha Grande y vuelta a Río).
+- **Reservas**: `status: "confirmado"` en `vuelo`/`hotel`/`transporte`/`coche`.
+  Sin estado, `itemStatus()` los pintaría de naranja «por iniciar», que en un
+  viaje ya hecho no tiene sentido. `actividad` se queda sin estado (su
+  comportamiento por defecto en la app).
+- **Sin geocodificar**: `lat`/`lng`/`place_name` van a `null`. Para el mapa,
+  usa la revisión de ubicaciones del propio viaje.
+- **Sin horas**: el itinerario de origen no las traía, así que `time` es `null`
+  y el orden dentro de cada día lo da `order_index`.
+
+#### Correspondencia categoría → tipo de evento
+
+El itinerario de origen usaba categorías propias; los tipos válidos son los de
+`TYPES_PLANNING` (y el `check` de `planning_items.type` en `schema.sql`).
+
+| Categoría origen | Tipo en la app | Nota |
+|---|---|---|
+| `transporte` + `modo: vuelo` | `vuelo` | `metadata`: aerolínea/origen/destino sacados del propio título |
+| `transporte` + `modo: alquiler_coche` | `coche` | |
+| `transporte` (resto) | `transporte` | `metadata.modo`: uber→`taxi`, transfer/buggy→`coche`, taxi_boat/lancha→`barco`, tren→`tren`, bus→`bus`, teleférico→sin modo (no existe en la app) |
+| `alojamiento` | `hotel` | `metadata.nombre` cuando el título nombra el alojamiento |
+| `comida` | `comida` | |
+| `playa` | `playa` | |
+| `cultura`, `mirador`, `naturaleza` | `lugar` | La app no tiene estos tres tipos |
+| `actividad`, `evento` | `actividad` | |

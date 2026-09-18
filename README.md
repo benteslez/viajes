@@ -13,6 +13,7 @@ viajes/
 ├── service-worker.js   ← cache de app shell y CDNs
 ├── schema.sql          ← tablas Supabase + RLS por perfil
 ├── icons/              ← iconos PWA
+├── imports/            ← viajes en el formato de «Importar JSON» (ver imports/README.md)
 └── README.md
 ```
 
