@@ -36,7 +36,7 @@ secas: en el INSERT se respetaba el valor del cliente. Un archivo con un
 
 | Archivo | Viaje | Fechas | Contenido |
 |---|---|---|---|
-| `brasil-2025-2026.json` | Brasil | 20/12/2025 → 12/01/2026 (24 días) | 1 viaje, 8 tramos, 195 eventos, 1 país visitado |
+| `brasil-2025-2026.json` | Brasil | 20/12/2025 → 12/01/2026 (24 días) | 1 viaje, 8 tramos, 195 eventos, 24 títulos de día, 1 país visitado |
 
 ### `brasil-2025-2026.json`
 
@@ -54,6 +54,13 @@ secas: en el INSERT se respetaba el valor del cliente. Un archivo con un
   usa la revisión de ubicaciones del propio viaje.
 - **Sin horas**: el itinerario de origen no las traía, así que `time` es `null`
   y el orden dentro de cada día lo da `order_index`.
+- **Título de día**: un `day_notes` por cada uno de los 24 días con la ciudad
+  («Florianópolis», «Río de Janeiro»…). Es la pastilla de la cabecera del día en
+  el planning, y sigue visible con el día plegado. La ciudad es **donde se duerme**
+  esa noche, que es lo que deja un solo nombre también en los días de traslado;
+  los días 16 y 24 no tienen alojamiento y toman la ciudad donde transcurren.
+  Cada destino lleva su color de `DAY_COLORS` para que la pastilla localice de un
+  vistazo; se deja fuera `rojo`, que en esta app lee como alarma.
 
 #### Correspondencia categoría → tipo de evento
 
