@@ -1289,6 +1289,20 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-head-txt .day-num { font-size:10.5px; font-weight:800; letter-spacing:.1em;
   text-transform:uppercase; color:var(--text-muted); display:block; }
 .day-head-txt .day-date { font-size:16px; font-weight:800; letter-spacing:-.025em; display:block; }
+/* La etiqueta del día ("Bogotá - Villa de Leyva") y el clima bajan a su propia
+   línea: antes se montaban encima de la fecha y partían el texto en dos. */
+.day-group .day-head-main .day-head-wx {
+  flex-basis:100%; width:100%; margin-left:0; margin-top:8px; gap:6px;
+}
+.day-group .day-head-main .day-head-wx .day-title-pill {
+  max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* El chevron se queda pegado a la derecha de la primera línea. */
+.day-group .day-head-main .day-collapse { margin-left:auto; flex:none; }
+/* Si no hay ni clima ni etiqueta, esa segunda línea no debe ocupar sitio. */
+.day-group .day-head-main .day-head-wx:not(:has(.day-title-pill)):has(.wx-chip:empty) { display:none; }
+/* Al saltar a un día desde la tira, que no quede tapado por ella. */
+.day-group { scroll-margin-top:150px; }
 .day-head-txt .day-date .day-wd::first-letter { text-transform:uppercase; }
 .day-group .day-meta-row { padding:0 15px; margin:10px 0 0; }
 .day-group .day-note-card { margin:10px 15px 0; }
@@ -1337,6 +1351,19 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .flash-strip-host .day-strip { position:static; margin:0; border-bottom:1px solid var(--line-soft);
   background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; }
 .flashview { will-change:transform, opacity; }
+
+/* Casilla del asistente (p. ej. "es un coche de alquiler") */
+.wz-extra { margin-top:12px; }
+.wz-check {
+  display:flex; align-items:flex-start; gap:10px; cursor:pointer;
+  border:1px solid var(--line); border-radius:var(--r-md); padding:11px 12px;
+  background:var(--bg-elev); transition:border-color .15s var(--ease), background .15s var(--ease);
+}
+.wz-check.on { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 7%, var(--bg-elev)); }
+.wz-check input { width:20px; height:20px; margin:1px 0 0; flex:none; accent-color:var(--accent); }
+.wz-check-txt { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.wz-check-txt b { font-size:13.5px; font-weight:700; }
+.wz-check-txt span { font-size:12px; color:var(--text-muted); font-weight:500; line-height:1.4; }
 
 /* ===== Asistente por pasos del editor de paradas ("Nueva parada") ===== */
 .wz-head { margin:-4px 0 16px; }
@@ -9393,8 +9420,8 @@ const TripDetail = {
               ]),
         ].filter(Boolean)),
         (k === todayStr) ? el('span', { class:'day-today-badge', text:'Hoy' }) : null,
-        _headWx.children.length ? _headWx : null,
         el('span', { class:'day-collapse', html: svg('chevron'), 'aria-hidden':'true' }),
+        _headWx.children.length ? _headWx : null,
       ].filter(Boolean));
       if (canEdit() && k !== 'sin-fecha') TripDetail._attachLongPress(headMain, () => TripDetail.openDayEditor(t, k, dayMeta));
       // Botón visible para las fotos: la pulsación larga sobre la cabecera abre
@@ -10888,7 +10915,7 @@ const TripDetail = {
       const hasStatus = td.requiresBooking || td.supportsStatus;
       statusRow.style.display = hasStatus ? '' : 'none';
       // El bloque de consulta/reserva (URL, precio, fechas) solo para reservas reales.
-      consultaBlock.style.display = td.requiresBooking ? '' : 'none';
+      consultaBlock.style.display = (td.requiresBooking && !modeHasNoBooking()) ? '' : 'none';
       if (!hasStatus) return;
       statusPicker.innerHTML = '';
       // Cualquier tipo con estado puede quedar "Sin estado" (tarjeta blanca),
@@ -11334,9 +11361,16 @@ const TripDetail = {
         el('button', { type:'button', class:'btn btn-sm btn-primary', onclick: applyParsed }, [ el('span', { html: svg('check') }), 'Analizar y autocompletar' ]),
       ]),
     ]);
+    // Transportes de andar por casa (coche particular, taxi, metro, teleférico):
+    // no hay billete que pegar ni reserva que consultar.
+    const NO_BOOKING_MODES = ['coche', 'taxi', 'metro', 'teleferico'];
+    const modeHasNoBooking = () => {
+      const type = $('#f-type')?.value || it.type;
+      return type === 'transporte' && NO_BOOKING_MODES.includes((it.metadata || {}).modo || '');
+    };
     const refreshImportVisibility = () => {
       const td = typeDef($('#f-type')?.value || it.type);
-      importBlock.style.display = td.requiresBooking ? '' : 'none';
+      importBlock.style.display = (td.requiresBooking && !modeHasNoBooking()) ? '' : 'none';
     };
 
     // Selector de tipo — al cambiar, se reconstruye todo lo dependiente.
@@ -11422,10 +11456,17 @@ const TripDetail = {
     // Grid visual de tipos (sustituye al <select>, que se queda oculto como
     // fuente de verdad para todo el código existente).
     const typeGrid = el('div', { class:'wz-grid' });
+    // Vuelo y coche NO son tipos sueltos aquí: son formas de transporte y se
+    // eligen dentro de "Transporte". Así la primera pantalla queda limpia.
+    const WZ_TYPES = ['lugar', 'comida', 'transporte', 'hotel', 'actividad', 'compras',
+                      'playa', 'personas', 'gestion', 'otro']
+      .map(id => TYPES_PLANNING.find(x => x.id === id)).filter(Boolean);
     const renderTypeGrid = () => {
       typeGrid.innerHTML = '';
-      const cur = $('#f-type')?.value || it.type;
-      TYPES_PLANNING.forEach(o => {
+      const raw = $('#f-type')?.value || it.type;
+      // Un vuelo o un coche de alquiler se enseñan como "Transporte" marcado.
+      const cur = (raw === 'vuelo' || raw === 'coche') ? 'transporte' : raw;
+      WZ_TYPES.forEach(o => {
         typeGrid.appendChild(el('button', {
           type:'button', class:'wz-cell' + (cur === o.id ? ' sel' : ''),
           'aria-pressed': cur === o.id ? 'true' : 'false',
@@ -11483,9 +11524,57 @@ const TripDetail = {
       { v:'teleferico', l:'Teleférico' },
     ];
     const modeGrid = el('div', { class:'wz-grid' });
+    const modeExtra = el('div', { class:'wz-extra' });
+    // Qué celda está marcada: el vuelo y el coche de alquiler son TIPOS propios,
+    // el resto son modos dentro de "transporte".
+    const currentMode = () => {
+      const type = $('#f-type')?.value || it.type;
+      if (type === 'vuelo') return '__vuelo';
+      if (type === 'coche') return 'coche';          // coche de alquiler
+      return (it.metadata && it.metadata.modo) || '';
+    };
+    // Coche particular (transporte · modo coche) ↔ coche de alquiler (tipo coche,
+    // con empresa, localizador, recogida y devolución). El origen/destino se
+    // traduce a lugar de recogida/devolución y al revés, para no perderlo.
+    const setCarRental = (on) => {
+      harvestMeta();
+      const md = Object.assign({}, it.metadata || {});
+      const sel = $('#f-type');
+      if (on) {
+        it.metadata = { compania: md.compania || '', modelo: md.modelo || '', matricula: md.matricula || '',
+          localizador: md.localizador || '',
+          lugar_recogida: md.lugar_recogida || md.origen || '',
+          lugar_devolucion: md.lugar_devolucion || md.destino || '' };
+        if (sel && sel.value !== 'coche') { sel.value = 'coche'; sel.dispatchEvent(new Event('change')); }
+      } else {
+        it.metadata = { modo:'coche', compania: md.compania || '',
+          origen: md.origen || md.lugar_recogida || '',
+          destino: md.destino || md.lugar_devolucion || '' };
+        if (sel && sel.value !== 'transporte') { sel.value = 'transporte'; sel.dispatchEvent(new Event('change')); }
+      }
+      renderMetadata(); refreshTzVisibility(); refreshImportVisibility(); renderStatusPicker();
+      renderTypeGrid(); renderModeGrid(); renderModeExtra(); wzRender();
+    };
+    // Casilla que aparece SOLO al elegir coche.
+    const renderModeExtra = () => {
+      modeExtra.innerHTML = '';
+      const isCar = (currentMode() === 'coche');
+      modeExtra.style.display = isCar ? '' : 'none';
+      if (!isCar) return;
+      const rental = (($('#f-type')?.value || it.type) === 'coche');
+      const chk = el('input', { type:'checkbox', id:'wz-car-rental', checked: rental ? true : null });
+      chk.addEventListener('change', () => setCarRental(chk.checked));
+      modeExtra.appendChild(el('label', { class:'wz-check' + (rental ? ' on' : '') }, [
+        chk,
+        el('span', { class:'wz-check-txt' }, [
+          el('b', { text:'Es un coche de alquiler' }),
+          el('span', { text:'Añade empresa, localizador, modelo, matrícula y lugares de recogida y devolución.' }),
+        ]),
+      ]));
+    };
     const renderModeGrid = () => {
       modeGrid.innerHTML = '';
-      const cur = (it.metadata && it.metadata.modo) || '';
+      const cur = currentMode();
       WZ_MODES.forEach(o => {
         modeGrid.appendChild(el('button', {
           type:'button', class:'wz-cell' + (cur === o.v ? ' sel' : ''),
@@ -11493,18 +11582,28 @@ const TripDetail = {
           onclick: () => {
             harvestMeta();
             if (o.v === '__vuelo') {
-              // Cambia de tipo: el paso "modo" desaparece y el índice actual
-              // pasa a ser el de "Datos del vuelo".
+              // Cambia de tipo: el paso sigue siendo este, pero ya con los
+              // datos propios del vuelo detrás.
               const sel = $('#f-type');
-              if (sel) { sel.value = 'vuelo'; sel.dispatchEvent(new Event('change')); }
-              renderTypeGrid();
-              wzGo(wzI);
+              if (sel && sel.value !== 'vuelo') { sel.value = 'vuelo'; sel.dispatchEvent(new Event('change')); }
+              renderTypeGrid(); renderModeGrid(); renderModeExtra();
+              wzGo(wzI + 1);
               return;
             }
+            if (o.v === 'coche') {
+              // Al elegir coche NO se avanza: primero hay que decir si es de
+              // alquiler (la casilla de debajo), porque cambia lo que se pide.
+              const wasRental = (($('#f-type')?.value || it.type) === 'coche');
+              setCarRental(wasRental);
+              return;
+            }
+            const sel = $('#f-type');
+            if (sel && sel.value !== 'transporte') { sel.value = 'transporte'; sel.dispatchEvent(new Event('change')); }
             it.metadata = Object.assign({}, it.metadata || {}, { modo: o.v });
             renderMetadata();
             refreshTzVisibility();
-            renderModeGrid();
+            refreshImportVisibility();
+            renderTypeGrid(); renderModeGrid(); renderModeExtra();
             wzGo(wzI + 1);
           },
         }, [ el('span', { class:'em', text: o.e || TRANSPORT_EMOJI[o.v] || '🚆' }),
@@ -11526,7 +11625,7 @@ const TripDetail = {
     const wzAvailable = () => {
       const type = $('#f-type')?.value || it.type;
       return WZ_STEPS.filter(st => {
-        if (st.id === 'modo')  return type === 'transporte';
+        if (st.id === 'modo')  return ['transporte', 'vuelo', 'coche'].includes(type);
         if (st.id === 'donde') return TYPES_WITH_PLACE.includes(type);
         if (st.id === 'datos') return !!PLANNING_METADATA[type];
         return true;
@@ -11612,11 +11711,11 @@ const TripDetail = {
 
     const wizardBody = () => {
       typeRow.style.display = 'none';        // el <select> sigue ahí, pero oculto
-      renderTypeGrid(); renderModeGrid();
+      renderTypeGrid(); renderModeGrid(); renderModeExtra();
       return el('div', { class:'wz' }, [
         el('div', { class:'wz-head' }, [ wzBar, wzKicker, wzTitle, wzHint ]),
         wzStep('tipo',  [ typeGrid, typeRow, peopleSlotTop ]),
-        wzStep('modo',  [ modeGrid ]),
+        wzStep('modo',  [ modeGrid, modeExtra ]),
         wzStep('donde', [ placeBlock, travelBlock ]),
         wzStep('datos', [ importBlock, metadataBlock, returnFlightWrap, tzBlock ]),
         wzStep('cuando',[ datesBlock ]),
