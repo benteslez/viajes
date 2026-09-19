@@ -1802,6 +1802,25 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 .map-legend-item { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted); font-weight:600; }
 .map-legend-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
 
+/* Ciudad del título del día. Deliberadamente distinta de los pines numerados del
+   planning: uno es una parada concreta y otro es "el día transcurre aquí", y
+   confundirlos haría leer una ciudad entera como si fuera un sitio al que se fue. */
+.map-city-pin { background:transparent; border:none; }
+.map-city-pin span {
+  display:block; width:16px; height:16px; border-radius:50%;
+  background:#475569; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.4);
+}
+.map-legend-dot.map-legend-city { background:#475569; }
+/* La etiqueta va sobre las teselas, que son claras en los dos temas: color fijo. */
+.leaflet-tooltip.map-city-label {
+  font-family:var(--font-ui); font-size:12px; font-weight:700;
+  background:rgba(255,255,255,.92); color:#334155;
+  border:1px solid rgba(0,0,0,.12); border-radius:var(--r-pill);
+  padding:2px 8px; box-shadow:0 1px 3px rgba(0,0,0,.2);
+}
+.leaflet-tooltip.map-city-label::before { display:none; }
+.leaflet-tooltip.map-city-label.oculta { display:none; }
+
 /* Conector tiempo/distancia entre paradas del planning. */
 .timeline-list .leg-chip {
   align-self:flex-start; margin:-2px 0 -2px 20px; padding:2px 0;
@@ -12699,6 +12718,7 @@ const TripDetail = {
   async tabMapa(root, t) {
     const planning = await DB.listByTrip('planning_items', t.id);
     const addresses = await DB.listByTrip('addresses', t.id);
+    const dayNotes = await DB.listByTrip('day_notes', t.id);
 
     // Paradas del planning con coords, agrupadas por día → color + ruta por día.
     const planPts = planning.filter(p => p.lat != null && p.lng != null);
@@ -12708,23 +12728,47 @@ const TripDetail = {
     const addrPts = addresses.filter(a => a.lat != null && a.lng != null);
     const hasAny = planPts.length || addrPts.length;
 
+    // Ciudad del título del día (la pastilla de la cabecera, day_notes.title).
+    // Un viaje sin geocodificar —uno recién importado, por ejemplo— no tiene ni
+    // una coordenada y el mapa sale en blanco, aunque cada día diga en su
+    // pastilla dónde transcurre. Se sitúa esa ciudad, y SOLO en los días que no
+    // tienen ningún punto propio: donde ya hay paradas ubicadas, marcar además
+    // la ciudad entera no añade nada y tapa lo que sí es preciso.
+    // Se agrupa por nombre, no por día: seis días en Ilha Grande son un punto.
+    const ciudadDias = new Map();
+    dayNotes.forEach(n => {
+      const nombre = String(n.title || '').trim();
+      if (!nombre || !n.date) return;
+      if (byDay[n.date] && byDay[n.date].length) return;
+      if (!ciudadDias.has(nombre)) ciudadDias.set(nombre, []);
+      ciudadDias.get(nombre).push(n.date);
+    });
+
     const container = el('div', { class:'map-container', id:'mapa-container' });
     root.appendChild(container);
     if (!hasAny) {
-      root.appendChild(el('p', { class:'muted', style:{marginTop:'12px'}, text:'Aún no hay puntos con coordenadas. Añade un lugar desde Planning buscando con el buscador online.' }));
+      root.appendChild(el('p', { class:'muted', style:{marginTop:'12px'}, text: ciudadDias.size
+        ? 'Ninguna parada tiene coordenadas todavía: el mapa sitúa la ciudad del título de cada día. Para los puntos exactos, pasa la revisión de ubicaciones del viaje.'
+        : 'Aún no hay puntos con coordenadas. Añade un lugar desde Planning buscando con el buscador online.' }));
     }
-    // Leyenda de colores por día.
+    // Leyenda. Se rellena sobre la marcha porque las ciudades del título llegan
+    // por geocodificación, después del primer pintado: anunciarlas antes de
+    // tenerlas sería prometer un punto que igual no aparece.
+    const legend = el('div', { class:'map-legend', style:{ display:'none' } });
+    const addLegend = (dotClass, dotStyle, text) => {
+      legend.appendChild(el('span', { class:'map-legend-item' }, [
+        el('span', { class:'map-legend-dot' + (dotClass ? ' ' + dotClass : ''), style: dotStyle || {} }),
+        el('span', { text }),
+      ]));
+      legend.style.display = '';
+    };
     if (dayKeys.length > 1) {
-      const legend = el('div', { class:'map-legend' });
       dayKeys.forEach(k => {
         const dn = t.start_date ? (daysBetween(t.start_date, k) + 1) : null;
-        legend.appendChild(el('span', { class:'map-legend-item' }, [
-          el('span', { class:'map-legend-dot', style:{ background: dayColor(dn) } }),
-          el('span', { text: dn ? ('Día ' + dn) : fmtDateShort(k) }),
-        ]));
+        addLegend(null, { background: dayColor(dn) }, dn ? ('Día ' + dn) : fmtDateShort(k));
       });
-      root.appendChild(legend);
     }
+    root.appendChild(legend);
 
     setTimeout(() => {
       if (STATE.leaflet) { STATE.leaflet.remove(); STATE.leaflet = null; }
@@ -12749,7 +12793,83 @@ const TripDetail = {
       if (all.length) { try { map.fitBounds(L.latLngBounds(all).pad(0.2)); } catch (_) { map.setView(all[0], 13); } }
       else map.setView([20, 0], 2);
       STATE.leaflet = map;
+      if (ciudadDias.size) TripDetail._marcarCiudadesDelDia(map, t, ciudadDias, all, addLegend);
     }, 50);
+  },
+
+  // Sitúa en el mapa la ciudad del título de cada día. Va aparte y en segundo
+  // plano a propósito: Nominatim admite una consulta por segundo, y siete
+  // destinos son siete segundos que el mapa no puede pasarse en blanco.
+  //
+  // Limitación conocida: un título que no sea un sitio ("Día libre") se consulta
+  // igual. Lo normal es que Nominatim no devuelva nada y no se pinte punto, pero
+  // no hay forma barata de garantizarlo; el país del viaje se añade a la consulta
+  // justamente para acotarla. Un punto raro se ve a la primera y se arregla
+  // cambiando el título del día.
+  async _marcarCiudadesDelDia(map, t, ciudadDias, all, addLegend) {
+    const pais = String(t.country || '').split(',')[0].trim();
+    const icon = L.divIcon({ className:'map-city-pin', html:'<span></span>', iconSize:[16,16], iconAnchor:[8,8] });
+    // [10,11,12,13,23,24] → "10–13, 23–24". Con estancias de seis días, la lista
+    // suelta de números no se lee.
+    const rangos = (ns) => {
+      const out = []; let i = 0;
+      while (i < ns.length) {
+        let j = i;
+        while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j++;
+        out.push(i === j ? String(ns[i]) : ns[i] + '–' + ns[j]);
+        i = j + 1;
+      }
+      return out.join(', ');
+    };
+    // Abarcando el viaje entero, Paraty, Ilha Grande y Río caen en el mismo
+    // centímetro y sus nombres se pisan. Ocultarlos todos por debajo de cierto
+    // zoom dejaría la vista inicial llena de puntos anónimos, así que se van
+    // quedando los que caben: por orden de prioridad, se descarta el que choque
+    // con una etiqueta ya colocada. Al acercarse dejan de chocar y reaparecen.
+    const etiquetas = [];
+    const recolocarEtiquetas = () => {
+      if (STATE.leaflet !== map) return;
+      const puestas = [];
+      etiquetas.slice().sort((a, b) => b.prioridad - a.prioridad).forEach(e => {
+        const tip = e.marker.getTooltip();
+        const nodo = tip && tip.getElement();
+        if (!nodo) return;
+        let pt;
+        try { pt = map.latLngToContainerPoint(e.marker.getLatLng()); } catch (_) { return; }
+        // Caja de la etiqueta: a la derecha del punto y centrada en vertical.
+        const caja = { x1: pt.x + 10, x2: pt.x + 10 + e.ancho, y1: pt.y - 11, y2: pt.y + 11 };
+        const choca = puestas.some(q => caja.x1 < q.x2 && caja.x2 > q.x1 && caja.y1 < q.y2 && caja.y2 > q.y1);
+        nodo.classList.toggle('oculta', choca);
+        if (!choca) puestas.push(caja);
+      });
+    };
+    map.on('zoomend moveend', recolocarEtiquetas);
+    let primera = true;
+    for (const [nombre, fechas] of ciudadDias) {
+      const c = await geocodeText(pais ? nombre + ', ' + pais : nombre);
+      // Entre consulta y consulta se puede haber cambiado de pestaña o de viaje.
+      // Sin esto se le añaden marcadores a un mapa ya destruido.
+      if (STATE.leaflet !== map || !document.getElementById('mapa-container')) return;
+      if (!c) continue;
+      const ll = [c.lat, c.lng];
+      all.push(ll);
+      const dias = [...new Set(fechas.map(f => t.start_date ? daysBetween(t.start_date, f) + 1 : null)
+        .filter(n => n != null))].sort((a, b) => a - b);
+      try {
+        const marker = L.marker(ll, { icon }).addTo(map)
+          .bindTooltip(escHtml(nombre), { permanent:true, direction:'right', className:'map-city-label' })
+          .bindPopup(`<b>${escHtml(nombre)}</b>`
+            + (dias.length ? `<br>${dias.length > 1 ? 'Días' : 'Día'} ${rangos(dias)}` : '')
+            + `<br><a href="${gmapsUrl(c.lat, c.lng)}" target="_blank" rel="noopener">Google Maps</a>`);
+        // Ancho estimado de la etiqueta (~6,8 px por carácter + el relleno) y
+        // prioridad = noches allí: si dos se pisan, gana donde más se estuvo.
+        etiquetas.push({ marker, ancho: nombre.length * 6.8 + 20, prioridad: dias.length });
+        if (all.length === 1) map.setView(ll, 10);
+        else map.fitBounds(L.latLngBounds(all).pad(0.2));
+        recolocarEtiquetas();
+      } catch (_) { return; }
+      if (primera) { primera = false; addLegend('map-legend-city', null, 'Ciudad del día'); }
+    }
   },
 
   /* ----- Personas ----- */
