@@ -1213,6 +1213,69 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 
 /* ======================================================================
+   FILA DE PARADA — versión compacta: hora en pastilla del color del tipo,
+   título en una línea y acciones que solo aparecen en la parada que tocas.
+   Solo dentro de .timeline-list (planning, tarjetas y resumen del día).
+   ====================================================================== */
+.timeline-list .timeline-item.list-item { --li-pill: var(--tipo-otro); padding:8px; gap:9px; align-items:center; position:relative; }
+.timeline-list .timeline-item.type-lugar,
+.timeline-list .timeline-item.type-personas   { --li-pill: var(--tipo-lugar); }
+.timeline-list .timeline-item.type-playa      { --li-pill: var(--tipo-playa); }
+.timeline-list .timeline-item.type-comida     { --li-pill: var(--tipo-comida); }
+.timeline-list .timeline-item.type-actividad  { --li-pill: var(--tipo-actividad); }
+.timeline-list .timeline-item.type-hotel      { --li-pill: var(--tipo-hotel); }
+.timeline-list .timeline-item.type-compras    { --li-pill: var(--tipo-compras); }
+.timeline-list .timeline-item.type-vuelo,
+.timeline-list .timeline-item.type-transporte,
+.timeline-list .timeline-item.type-coche      { --li-pill: var(--tipo-transporte); }
+/* Pastilla de hora */
+.timeline-list .timeline-item .li-time {
+  flex:0 0 auto; min-width:52px; align-items:center; justify-content:center;
+  padding:4px 7px; border-radius:9px; line-height:1.08;
+  background:color-mix(in srgb, var(--li-pill) 88%, #000); color:#fff;
+}
+.timeline-list .timeline-item .li-time-a { color:#fff; font-size:12px; font-weight:800; }
+.timeline-list .timeline-item .li-time-b { color:color-mix(in srgb, #fff 62%, transparent); font-size:9.5px; font-weight:600; }
+.timeline-list .timeline-item .li-time.li-time-none { background:var(--bg-soft); }
+.timeline-list .timeline-item .li-time.li-time-none .li-time-a { color:var(--text-muted); font-weight:700; }
+.timeline-list .timeline-item .li-time.li-time-tag .li-time-a { font-size:10.5px; font-weight:800; letter-spacing:.04em; }
+/* Emoji: glifo suelto, sin cuadrado de color (el color ya está en la pastilla) */
+.timeline-list .timeline-item .item-emoji {
+  width:22px; height:22px; flex:0 0 22px; font-size:17px; border:0; border-radius:0;
+  background:transparent !important; box-shadow:none;
+}
+/* Título y subtítulo: una línea cada uno, con puntos suspensivos */
+.timeline-list .timeline-item .li-title { font-size:14.5px; font-weight:700; }
+.timeline-list .timeline-item .li-title .li-title-text {
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; overflow-wrap:normal; min-width:0;
+}
+.timeline-list .timeline-item .li-subrow { margin-top:1px; min-height:0; }
+.timeline-list .timeline-item .li-sub-text {
+  display:block; font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.timeline-list .timeline-item .li-corner { margin-top:4px; }
+.timeline-list .timeline-item .status-badge { font-size:9.5px; padding:2px 8px; margin-left:0; }
+/* Acciones ocultas + botón "•••" */
+.li-more {
+  flex:0 0 auto; width:28px; height:28px; border:0; border-radius:9px; cursor:pointer;
+  background:transparent; color:color-mix(in srgb, var(--text-muted) 55%, transparent); font-size:13px; font-weight:800;
+  letter-spacing:-.02em; line-height:1; display:none; align-items:center; justify-content:center;
+}
+.timeline-list .timeline-item .li-more { display:inline-flex; }
+.timeline-list .timeline-item .li-actions { display:none; }
+.timeline-list .timeline-item.acts-open { background:var(--bg-soft); }
+.timeline-list .timeline-item.acts-open .li-actions { display:flex; }
+.timeline-list .timeline-item.acts-open .li-more { display:none; }
+@media (hover:hover) and (pointer:fine) {
+  .timeline-list .timeline-item:hover .li-actions { display:flex; }
+  .timeline-list .timeline-item:hover .li-more { display:none; }
+}
+/* Los tramos y huecos se alinean con la columna del texto */
+.timeline-list .gap-chip { margin-left:62px; }
+/* La noche de continuación sigue el mismo patrón de fila */
+.timeline-list .timeline-item.night-cont { align-items:center; }
+
+/* ======================================================================
    TIRA DE DÍAS — cuadraditos con la fecha, arrastrables en horizontal.
    Un toque abre la tarjeta de ese día (desplegándose desde el cuadradito).
    ====================================================================== */
@@ -1310,7 +1373,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Dentro de la tarjeta el ancho es oro: se recorta el acolchado lateral de
    las filas para que los títulos no se partan en tres líneas. */
 .day-group .timeline-item.list-item { padding:9px 8px; gap:9px; }
-.day-group .timeline-item .item-emoji { width:32px; height:32px; font-size:16px; flex:0 0 32px; }
 .day-group .timeline-item .li-actions { gap:2px; }
 .day-group .timeline-item .li-time { min-width:38px; }
 .day-group.collapsed .day-head { border-bottom:0; }
@@ -1340,7 +1402,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .timeline-item.list-item.type-vuelo.is-next,
 .timeline-list .timeline-item.list-item.type-coche.is-next { background:var(--accent-bg) !important; }
 .day-group .plan-part { margin:12px 0 4px 6px; }
-.timeline-list .gap-chip { margin-left:52px; }
 /* El chip de hueco/viaje se ajusta a su texto (si no, ocupa todo el ancho). */
 .gap-chip.gap-moving { align-self:flex-start; width:max-content; max-width:100%; }
 
@@ -2025,7 +2086,7 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 
 /* Conector tiempo/distancia entre paradas del planning. */
 .timeline-list .leg-chip {
-  align-self:flex-start; margin:-2px 0 -2px 20px; padding:2px 0;
+  align-self:flex-start; margin:-2px 0 -2px 62px; padding:2px 0;
   display:inline-flex; align-items:center; text-decoration:none;
 }
 .timeline-list .leg-chip .leg-info {
@@ -9798,6 +9859,7 @@ const TripDetail = {
         draggable:'false',
         data:{ id:it.id, day: it.day_date || 'sin-fecha' }
       }, [
+        el('div', { class:'li-time li-time-tag' }, [ el('span', { class:'li-time-a', text:'noche' }) ]),
         el('div', { class:'item-emoji', 'aria-hidden':'true', text: '🛏️' }),
         el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
           el('div', { class:'li-title', text: it.title }),
@@ -9819,8 +9881,20 @@ const TripDetail = {
       draggable: isVirtual ? 'false' : 'true',
       data:{ id:it.id, day: it.day_date || 'sin-fecha' }
     }, [
-      // Hora en columna a la izquierda (más clara que la pill). Vacía si no hay hora.
-      timeRangeText ? (() => { const _p = String(timeRangeText).split(' – '); return el('div', { class:'li-time' }, [ el('span', { class:'li-time-a', text: _p[0] }), _p[1] ? el('span', { class:'li-time-b', text: _p[1] }) : null ].filter(Boolean)); })() : null,
+      // Pastilla de hora a la izquierda, del color del tipo. Siempre hay una
+      // (sin hora, "—"; en alojamiento, "noche"), para que todas las filas
+      // arranquen en la misma columna y el ojo baje en línea recta.
+      (() => {
+        if (timeRangeText) {
+          const _p = String(timeRangeText).split(' – ');
+          return el('div', { class:'li-time' }, [
+            el('span', { class:'li-time-a', text: _p[0] }),
+            _p[1] ? el('span', { class:'li-time-b', text: _p[1] }) : null,
+          ].filter(Boolean));
+        }
+        if (it.type === 'hotel') return el('div', { class:'li-time li-time-tag' }, [ el('span', { class:'li-time-a', text:'noche' }) ]);
+        return el('div', { class:'li-time li-time-none' }, [ el('span', { class:'li-time-a', text:'—' }) ]);
+      })(),
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
@@ -9855,6 +9929,18 @@ const TripDetail = {
           return cornerKids.length ? el('div', { class:'li-corner' }, cornerKids) : null;
         })(),
       ].filter(Boolean)),
+      // Las acciones viven escondidas: se revelan en la parada que tocas. Así el
+      // título dispone de todo el ancho en vez de partirse en tres líneas.
+      el('button', {
+        class:'li-more', type:'button', title:'Acciones', 'aria-label':'Acciones de esta parada',
+        onclick: (e) => {
+          e.stopPropagation();
+          const row = e.currentTarget.closest('.timeline-item');
+          const wasOpen = row.classList.contains('acts-open');
+          document.querySelectorAll('.timeline-item.acts-open').forEach(n => n.classList.remove('acts-open'));
+          if (!wasOpen) row.classList.add('acts-open');
+        },
+      }, '•••'),
       el('div', { class:'li-actions', style:{alignItems:'center'} }, [
         // (El color personalizado de la tarjeta ahora se edita dentro del diálogo
         //  de edición, no como botón siempre visible en la card.)
