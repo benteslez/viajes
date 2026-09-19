@@ -12,6 +12,7 @@ viajes/
 ├── manifest.json       ← metadatos PWA
 ├── service-worker.js   ← cache de app shell y CDNs
 ├── schema.sql          ← tablas Supabase + RLS por perfil
+├── schema-touch-insert.sql ← migración: sellar updated_at también en el INSERT
 ├── icons/              ← iconos PWA
 ├── imports/            ← viajes en el formato de «Importar JSON» (ver imports/README.md)
 └── README.md

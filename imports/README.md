@@ -22,8 +22,11 @@ secas: en el INSERT se respetaba el valor del cliente. Un archivo con un
 `updated_at` viejo entraba en la base y **ningún otro dispositivo lo pedía jamás**.
 
 - **Arreglado en el esquema**: el trigger es ahora `before insert or update`.
-  Hay que volver a ejecutar ese bloque de `schema.sql` en Supabase para que
-  aplique; si no, sigue el comportamiento antiguo.
+  Hay que aplicarlo en Supabase para que valga: pega **`schema-touch-insert.sql`**
+  (raíz del repo) en el SQL editor y ejecútalo. Es el mismo bloque que el final
+  de `schema.sql`, suelto para no tener que relanzar el esquema entero, y trae
+  una consulta de comprobación. Mientras no se aplique, sigue el comportamiento
+  antiguo.
 - **Mientras tanto**, los `.json` de esta carpeta llevan en `updated_at` la fecha
   de **generación del archivo**, no la del viaje. La fecha real del viaje va en
   `start_date`/`end_date` y en `created_at`.
