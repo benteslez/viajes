@@ -1282,14 +1282,13 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-strip {
   position:sticky; top:56px; z-index:20;   /* la altura real la fija el JS */
   margin:0 -16px 14px; padding:8px 16px 10px;
-  background:color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter:saturate(180%) blur(14px); -webkit-backdrop-filter:saturate(180%) blur(14px);
+  background:var(--bg);
   border-bottom:1px solid var(--line-soft);
 }
 .day-strip-inner {
-  display:flex; gap:8px; overflow-x:auto; scroll-behavior:smooth;
+  display:flex; gap:8px; overflow-x:auto;
   scrollbar-width:none; -ms-overflow-style:none; padding:2px 0 2px;
-  overscroll-behavior-x:contain;
+  overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;
 }
 .day-strip-inner::-webkit-scrollbar { display:none; }
 .day-strip-inner.dragging { scroll-behavior:auto; cursor:grabbing; }
@@ -1410,8 +1409,30 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
    ====================================================================== */
 .flash-strip-host { flex:0 0 auto; }
 .flash-strip-host .day-strip { position:static; margin:0; border-bottom:1px solid var(--line-soft);
-  background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; }
-.flashview { will-change:transform, opacity; }
+  background:transparent; }
+.flashview { will-change:clip-path; }
+/* Al desplegarse desde la pastilla, el contenido entra con un pequeño fundido
+   (la tarjeta "sube" un pelo) en vez de escalarse con el contenedor. */
+.flashview.opening .flash-top,
+.flashview.opening .flash-strip-host { animation:flash-in .34s var(--ease) both; }
+.flashview.opening .flash-card { animation:flash-in .42s var(--ease) both; animation-delay:.05s; }
+@keyframes flash-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { .flashview.opening * { animation:none !important; } }
+
+/* Pestañas del editor al EDITAR una parada (saltar directo a un bloque) */
+.wz-tabs { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; margin:0 -16px 12px; padding:0 16px 2px; }
+.wz-tabs::-webkit-scrollbar { display:none; }
+.wz-tab {
+  flex:0 0 auto; cursor:pointer; font-family:inherit;
+  font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:var(--r-pill);
+  border:1px solid var(--line); background:var(--bg-elev); color:var(--text-muted);
+  transition:background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.wz-tab.on { background:var(--text); border-color:var(--text); color:var(--text-inv); }
+.wz-edit .wz-title { font-size:17px; }
+/* Duplicar / Borrar, al final del último paso */
+.wz-danger-row { display:flex; gap:8px; margin-top:22px; padding-top:16px; border-top:1px solid var(--line-soft); }
+.wz-danger-row .btn { flex:1; justify-content:center; }
 
 /* Casilla del asistente (p. ej. "es un coche de alquiler") */
 .wz-extra { margin-top:12px; }
@@ -9252,13 +9273,22 @@ const TripDetail = {
       }
     });
     // Deja a la vista el día activo (o el de hoy) sin mover la página.
-    strip._focusDay = (k) => {
+    // Marca el día y, SOLO si su pastilla no se ve entera, la trae a la vista.
+    // Importante: sin animación cuando el movimiento viene del scroll de la
+    // página — animar un carrusel anidado mientras el dedo desliza corta el
+    // desplazamiento por inercia en iOS.
+    strip._focusDay = (k, opts) => {
+      opts = opts || {};
       const pill = inner.querySelector(`.day-pill[data-day="${k}"]`);
       inner.querySelectorAll('.day-pill.active').forEach(p => p.classList.remove('active'));
       if (!pill) return;
       pill.classList.add('active');
-      const left = pill.offsetLeft - (inner.clientWidth / 2) + (pill.offsetWidth / 2);
-      inner.scrollTo({ left: Math.max(0, left), behavior:'smooth' });
+      const l = pill.offsetLeft, r = l + pill.offsetWidth;
+      const vl = inner.scrollLeft, vr = vl + inner.clientWidth;
+      if (l >= vl - 1 && r <= vr + 1) return;          // ya se ve: no se toca nada
+      const target = Math.max(0, l - (inner.clientWidth - pill.offsetWidth) / 2);
+      if (opts.smooth) inner.scrollTo({ left: target, behavior:'smooth' });
+      else inner.scrollLeft = target;
     };
     return strip;
   },
@@ -9556,7 +9586,7 @@ const TripDetail = {
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
         if (!vis) return;
         const k = vis.target.dataset.day;
-        if (k && k !== lastK) { lastK = k; dayStrip._focusDay(k); }
+        if (k && k !== lastK) { lastK = k; dayStrip._focusDay(k); }   // sin animación
       }, { rootMargin: '-150px 0px -55% 0px', threshold: 0 });
       root.querySelectorAll('.day-group').forEach(g => obs.observe(g));
       TripDetail._dayStripObs?.disconnect?.();
@@ -10135,22 +10165,24 @@ const TripDetail = {
     ].filter(Boolean));
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onKey);
-    // Apertura "desde el cuadradito": la vista crece desde la pastilla pulsada.
+    // Apertura "desde el cuadradito": la vista se DESPLIEGA desde el rectángulo
+    // de la pastilla pulsada. Se recorta (clip-path), no se escala: escalar
+    // deformaba el texto y no casaba con el resto del diseño.
     if (opts.fromEl && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
       const r = opts.fromEl.getBoundingClientRect();
-      const sx = Math.max(0.06, r.width / window.innerWidth);
-      const sy = Math.max(0.06, r.height / window.innerHeight);
-      overlay.style.transformOrigin = 'top left';
-      overlay.style.transform = `translate(${r.left}px, ${r.top}px) scale(${sx}, ${sy})`;
-      overlay.style.opacity = '0';
-      overlay.style.borderRadius = '18px';
-      requestAnimationFrame(() => {
-        overlay.style.transition = 'transform .4s var(--ease), opacity .22s ease-out, border-radius .4s var(--ease)';
-        overlay.style.transform = 'none';
-        overlay.style.opacity = '1';
-        overlay.style.borderRadius = '0';
-      });
-      setTimeout(() => { overlay.style.transition = ''; overlay.style.transformOrigin = ''; }, 460);
+      const W = window.innerWidth, H = window.innerHeight;
+      const from = `inset(${r.top}px ${Math.max(0, W - r.right)}px ${Math.max(0, H - r.bottom)}px ${r.left}px round 14px)`;
+      overlay.style.clipPath = from;
+      overlay.classList.add('opening');
+      void overlay.offsetHeight;          // fuerza el estado inicial antes de animar
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        overlay.style.transition = 'clip-path .42s var(--ease)';
+        overlay.style.clipPath = 'inset(0px 0px 0px 0px round 0px)';
+      }));
+      setTimeout(() => {
+        overlay.style.transition = ''; overlay.style.clipPath = '';
+        overlay.classList.remove('opening');
+      }, 470);
     }
     await renderCards(focusDay || todayIso());
     if (!keys.length) { doClose(); UI.toast('No hay días que mostrar'); }
@@ -11698,13 +11730,14 @@ const TripDetail = {
     };
 
     // Definición de los pasos. `donde`/`datos`/`modo` se saltan si no aplican.
+    // `q`/`h` → al crear (asistente). `e`/`lab` → al editar (pestañas).
     const WZ_STEPS = [
-      { id:'tipo',     q:'¿Qué quieres añadir?', h:'Elige el tipo: solo te pediré los datos que ese tipo necesita.' },
-      { id:'modo',     q:'¿En qué te mueves?',   h:'' },
-      { id:'donde',    q:'¿Dónde es?',           h:'Búscalo y se queda con sus coordenadas para mapas, rutas y tiempos.' },
-      { id:'datos',    q:'Datos',                h:'Lo que tengas a mano. Todo es opcional.' },
-      { id:'cuando',   q:'¿Cuándo?',             h:'Sin hora también vale: la parada queda al final del día.' },
-      { id:'detalles', q:'Últimos detalles',     h:'Título, estado y gasto. Puedes guardar ahora y completarlo luego.' },
+      { id:'tipo',     lab:'Tipo',     e:'Tipo de parada',      q:'¿Qué quieres añadir?', h:'Elige el tipo: solo te pediré los datos que ese tipo necesita.' },
+      { id:'modo',     lab:'Medio',    e:'Medio de transporte', q:'¿En qué te mueves?',   h:'' },
+      { id:'donde',    lab:'Lugar',    e:'Lugar',               q:'¿Dónde es?',           h:'Búscalo y se queda con sus coordenadas para mapas, rutas y tiempos.' },
+      { id:'datos',    lab:'Datos',    e:'Datos',               q:'Datos',                h:'Lo que tengas a mano. Todo es opcional.' },
+      { id:'cuando',   lab:'Cuándo',   e:'Fecha y hora',        q:'¿Cuándo?',             h:'Sin hora también vale: la parada queda al final del día.' },
+      { id:'detalles', lab:'Detalles', e:'Detalles',            q:'Últimos detalles',     h:'Título, estado y gasto. Puedes guardar ahora y completarlo luego.' },
     ];
     const wzStepEls = {};
     const wzStep = (id, kids) => (wzStepEls[id] = el('div', { class:'wz-step' + (id === 'tipo' ? ' on' : ''), data:{ step:id } }, kids.filter(Boolean)));
@@ -11719,6 +11752,7 @@ const TripDetail = {
     };
 
     const wzBar    = el('div', { class:'wz-bar' });
+    const wzTabs   = el('div', { class:'wz-tabs' });
     const wzKicker = el('div', { class:'wz-kicker' });
     const wzTitle  = el('h3', { class:'wz-title' });
     const wzHint   = el('p',  { class:'wz-hint' });
@@ -11755,18 +11789,38 @@ const TripDetail = {
       if (cuando) wzSummary.appendChild(row('Cuándo', cuando));
     };
     const wzRender = () => {
-      if (!isWizard) return;
       const steps = wzAvailable();
       if (wzI > steps.length - 1) wzI = steps.length - 1;
       if (wzI < 0) wzI = 0;
       const cur = steps[wzI];
       Object.entries(wzStepEls).forEach(([id, node]) => node.classList.toggle('on', id === cur.id));
+      const type = $('#f-type')?.value || it.type;
+      const datosLbl = PLANNING_METADATA[type] ? PLANNING_METADATA[type].label : 'Datos';
+
+      // --- Editar: pestañas clicables, se salta a lo que quieras tocar ---
+      if (!isWizard) {
+        wzBar.style.display = 'none';
+        wzKicker.style.display = 'none';
+        wzTabs.innerHTML = '';
+        steps.forEach((st, i) => {
+          wzTabs.appendChild(el('button', {
+            type:'button', class:'wz-tab' + (i === wzI ? ' on' : ''),
+            'aria-pressed': i === wzI ? 'true' : 'false',
+            onclick: () => wzGo(i),
+          }, st.id === 'datos' ? 'Datos' : st.lab));
+        });
+        wzTitle.style.display = 'none';
+        wzHint.style.display = 'none';
+        return;
+      }
+
+      // --- Crear: asistente paso a paso ---
+      wzTabs.style.display = 'none';
       wzBar.innerHTML = '';
       steps.forEach((st, i) => wzBar.appendChild(el('i', { class: i < wzI ? 'done' : (i === wzI ? 'on' : '') })));
-      const type = $('#f-type')?.value || it.type;
       wzKicker.textContent = `Paso ${wzI + 1} de ${steps.length}` + (wzI > 0 ? ` · ${typeDef(type).label}` : '');
       wzTitle.textContent = (cur.id === 'datos' && PLANNING_METADATA[type])
-        ? PLANNING_METADATA[type].label
+        ? datosLbl
         : (cur.id === 'donde' && type === 'hotel') ? '¿Qué alojamiento?' : cur.q;
       wzHint.textContent = cur.h || '';
       wzHint.style.display = cur.h ? '' : 'none';
@@ -11786,7 +11840,6 @@ const TripDetail = {
       }
     };
     const wzGo = (i) => {
-      if (!isWizard) return;
       harvestMeta();
       wzI = i;
       wzRender();
@@ -11798,8 +11851,11 @@ const TripDetail = {
     const wizardBody = () => {
       typeRow.style.display = 'none';        // el <select> sigue ahí, pero oculto
       renderTypeGrid(); renderModeGrid(); renderModeExtra();
-      return el('div', { class:'wz' }, [
-        el('div', { class:'wz-head' }, [ wzBar, wzKicker, wzTitle, wzHint ]),
+      // Al editar se entra por el primer paso con contenido (el tipo rara vez
+      // se cambia) y el resumen del último paso sobra.
+      if (!isWizard) { wzI = 1; wzSummary.style.display = 'none'; }
+      return el('div', { class:'wz' + (isWizard ? '' : ' wz-edit') }, [
+        el('div', { class:'wz-head' }, [ wzBar, wzTabs, wzKicker, wzTitle, wzHint ]),
         wzStep('tipo',  [ typeGrid, typeRow, peopleSlotTop ]),
         wzStep('modo',  [ modeGrid, modeExtra ]),
         wzStep('donde', [ placeBlock, travelBlock ]),
@@ -11837,7 +11893,19 @@ const TripDetail = {
       amountRow,
     ]);
 
-    const body = isWizard ? wizardBody() : flatBody();
+    // Antes, al EDITAR salía el formulario completo de una tacada (25 campos).
+    // Ahora se usan los mismos pasos, pero con pestañas para ir directo a lo
+    // que quieras tocar. `flatBody` queda como reserva por si hiciera falta.
+    const body = wizardBody();
+    void flatBody;
+    // Duplicar y Borrar van al final del último paso: en el pie no caben junto
+    // a Cancelar y Guardar en una pantalla de móvil.
+    const attachDangerRow = () => {
+      if (isWizard || !wzStepEls.detalles) return;
+      const kids = [dupBtn, delBtn].filter(Boolean);
+      if (!kids.length) return;
+      wzStepEls.detalles.appendChild(el('div', { class:'wz-danger-row' }, kids));
+    };
 
     setTimeout(refreshExpenseReminderUI, 0);
     setTimeout(() => {
@@ -12061,15 +12129,16 @@ const TripDetail = {
     const dupBtn = existing ? el('button', { class:'btn btn-ghost', onclick: duplicatePlan },
       [ el('span', { html: svg('copy') }), 'Duplicar' ]) : null;
 
+    attachDangerRow();
     UI.openSheet({
       title: existing ? 'Editar parada' : 'Nueva parada',
       body,
       footer: (isWizard
         ? [wzBack, wzSaveNow, wzNext, save]
-        : [delBtn, dupBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save]
+        : [el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save]
       ).filter(Boolean),
     });
-    if (isWizard) wzRender();
+    wzRender();
   },
 
   // Marca/desmarca un item del planning como "visto". Persistencia + actualización
