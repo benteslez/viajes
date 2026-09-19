@@ -1199,6 +1199,178 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .now-label { font-size:11.5px; font-weight:700; color:var(--danger); font-feature-settings:"tnum"; text-transform:uppercase; letter-spacing:.04em; }
 /* Hueco libre entre paradas */
 .gap-chip { font-size:12px; color:var(--text-muted); font-style:italic; margin:1px 0 1px 52px; }
+/* El mismo hueco, pero ocupado: se está viajando (transporte sin hora de llegada). */
+.gap-chip.gap-moving { display:inline-flex; align-items:center; gap:6px; font-style:normal; font-weight:600;
+  color:var(--tipo-transporte); background:color-mix(in srgb, var(--tipo-transporte) 9%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, var(--tipo-transporte) 22%, transparent);
+  border-radius:var(--r-pill); padding:2px 10px; }
+/* En oscuro el azul del tipo es demasiado apagado sobre fondo oscuro. */
+:root[data-tema="oscuro"] .gap-chip.gap-moving { color:#93c5fd;
+  background:color-mix(in srgb, #60a5fa 12%, var(--bg-elev)); border-color:color-mix(in srgb, #60a5fa 30%, transparent); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema]) .gap-chip.gap-moving { color:#93c5fd;
+    background:color-mix(in srgb, #60a5fa 12%, var(--bg-elev)); border-color:color-mix(in srgb, #60a5fa 30%, transparent); }
+}
+
+/* ======================================================================
+   TIRA DE DÍAS — cuadraditos con la fecha, arrastrables en horizontal.
+   Un toque abre la tarjeta de ese día (desplegándose desde el cuadradito).
+   ====================================================================== */
+.day-strip {
+  position:sticky; top:56px; z-index:20;   /* la altura real la fija el JS */
+  margin:0 -16px 14px; padding:8px 16px 10px;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:saturate(180%) blur(14px); -webkit-backdrop-filter:saturate(180%) blur(14px);
+  border-bottom:1px solid var(--line-soft);
+}
+.day-strip-inner {
+  display:flex; gap:8px; overflow-x:auto; scroll-behavior:smooth;
+  scrollbar-width:none; -ms-overflow-style:none; padding:2px 0 2px;
+  overscroll-behavior-x:contain;
+}
+.day-strip-inner::-webkit-scrollbar { display:none; }
+.day-strip-inner.dragging { scroll-behavior:auto; cursor:grabbing; }
+.day-strip-inner.dragging .day-pill { pointer-events:none; }
+.day-pill {
+  flex:0 0 auto; width:54px; padding:6px 4px 5px; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:0;
+  border:1px solid var(--line); border-radius:14px; background:var(--bg-elev);
+  color:var(--text); font-family:inherit; font-feature-settings:"tnum","ss01";
+  transition:transform .12s var(--ease), border-color .15s var(--ease), background .15s var(--ease);
+}
+.day-pill:active { transform:scale(.94); }
+.day-pill i { font-style:normal; font-size:9px; font-weight:800; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-muted); }
+.day-pill b { font-size:18px; font-weight:800; line-height:1.05; letter-spacing:-.02em; }
+.day-pill .wd { font-size:9.5px; font-weight:700; color:var(--text-muted); text-transform:lowercase; }
+.day-pill .n { margin-top:3px; font-size:9px; font-weight:800; line-height:1;
+  min-width:15px; padding:2px 4px; border-radius:999px;
+  background:color-mix(in srgb, var(--accent) 12%, var(--bg-soft)); color:var(--accent); }
+.day-pill .n.vacia { background:transparent; color:var(--line); }
+.day-pill.past { opacity:.5; }
+.day-pill.today { border-color:var(--accent); }
+.day-pill.today i, .day-pill.today b { color:var(--accent); }
+.day-pill.active { background:var(--text); border-color:var(--text); color:var(--text-inv); opacity:1; }
+.day-pill.active i, .day-pill.active .wd { color:color-mix(in srgb, var(--text-inv) 70%, transparent); }
+.day-pill.active b { color:var(--text-inv); }
+.day-pill.active .n { background:color-mix(in srgb, var(--text-inv) 20%, transparent); color:var(--text-inv); }
+
+/* ======================================================================
+   TARJETA DE DÍA — cada día es una tarjeta elevada con cabecera propia.
+   Separa un día de otro de un vistazo y agrupa su "camino".
+   ====================================================================== */
+.day-group {
+  background:var(--bg-elev); border:1px solid var(--line-soft); border-radius:22px;
+  margin:0 0 18px; padding:0; overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.05);
+}
+:root[data-tema="oscuro"] .day-group { box-shadow:0 1px 2px rgba(0,0,0,.3); }
+.day-group .day-head {
+  padding:14px 15px 12px; margin:0;
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, var(--bg-elev)) 0%,
+                                      color-mix(in srgb, var(--accent-2, var(--accent)) 6%, var(--bg-elev)) 60%,
+                                      var(--bg-elev) 100%);
+  border-bottom:1px solid var(--line-soft);
+}
+.day-group.day-today .day-head { background:linear-gradient(135deg,
+  color-mix(in srgb, var(--accent) 16%, var(--bg-elev)), var(--bg-elev)); }
+/* Cuadradito de fecha a la izquierda del título (mismo lenguaje que la tira). */
+.day-badge {
+  flex:0 0 auto; width:46px; height:46px; border-radius:15px;
+  background:var(--text); color:var(--text-inv);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  line-height:1; font-feature-settings:"tnum";
+}
+.day-badge i { font-style:normal; font-size:8.5px; font-weight:800; letter-spacing:.11em;
+  text-transform:uppercase; opacity:.72; margin-bottom:2px; }
+.day-badge b { font-size:17px; font-weight:800; }
+.day-group.day-today .day-badge { background:var(--accent); }
+.day-head-txt { min-width:0; flex:1; }
+.day-head-txt .day-num { font-size:10.5px; font-weight:800; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-muted); display:block; }
+.day-head-txt .day-date { font-size:16px; font-weight:800; letter-spacing:-.025em; display:block; }
+.day-head-txt .day-date .day-wd::first-letter { text-transform:uppercase; }
+.day-group .day-meta-row { padding:0 15px; margin:10px 0 0; }
+.day-group .day-note-card { margin:10px 15px 0; }
+.day-group .timeline-list { padding:4px 9px 12px; gap:0; }
+/* Dentro de la tarjeta el ancho es oro: se recorta el acolchado lateral de
+   las filas para que los títulos no se partan en tres líneas. */
+.day-group .timeline-item.list-item { padding:9px 8px; gap:9px; }
+.day-group .timeline-item .item-emoji { width:32px; height:32px; font-size:16px; flex:0 0 32px; }
+.day-group .timeline-item .li-actions { gap:2px; }
+.day-group .timeline-item .li-time { min-width:38px; }
+.day-group.collapsed .day-head { border-bottom:0; }
+.day-group.collapsed .day-meta-row { padding-bottom:12px; }
+/* Dentro de la tarjeta del día, las paradas son filas limpias (no tarjeta
+   dentro de tarjeta). La barra de estado a la izquierda se mantiene. */
+.day-group .timeline-item.list-item {
+  background:transparent; border-color:transparent; box-shadow:none; border-radius:12px;
+}
+.day-group .timeline-item.list-item + .timeline-item.list-item { margin-top:1px; }
+.day-group .timeline-item.status-por_iniciar { box-shadow: inset 3px 0 0 #f59e0b; }
+.day-group .timeline-item.status-en_consulta { box-shadow: inset 3px 0 0 #3b82f6; }
+.day-group .timeline-item.status-confirmado  { box-shadow: inset 3px 0 0 #10b981; }
+.day-group .timeline-item.status-cancelado   { box-shadow: inset 3px 0 0 #ef4444; }
+.day-group .timeline-item.has-custom-color   { box-shadow: inset 4px 0 0 var(--card-color); }
+.day-group .timeline-item.is-next { box-shadow: inset 4px 0 0 var(--accent) !important; }
+/* Los transportes cruzan el día: se ven como una banda, no como una parada más.
+   (Gana al fondo neutro que el estado "confirmado" pone en el resto de vistas.) */
+.timeline-list .timeline-item.list-item.type-transporte,
+.timeline-list .timeline-item.list-item.type-vuelo,
+.timeline-list .timeline-item.list-item.type-coche {
+  background:color-mix(in srgb, var(--tipo-transporte) 8%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, var(--tipo-transporte) 20%, transparent);
+  margin:5px 0;
+}
+.timeline-list .timeline-item.list-item.type-transporte.is-next,
+.timeline-list .timeline-item.list-item.type-vuelo.is-next,
+.timeline-list .timeline-item.list-item.type-coche.is-next { background:var(--accent-bg) !important; }
+.day-group .plan-part { margin:12px 0 4px 6px; }
+.timeline-list .gap-chip { margin-left:52px; }
+/* El chip de hueco/viaje se ajusta a su texto (si no, ocupa todo el ancho). */
+.gap-chip.gap-moving { align-self:flex-start; width:max-content; max-width:100%; }
+
+/* ======================================================================
+   VISTA TARJETAS — la tira de días vive bajo la barra superior.
+   ====================================================================== */
+.flash-strip-host { flex:0 0 auto; }
+.flash-strip-host .day-strip { position:static; margin:0; border-bottom:1px solid var(--line-soft);
+  background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; }
+.flashview { will-change:transform, opacity; }
+
+/* ===== Asistente por pasos del editor de paradas ("Nueva parada") ===== */
+.wz-head { margin:-4px 0 16px; }
+.wz-bar { display:flex; gap:5px; margin-bottom:13px; }
+.wz-bar i { height:4px; border-radius:3px; flex:1; background:var(--line); transition:background .2s var(--ease); }
+.wz-bar i.on { background:var(--accent); }
+.wz-bar i.done { background:color-mix(in srgb, var(--accent) 45%, var(--bg-elev)); }
+.wz-kicker { font-size:10.5px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); }
+.wz-title { font-size:20px; font-weight:800; letter-spacing:-.03em; margin:3px 0 0; }
+.wz-hint { font-size:12.5px; color:var(--text-muted); margin:5px 0 0; font-weight:500; line-height:1.45; }
+.wz-step { display:none; animation:wz-in .22s var(--ease); }
+.wz-step.on { display:block; }
+@keyframes wz-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { .wz-step { animation:none; } }
+.wz-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:9px; }
+.wz-cell {
+  border:1px solid var(--line); border-radius:15px; background:var(--bg-elev); color:var(--text);
+  padding:13px 6px 11px; text-align:center; cursor:pointer; font-family:inherit;
+  transition:border-color .15s var(--ease), background .15s var(--ease), transform .12s var(--ease);
+}
+.wz-cell:active { transform:scale(.97); }
+.wz-cell .em { display:block; font-size:22px; line-height:1; margin-bottom:6px; }
+.wz-cell .n { font-size:11.5px; font-weight:700; }
+.wz-cell.sel { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.wz-summary { border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; margin-bottom:16px; }
+.wz-sum-row { display:flex; gap:10px; align-items:center; padding:9px 12px; font-size:13px; }
+.wz-sum-row + .wz-sum-row { border-top:1px solid var(--line-soft); }
+.wz-sum-row i { font-style:normal; font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--text-muted); width:58px; flex:none; }
+.wz-sum-row b { font-weight:700; min-width:0; word-break:break-word; }
+.wz .btn.wz-savenow { margin-left:auto; }
+/* En el asistente, el primer paso no necesita ver el <select> de tipo. */
+.wz #f-type { display:none; }
 
 /* Badge del estado al lado del título */
 .status-badge {
@@ -1398,16 +1570,19 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 /* La columna de contenido se centra y no se estira en pantallas anchas (escritorio). */
 .flash-date, .flash-body { width:100%; max-width:620px; }
-.flash-date { flex-shrink:0; padding:14px 4px 18px; }
-.flash-daynum { font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
-.flash-wx { margin-top:10px; font-size:14px; color:var(--text-muted); font-weight:500; }
+.flash-date { flex-shrink:0; padding:12px 4px 12px; display:flex; align-items:center; gap:12px; }
+.flash-date-txt { min-width:0; flex:1; }
+.flash-daynum { font-size:10.5px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:.1em; }
 .flash-wx:empty { display:none; }
-.flash-date-main { font-family:var(--font-titulo); font-weight:700; font-size:30px; line-height:1.06; letter-spacing:-.03em; color:var(--text); }
-.flash-date-main .flash-wd { display:block; }
-.flash-date-main .flash-wd::first-letter { text-transform:uppercase; }
-.flash-date-main .flash-dm::first-letter { text-transform:uppercase; }
-.flash-note-title { margin-top:8px; font-size:14px; font-weight:600; color:var(--accent); }
+.flash-date-main { font-family:var(--font-titulo); font-weight:800; font-size:19px; line-height:1.2; letter-spacing:-.03em; color:var(--text); }
+.flash-date-main::first-letter { text-transform:uppercase; }
+.flash-date-sub { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:3px;
+  font-size:12.5px; font-weight:600; color:var(--text-muted); }
+.flash-note-title { font-size:12.5px; font-weight:700; color:var(--accent); }
 .flash-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; gap:8px; padding-bottom:28px; }
+/* La tarjeta del día en la vista deslizable usa el mismo lenguaje que la lista. */
+.flash-card .flash-body > .timeline-list { padding:0; }
+.flash-card .timeline-item.list-item { background:var(--bg-elev); border:1px solid var(--line-soft); }
 .flash-body .drag-handle { display:none; }
 .flash-empty { margin:auto; text-align:center; color:var(--text-muted); display:flex; flex-direction:column; align-items:center; gap:10px; }
 .flash-empty-emoji { font-size:40px; opacity:.7; }
@@ -3017,18 +3192,31 @@ const PLANNING_METADATA = {
   },
   transporte: {
     label:'Datos del transporte',
+    // Campos relevantes SEGÚN EL MODO. Si el modo no está aquí, se piden todos
+    // (tren, autobús, ferry, barco). En coche/taxi/metro no tiene sentido pedir
+    // vagón, asientos o localizador: se queda en origen, destino y poco más.
+    byMode: {
+      coche: ['modo','origen','destino'],
+      taxi:  ['modo','origen','destino','compania'],
+      metro: ['modo','origen','destino','numero'],
+      teleferico: ['modo','origen','destino','compania','url'],
+    },
     fields: [
       { id:'modo',       label:'Tipo de transporte', type:'select', options:[
-        { value:'', label:'Tren / general' },
-        { value:'tren',  label:'Tren' },
-        { value:'bus',   label:'Autobús' },
+        { value:'', label:'Sin especificar' },
         { value:'coche', label:'Coche' },
-        { value:'ferry', label:'Ferry' },
-        { value:'metro', label:'Metro' },
+        { value:'tren',  label:'Tren' },
         { value:'taxi',  label:'Taxi' },
+        { value:'metro', label:'Metro' },
+        { value:'bus',   label:'Autobús' },
+        { value:'ferry', label:'Ferry' },
         { value:'barco', label:'Barco' },
+        { value:'teleferico', label:'Teleférico' },
       ] },
-      { id:'compania',   label:'Compañía',         placeholder:'Renfe, JR, Eurostar…' },
+      { id:'compania',   label:'Compañía',         placeholder:'Renfe, JR, Eurostar…',
+        // En taxi la "compañía" es la app: Uber, Cabify… (sugerencias, no cerrado).
+        byMode:{ taxi:{ label:'Compañía o app', placeholder:'Uber, Cabify, Bolt, taxi local…',
+                        suggest:['Uber','Cabify','Bolt','FREE NOW','Taxi local'] } } },
       { id:'numero',     label:'Línea o número',   placeholder:'AVE 02701 · Línea 5' },
       { id:'origen',     label:'Origen',           placeholder:'Madrid Atocha' },
       { id:'destino',    label:'Destino',          placeholder:'Sevilla Sta. Justa' },
@@ -3117,7 +3305,7 @@ const tripSettings = (t) => (t && t.settings && typeof t.settings === 'object' &
 const tripSettingsMut = (t) => { if (!t.settings || typeof t.settings !== 'object' || Array.isArray(t.settings)) t.settings = {}; return t.settings; };
 
 // Modos de transporte → emoji. El icono del evento cambia según metadata.modo.
-const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢' };
+const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢', teleferico:'🚡' };
 // Emoji efectivo de un planning item (transporte varía con su modo).
 const planEmoji = (it) => {
   if (it && it.type === 'transporte') {
@@ -3354,9 +3542,21 @@ const mealLabel = (time) => {
   const mins = (+m[1]) * 60 + (+m[2]);
   if (mins >= 420  && mins < 720)  return 'Desayuno';  // 07:00–11:59
   if (mins >= 720  && mins < 960)  return 'Comida';    // 12:00–15:59
-  if (mins >= 960  && mins < 1110) return 'Merienda';  // 16:00–18:29
-  if (mins >= 1110 && mins <= 1380) return 'Cena';     // 18:30–23:00
+  if (mins >= 960  && mins < 1020) return 'Merienda';  // 16:00–16:59
+  if (mins >= 1020 && mins <= 1439) return 'Cena';     // 17:00–23:59
   return 'Restaurante';
+};
+
+// Etiqueta de tipo que se muestra en la card. Igual que `typeDef(type).label`
+// salvo en "comida", donde la hora manda: a las 19:00 no pone "Comida", pone
+// "Cena" (desayuno / comida / merienda / cena según `mealLabel`).
+const typeLabelFor = (it) => {
+  if (!it) return '';
+  if (it.type === 'comida') {
+    const m = mealLabel(it.time);
+    return m === 'Restaurante' ? 'Comida' : m;   // sin hora → "Comida" genérica
+  }
+  return typeDef(it.type).label;
 };
 
 // Momento principal de un planning item como Date, o null si no tiene hora precisa.
@@ -8771,6 +8971,210 @@ const TripDetail = {
   _pendingShowDone: false,    // mostrar el bloque "Ver completados"
   _pendingSort: 'custom',     // 'custom' (arrastrar) | 'abc' (alfabético)
 
+  // Cuerpo de un día: franjas (Mañana/Tarde/Noche), paradas, tramos de ruta,
+  // huecos y alojamiento. Lo usan la LISTA y la vista de TARJETAS, para que
+  // el "camino" del día se vea igual en las dos.
+  //   ctx: { nextEv, todayStr, nightMap, morningHotel(k), renderToken }
+  _dayListEl(t, k, dayArr, ctx) {
+    ctx = ctx || {};
+    const nextEv = ctx.nextEv || null;
+    const todayStr = ctx.todayStr || todayIso();
+    const nightMap = ctx.nightMap || {};
+    const morningHotel = ctx.morningHotel || (() => null);
+    const renderToken = ctx.renderToken || {};
+    const list = el('div', { class:'list timeline-list', data:{ day:k } });
+    const route = this._dayRoute(t, k);
+    const waypoints = [];          // paradas con coords (sin "noches"), en orden
+    let firstStopCard = null, firstStopCoords = null, firstStopItem = null;
+    let lastStopCoords = null, nightCard = null;
+    // Franjas (Mañana/Tarde/Noche) e hilo de timeline: solo en días donde TODAS las
+    // paradas tienen hora (si no, lista limpia). "Ahora" y huecos solo si hay horas.
+    const _nonVirt = dayArr.filter(x => !x._virtual);
+    const _timed = _nonVirt.filter(x => x.time);
+    const _partOf = (hhmm) => { const h = parseInt(String(hhmm).slice(0, 2), 10) || 0; return h < 12 ? 'Mañana' : (h < 20 ? 'Tarde' : 'Noche'); };
+    const _useParts = _timed.length >= 2 && _nonVirt.length === _timed.length && new Set(_timed.map(x => _partOf(x.time))).size >= 2;
+    const _useThread = _timed.length >= 2 && _nonVirt.length === _timed.length;
+    const _timeMin = (s) => { const m = String(s).match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; };
+    // Fin REAL de una parada (en minutos) para medir el hueco que deja detrás.
+    // Un transporte de 08:00 a 14:00 no deja 7 h libres hasta las 15:00: deja 1 h.
+    //   · `min`    → minuto en que acaba de verdad (null si no se sabe)
+    //   · `moving` → el tiempo posterior es trayecto, no ocio (transporte sin llegada)
+    const _endInfo = (x) => {
+      const isMove = (x.type === 'transporte' || x.type === 'vuelo' || x.type === 'coche');
+      // 1) Hora de fin explícita (lugar/comida/actividad… con "Hora fin").
+      if (x.end_time && _timeMin(x.end_time) != null) return { min: _timeMin(x.end_time), moving:false };
+      // 2) Transporte/vuelo/coche: hora de llegada, si es el mismo día.
+      if (isMove) {
+        const d1 = x.consultation_planned_d1 || x.day_date;
+        const sameDay = !x.consultation_planned_d2 || x.consultation_planned_d2 === d1;
+        const t2 = x.consultation_planned_t2;
+        if (t2 && sameDay && _timeMin(t2) != null) return { min: _timeMin(t2), moving:false };
+        // Sin hora de llegada: lo que viene después es viaje, no tiempo libre.
+        return { min:null, moving:true };
+      }
+      // 3) Duración declarada de la visita (solo si la puso el usuario).
+      const dur = x.metadata && x.metadata.duration_min;
+      if (dur != null && !isNaN(dur) && +dur > 0) return { min: (_timeMin(x.time) || 0) + (+dur), moving:false };
+      return { min:null, moving:false };
+    };
+    const _isToday = (k === todayStr);
+    const _nowM = _isToday ? (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })() : null;
+    const _nowLine = () => { const d = new Date(); const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0'); return el('div', { class:'now-line' }, [ el('span', { class:'now-dot' }), el('span', { class:'now-label', text:`ahora ${hh}:${mm}` }) ]); };
+    let _lastPart = null, _threadSeen = 0, _nowInserted = false, _prevTimed = null;
+    for (let di = 0; di < dayArr.length; di++) {
+      const it = dayArr[di];
+      // Noche de continuación → va en la cabecera (chip de alojamiento), no como card.
+      if (it._virtual === 'night' && !it._isFirstNight) continue;
+      if (_useParts && !it._virtual && it.time) {
+        const p = _partOf(it.time);
+        if (p !== _lastPart) { _lastPart = p; list.appendChild(el('div', { class:'plan-part', text: p })); }
+      }
+      // Marcador "ahora" (hoy): antes de la primera parada con hora ≥ ahora.
+      if (_isToday && !_nowInserted && !it._virtual && it.time && _timeMin(it.time) != null && _timeMin(it.time) >= _nowM) {
+        list.appendChild(_nowLine()); _nowInserted = true;
+      }
+      // Hueco entre paradas con hora (≥120 min y sin tramo de ruta entre ellas).
+      // Se mide desde el FIN real de la anterior (llegada / hora fin / duración),
+      // no desde su hora de inicio: si no, un traslado de 6 h salía como "libre 7h".
+      if (!it._virtual && it.time && _prevTimed) {
+        const startM = _timeMin(it.time);
+        const prevStartM = _timeMin(_prevTimed.time);
+        const info = _endInfo(_prevTimed);
+        const endM = (info.min != null && info.min > prevStartM) ? Math.min(info.min, startM) : prevStartM;
+        const gap = startM - endM;
+        const hasLeg = (_prevTimed.lat != null && _prevTimed.lng != null && it.lat != null && it.lng != null);
+        if (gap >= 120 && !hasLeg) {
+          const h = Math.floor(gap / 60), m = gap % 60;
+          const dur = `${h}h${m ? ` ${m}m` : ''}`;
+          // Transporte sin hora de llegada → ese rato se está viajando, no libre.
+          list.appendChild(info.moving
+            ? el('div', { class:'gap-chip gap-moving', text: `${planEmoji(_prevTimed)} viajando ~${dur}` })
+            : el('div', { class:'gap-chip', text: `libre ${dur}` }));
+        }
+      }
+      const card = this._planningItem(it, t);
+      if (_useThread && !it._virtual && it.time) {
+        card.classList.add('li-thread'); _threadSeen++;
+        if (_threadSeen === 1) card.classList.add('thread-first');
+        if (_threadSeen === _timed.length) card.classList.add('thread-last');
+      }
+      TripDetail._wireNextCard(card, it, nextEv);
+      list.appendChild(card);
+      if (!it._virtual && it.time) _prevTimed = it;
+      if (it._virtual === 'night' && !nightCard) nightCard = card;
+      // Las "noches" de hotel y las copias 'span' no cuentan como parada para rutas.
+      const skipLeg = (x) => x._virtual === 'night' || x._virtual === 'span';
+      if (it.lat != null && it.lng != null && !skipLeg(it)) {
+        waypoints.push({ lat: it.lat, lng: it.lng });
+        lastStopCoords = { lat: it.lat, lng: it.lng };
+        if (!firstStopCard) { firstStopCard = card; firstStopCoords = lastStopCoords; firstStopItem = it; }
+      }
+      const nx = dayArr[di + 1];
+      if (nx && it.lat != null && it.lng != null && nx.lat != null && nx.lng != null
+          && !skipLeg(it) && !skipLeg(nx)) {
+        const a = { lat: it.lat, lng: it.lng }, b = { lat: nx.lat, lng: nx.lng };
+        if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route, { forceMode: arriveMode(nx) }));
+      }
+    }
+    // "Ahora" al final si todas las paradas de hoy ya pasaron.
+    if (_isToday && _timed.length && !_nowInserted) list.appendChild(_nowLine());
+    // Tramo "desde el alojamiento" hasta la primera parada del día (si hay hotel).
+    const hotelC = morningHotel(k);
+    if (hotelC && firstStopCoords && firstStopCard && legBetween(hotelC, firstStopCoords).km > 0.03) {
+      list.insertBefore(this._legChip(hotelC, firstStopCoords, route, { hotel:'from', forceMode: arriveMode(firstStopItem) }), firstStopCard);
+      waypoints.unshift(hotelC);
+    }
+    // Tramo "de vuelta al alojamiento" desde la última parada (hotel donde se duerme).
+    const nightC = nightMap[k];
+    if (nightC && lastStopCoords && legBetween(lastStopCoords, nightC).km > 0.03) {
+      const back = this._legChip(lastStopCoords, nightC, route, { hotel:'to' });
+      if (nightCard) list.insertBefore(back, nightCard); else list.appendChild(back);
+      waypoints.push(nightC);
+    }
+    // Día sin actividades (solo alojamiento o vacío): estado "Día libre" + añadir.
+    if (TripDetail._planningFilter === 'todo' && k !== 'sin-fecha' && !dayArr.some(x => !x._virtual)) {
+      list.insertBefore(el('div', { class:'dia-libre', style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px', padding:'12px 14px', border:'1px dashed var(--line)', borderRadius:'14px', color:'var(--text-muted)', fontSize:'13px' } }, [
+        el('span', { text:'Día libre' }),
+        canEdit() ? el('button', { class:'btn btn-sm btn-ghost', style:{ padding:'4px 10px' }, onclick: () => TripDetail.openPlanningEditor(t, null, { day:k }) }, [ el('span', { html: svg('plus') }), 'Añadir plan' ]) : null,
+      ].filter(Boolean)), list.firstChild);
+    }
+    route.finalize(dayArr, list, waypoints, renderToken);
+    return list;
+  },
+  // Tira horizontal de días: un cuadradito por día con la FECHA (OCT · 11),
+  // arrastrable de lado a lado cuando el viaje es largo. Un toque abre la
+  // tarjeta de ese día. Se usa igual en la lista y en la vista de tarjetas.
+  //   keys  → días en orden
+  //   byDay → mapa día → items (para el contador de paradas)
+  //   opts.onPick(dayKey, pillEl)
+  //   opts.active → día resaltado
+  _dayStrip(t, keys, byDay, opts) {
+    opts = opts || {};
+    const today = todayIso();
+    const inner = el('div', { class:'day-strip-inner' });
+    keys.forEach(k => {
+      const evs = (byDay && byDay[k]) || [];
+      const n = evs.filter(x => !x._virtual).length;
+      const sinFecha = (k === 'sin-fecha');
+      const cls = ['day-pill'];
+      if (k === today) cls.push('today');
+      if (!n) cls.push('vacio');
+      if (!sinFecha && k < today) cls.push('past');
+      if (opts.active === k) cls.push('active');
+      const pill = el('button', {
+        type:'button', class: cls.join(' '), data:{ day:k },
+        'aria-label': sinFecha ? 'Sin fecha' : `${fmtDayLong(k)} · ${n} ${n === 1 ? 'parada' : 'paradas'}`,
+        title: sinFecha ? 'Sin fecha' : fmtDayLong(k),
+        onclick: () => { if (opts.onPick) opts.onPick(k, pill); },
+      }, sinFecha
+        ? [ el('i', { text:'SIN' }), el('b', { text:'—' }), el('span', { class:'wd', text:'fecha' }) ]
+        : [
+            el('i', { text: fmtDate(k, { month:'short' }).replace(/\./g, '') }),
+            el('b', { text: fmtDate(k, { day:'numeric' }) }),
+            el('span', { class:'wd', text: fmtDate(k, { weekday:'short' }).replace(/\./g, '') }),
+            n ? el('span', { class:'n', text: String(n) }) : el('span', { class:'n vacia', text:'·' }),
+          ]);
+      inner.appendChild(pill);
+    });
+    // Arrastrar con el ratón (en táctil el scroll nativo ya va solo).
+    let drag = null;
+    inner.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') return;
+      drag = { x:e.clientX, left:inner.scrollLeft, moved:false };
+    });
+    inner.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      if (Math.abs(dx) > 3) { drag.moved = true; inner.classList.add('dragging'); }
+      inner.scrollLeft = drag.left - dx;
+    });
+    const endDrag = (e) => {
+      if (drag && drag.moved) { e.preventDefault(); e.stopPropagation(); }
+      drag = null; inner.classList.remove('dragging');
+    };
+    inner.addEventListener('pointerup', endDrag, true);
+    inner.addEventListener('pointerleave', () => { drag = null; inner.classList.remove('dragging'); });
+
+    const strip = el('div', { class:'day-strip' }, [ inner ]);
+    // La barra superior cambia de alto con el safe-area del móvil: se mide.
+    requestAnimationFrame(() => {
+      const tb = document.querySelector('header.topbar');
+      if (tb && strip.isConnected && getComputedStyle(strip).position === 'sticky') {
+        strip.style.top = tb.offsetHeight + 'px';
+      }
+    });
+    // Deja a la vista el día activo (o el de hoy) sin mover la página.
+    strip._focusDay = (k) => {
+      const pill = inner.querySelector(`.day-pill[data-day="${k}"]`);
+      inner.querySelectorAll('.day-pill.active').forEach(p => p.classList.remove('active'));
+      if (!pill) return;
+      pill.classList.add('active');
+      const left = pill.offsetLeft - (inner.clientWidth / 2) + (pill.offsetWidth / 2);
+      inner.scrollTo({ left: Math.max(0, left), behavior:'smooth' });
+    };
+    return strip;
+  },
+
   async tabPlanning(root, t, fab) {
     clearInterval(TripDetail._neTimer);   // parar cuenta atrás de un render anterior
     const rawItems = await DB.listByTrip('planning_items', t.id);
@@ -8910,6 +9314,14 @@ const TripDetail = {
       onclick: () => TripDetail.openPlanningCalendar(t) }, [ el('span', { html: svg('cal') }), el('span', { text:'Calendario' }) ]);
     if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ calBtn, flashBtn, collapseAllBtn ]));
 
+    // Tira de días (pegada arriba): un toque abre la tarjeta de ese día,
+    // desplegándose desde el propio cuadradito.
+    const dayStrip = (keys.length > 1) ? TripDetail._dayStrip(t, keys, byDay, {
+      active: keys.includes(todayIso()) ? todayIso() : null,
+      onPick: (k, pill) => TripDetail.openPlanningFlashcards(t, k, { fromEl: pill }),
+    }) : null;
+    if (dayStrip) root.appendChild(dayStrip);
+
     // Viaje EN CURSO: ocultamos los días ya pasados y dejamos un botón para verlos.
     const todayStr = todayIso();
     const isEnCurso = tripStatus(t) === 'curso';
@@ -8960,18 +9372,29 @@ const TripDetail = {
       ].filter(Boolean));
       // Zona clicable (chevron + número + fecha + clima + pill): clic → pliega/despliega;
       // pulsación larga (o clic derecho) → editor del día (título/color/nota unificados).
+      // Cabecera: cuadradito de fecha (OCT · 11) + "Día N" + fecha larga.
+      // Mismo lenguaje visual que la tira de días de arriba.
+      const dayBadge = (k === 'sin-fecha')
+        ? el('span', { class:'day-badge' }, [ el('i', { text:'SIN' }), el('b', { text:'—' }) ])
+        : el('span', { class:'day-badge' }, [
+            el('i', { text: fmtDate(k, { month:'short' }).replace(/\./g, '') }),
+            el('b', { text: fmtDate(k, { day:'numeric' }) }),
+          ]);
       const headMain = el('div', { class:'day-head-main', title:'Mantén pulsado para editar el día', onclick: () => toggleDayGroup(g, k) }, [
-        el('span', { class:'day-collapse', html: svg('chevron'), 'aria-hidden':'true' }),
-        dayNum ? el('span', { class:'day-num', text:`Día ${dayNum}` }) : null,
-        (k === 'sin-fecha')
-          ? el('span', { class:'day-date', text:'Sin fecha' })
-          : el('span', { class:'day-date' }, [
-              el('span', { class:'day-wd', text: fmtDate(k, { weekday:'short' }).replace(/\.$/, '') }),
-              ' ',
-              el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
-            ]),
+        dayBadge,
+        el('div', { class:'day-head-txt' }, [
+          dayNum ? el('span', { class:'day-num', text:`Día ${dayNum}` }) : null,
+          (k === 'sin-fecha')
+            ? el('span', { class:'day-date', text:'Sin fecha' })
+            : el('span', { class:'day-date' }, [
+                el('span', { class:'day-wd', text: fmtDate(k, { weekday:'long' }) }),
+                ' ',
+                el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
+              ]),
+        ].filter(Boolean)),
         (k === todayStr) ? el('span', { class:'day-today-badge', text:'Hoy' }) : null,
         _headWx.children.length ? _headWx : null,
+        el('span', { class:'day-collapse', html: svg('chevron'), 'aria-hidden':'true' }),
       ].filter(Boolean));
       if (canEdit() && k !== 'sin-fecha') TripDetail._attachLongPress(headMain, () => TripDetail.openDayEditor(t, k, dayMeta));
       // Botón visible para las fotos: la pulsación larga sobre la cabecera abre
@@ -9028,97 +9451,29 @@ const TripDetail = {
         g.appendChild(el('div', { class:'day-note-card', text: noteMap[k].text }));
       }
 
-      const list = el('div', { class:'list timeline-list', data:{ day:k } });
       const dayArr = byDay[k];
-      const route = this._dayRoute(t, k);
-      const waypoints = [];          // paradas con coords (sin "noches"), en orden
-      let firstStopCard = null, firstStopCoords = null, firstStopItem = null;
-      let lastStopCoords = null, nightCard = null;
-      // Franjas (Mañana/Tarde/Noche) e hilo de timeline: solo en días donde TODAS las
-      // paradas tienen hora (si no, lista limpia). "Ahora" y huecos solo si hay horas.
-      const _nonVirt = dayArr.filter(x => !x._virtual);
-      const _timed = _nonVirt.filter(x => x.time);
-      const _partOf = (hhmm) => { const h = parseInt(String(hhmm).slice(0, 2), 10) || 0; return h < 12 ? 'Mañana' : (h < 20 ? 'Tarde' : 'Noche'); };
-      const _useParts = _timed.length >= 2 && _nonVirt.length === _timed.length && new Set(_timed.map(x => _partOf(x.time))).size >= 2;
-      const _useThread = _timed.length >= 2 && _nonVirt.length === _timed.length;
-      const _timeMin = (s) => { const m = String(s).match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; };
-      const _isToday = (k === todayStr);
-      const _nowM = _isToday ? (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })() : null;
-      const _nowLine = () => { const d = new Date(); const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0'); return el('div', { class:'now-line' }, [ el('span', { class:'now-dot' }), el('span', { class:'now-label', text:`ahora ${hh}:${mm}` }) ]); };
-      let _lastPart = null, _threadSeen = 0, _nowInserted = false, _prevTimed = null;
-      for (let di = 0; di < dayArr.length; di++) {
-        const it = dayArr[di];
-        // Noche de continuación → va en la cabecera (chip de alojamiento), no como card.
-        if (it._virtual === 'night' && !it._isFirstNight) continue;
-        if (_useParts && !it._virtual && it.time) {
-          const p = _partOf(it.time);
-          if (p !== _lastPart) { _lastPart = p; list.appendChild(el('div', { class:'plan-part', text: p })); }
-        }
-        // Marcador "ahora" (hoy): antes de la primera parada con hora ≥ ahora.
-        if (_isToday && !_nowInserted && !it._virtual && it.time && _timeMin(it.time) != null && _timeMin(it.time) >= _nowM) {
-          list.appendChild(_nowLine()); _nowInserted = true;
-        }
-        // Hueco libre entre paradas con hora (≥120 min y sin tramo de ruta entre ellas).
-        if (!it._virtual && it.time && _prevTimed) {
-          const gap = _timeMin(it.time) - _timeMin(_prevTimed.time);
-          const hasLeg = (_prevTimed.lat != null && _prevTimed.lng != null && it.lat != null && it.lng != null);
-          if (gap >= 120 && !hasLeg) {
-            const h = Math.floor(gap / 60), m = gap % 60;
-            list.appendChild(el('div', { class:'gap-chip', text: `libre ${h}h${m ? ` ${m}m` : ''}` }));
-          }
-        }
-        const card = this._planningItem(it, t);
-        if (_useThread && !it._virtual && it.time) {
-          card.classList.add('li-thread'); _threadSeen++;
-          if (_threadSeen === 1) card.classList.add('thread-first');
-          if (_threadSeen === _timed.length) card.classList.add('thread-last');
-        }
-        TripDetail._wireNextCard(card, it, nextEv);
-        list.appendChild(card);
-        if (!it._virtual && it.time) _prevTimed = it;
-        if (it._virtual === 'night' && !nightCard) nightCard = card;
-        // Las "noches" de hotel y las copias 'span' no cuentan como parada para rutas.
-        const skipLeg = (x) => x._virtual === 'night' || x._virtual === 'span';
-        if (it.lat != null && it.lng != null && !skipLeg(it)) {
-          waypoints.push({ lat: it.lat, lng: it.lng });
-          lastStopCoords = { lat: it.lat, lng: it.lng };
-          if (!firstStopCard) { firstStopCard = card; firstStopCoords = lastStopCoords; firstStopItem = it; }
-        }
-        const nx = dayArr[di + 1];
-        if (nx && it.lat != null && it.lng != null && nx.lat != null && nx.lng != null
-            && !skipLeg(it) && !skipLeg(nx)) {
-          const a = { lat: it.lat, lng: it.lng }, b = { lat: nx.lat, lng: nx.lng };
-          if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route, { forceMode: arriveMode(nx) }));
-        }
-      }
-      // "Ahora" al final si todas las paradas de hoy ya pasaron.
-      if (_isToday && _timed.length && !_nowInserted) list.appendChild(_nowLine());
-      // Tramo "desde el alojamiento" hasta la primera parada del día (si hay hotel).
-      const hotelC = morningHotel(k);
-      if (hotelC && firstStopCoords && firstStopCard && legBetween(hotelC, firstStopCoords).km > 0.03) {
-        list.insertBefore(this._legChip(hotelC, firstStopCoords, route, { hotel:'from', forceMode: arriveMode(firstStopItem) }), firstStopCard);
-        waypoints.unshift(hotelC);
-      }
-      // Tramo "de vuelta al alojamiento" desde la última parada (hotel donde se duerme).
-      const nightC = nightMap[k];
-      if (nightC && lastStopCoords && legBetween(lastStopCoords, nightC).km > 0.03) {
-        const back = this._legChip(lastStopCoords, nightC, route, { hotel:'to' });
-        if (nightCard) list.insertBefore(back, nightCard); else list.appendChild(back);
-        waypoints.push(nightC);
-      }
-      // Día sin actividades (solo alojamiento o vacío): estado "Día libre" + añadir.
-      if (TripDetail._planningFilter === 'todo' && k !== 'sin-fecha' && !dayArr.some(x => !x._virtual)) {
-        list.insertBefore(el('div', { class:'dia-libre', style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px', padding:'12px 14px', border:'1px dashed var(--line)', borderRadius:'14px', color:'var(--text-muted)', fontSize:'13px' } }, [
-          el('span', { text:'Día libre' }),
-          canEdit() ? el('button', { class:'btn btn-sm btn-ghost', style:{ padding:'4px 10px' }, onclick: () => TripDetail.openPlanningEditor(t, null, { day:k }) }, [ el('span', { html: svg('plus') }), 'Añadir plan' ]) : null,
-        ].filter(Boolean)), list.firstChild);
-      }
+      const list = TripDetail._dayListEl(t, k, dayArr, { nextEv, todayStr, nightMap, morningHotel, renderToken });
       g.appendChild(list);
       root.appendChild(g);
-      route.finalize(dayArr, list, waypoints, renderToken);
     }
 
     setTimeout(() => TripDetail._wirePlanningDnD(root, t), 0);
+
+    // La tira sigue al scroll: el cuadradito del día que se está mirando queda
+    // marcado y centrado. Sin observer (o sin soporte) simplemente no pasa nada.
+    if (dayStrip && 'IntersectionObserver' in window) {
+      let lastK = null;
+      const obs = new IntersectionObserver((entries) => {
+        const vis = entries.filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (!vis) return;
+        const k = vis.target.dataset.day;
+        if (k && k !== lastK) { lastK = k; dayStrip._focusDay(k); }
+      }, { rootMargin: '-150px 0px -55% 0px', threshold: 0 });
+      root.querySelectorAll('.day-group').forEach(g => obs.observe(g));
+      TripDetail._dayStripObs?.disconnect?.();
+      TripDetail._dayStripObs = obs;
+    }
 
     // Clima por día (async): cada día usa las coords de DONDE SE DUERME esa noche
     // (hotel cuyo rango cubre la noche); si no hay, la primera parada del día con
@@ -9453,7 +9808,7 @@ const TripDetail = {
         // localizador, ruta…). Si no hay nada, la fila queda vacía pero reserva alto.
         (() => {
           const isTransportType = ['vuelo', 'transporte', 'coche'].includes(it.type);
-          const subText = subParts.join(' · ') || ((isVirtual || isTransportType) ? '' : td.label);
+          const subText = subParts.join(' · ') || ((isVirtual || isTransportType) ? '' : typeLabelFor(it));
           return el('div', { class:'li-subrow' }, [
             subText ? el('span', { class:'li-sub-text', text: subText }) : null,
           ].filter(Boolean));
@@ -9507,6 +9862,7 @@ const TripDetail = {
   async openPlanningFlashcards(t, focusDay, opts) {
     opts = opts || {};
     let keys = [];
+    let flashStrip = null, lastStripDay = null;
     const track = el('div', { class:'flash-track' });
     const counter = el('div', { class:'flash-counter' });
 
@@ -9514,6 +9870,9 @@ const TripDetail = {
       const w = track.clientWidth || 1;
       const i = Math.round(track.scrollLeft / w);
       counter.textContent = keys.length ? `${Math.min(i + 1, keys.length)} / ${keys.length}` : '';
+      // La tira de días sigue al deslizamiento (solo cuando cambia de día).
+      const k = keys[Math.max(0, Math.min(keys.length - 1, i))];
+      if (flashStrip && k && k !== lastStripDay) { lastStripDay = k; flashStrip._focusDay(k); }
     };
     const currentDayKey = () => {
       const w = track.clientWidth || 1;
@@ -9545,27 +9904,61 @@ const TripDetail = {
       if (byDay['sin-fecha'] && byDay['sin-fecha'].length) keys.push('sin-fecha');
 
       track.innerHTML = '';
+      // Mismo "camino" del día que en la lista: franjas, tramos y huecos.
+      const _nightMapCards = nightCoordsMap(rawItems);
+      const _morningHotelCards = (kk) => {
+        if (kk === 'sin-fecha') return null;
+        const d = parseDate(kk); d.setDate(d.getDate() - 1);
+        return _nightMapCards[isoLocal(d)] || _nightMapCards[kk] || null;
+      };
+      const _tokenCards = (this._flashRenderToken = {});
+      const _nextEvCards = nextTimedEvent(rawItems);
       keys.forEach(k => {
         const evs = byDay[k];
         const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
         const meta = noteMap[k];
+        const nStops = evs.filter(x => !x._virtual).length;
+        const body = evs.length
+          ? this._dayListEl(t, k, evs, { nextEv:_nextEvCards, todayStr: todayIso(),
+              nightMap:_nightMapCards, morningHotel:_morningHotelCards, renderToken:_tokenCards })
+          : el('div', { class:'flash-empty' }, [ el('div', { class:'flash-empty-emoji', text:'🗓️' }), el('div', { text:'Día libre — sin planes' }) ]);
         track.appendChild(el('div', { class:'flash-card', data:{ day:k } }, [
           el('div', { class:'flash-date' }, [
-            dayNum ? el('div', { class:'flash-daynum', text:`Día ${dayNum}` }) : null,
             (k === 'sin-fecha')
-              ? el('div', { class:'flash-date-main', text:'Sin fecha' })
-              : el('div', { class:'flash-date-main' }, [
-                  el('span', { class:'flash-wd', text: fmtDate(k, { weekday:'long' }) }),
-                  el('span', { class:'flash-dm', text: fmtDate(k, { day:'numeric', month:'long' }) }),
+              ? el('span', { class:'day-badge' }, [ el('i', { text:'SIN' }), el('b', { text:'—' }) ])
+              : el('span', { class:'day-badge' }, [
+                  el('i', { text: fmtDate(k, { month:'short' }).replace(/\./g, '') }),
+                  el('b', { text: fmtDate(k, { day:'numeric' }) }),
                 ]),
-            k !== 'sin-fecha' ? el('div', { class:'flash-wx', id: `fwx-${k}` }) : null,
-            (meta && meta.title) ? el('div', { class:'flash-note-title', text: meta.title }) : null,
+            el('div', { class:'flash-date-txt' }, [
+              dayNum ? el('div', { class:'flash-daynum', text:`Día ${dayNum}` }) : null,
+              (k === 'sin-fecha')
+                ? el('div', { class:'flash-date-main', text:'Sin fecha' })
+                : el('div', { class:'flash-date-main', text: fmtDayLong(k) }),
+              el('div', { class:'flash-date-sub' }, [
+                el('span', { text: nStops ? `${nStops} ${nStops === 1 ? 'parada' : 'paradas'}` : 'Sin paradas' }),
+                k !== 'sin-fecha' ? el('span', { class:'flash-wx', id: `fwx-${k}` }) : null,
+                (meta && meta.title) ? el('span', { class:'flash-note-title', text: meta.title }) : null,
+              ].filter(Boolean)),
+            ].filter(Boolean)),
           ].filter(Boolean)),
-          el('div', { class:'flash-body' }, evs.length
-            ? evs.map(it => this._planningItem(it, t))
-            : [ el('div', { class:'flash-empty' }, [ el('div', { class:'flash-empty-emoji', text:'🗓️' }), el('div', { text:'Día libre — sin planes' }) ]) ]),
+          el('div', { class:'flash-body' }, [ body ]),
         ]));
       });
+      // Tira de días arriba: salta al día que toques.
+      stripHost.innerHTML = '';
+      lastStripDay = null;
+      if (keys.length > 1) {
+        flashStrip = TripDetail._dayStrip(t, keys, byDay, {
+          active: focusDay,
+          onPick: (k) => {
+            const i = keys.indexOf(k);
+            if (i >= 0) track.scrollTo({ left: i * track.clientWidth, behavior:'smooth' });
+          },
+        });
+        stripHost.appendChild(flashStrip);
+      } else { flashStrip = null; }
+
       // Clima + ropa por día (async), igual que en la lista.
       const _tripC = tripCoords(rawItems);
       const _nightMap = nightCoordsMap(rawItems);
@@ -9614,6 +10007,8 @@ const TripDetail = {
         TripDetail.openPlanningEditor(t, null, { day: (day && day !== 'sin-fecha') ? day : null, onSaved: () => renderCards(day) });
       }, html: svg('plus') }) : null;
 
+    // Tira de días también aquí: marca el día visible y salta al que toques.
+    const stripHost = el('div', { class:'flash-strip-host' });
     const overlay = el('div', { class:'flashview' }, [
       el('div', { class:'flash-top' }, [
         opts.onBack ? el('button', { class:'flash-close', 'aria-label':'Volver al calendario', title:'Volver al calendario', onclick: doBack, html: svg('back') }) : null,
@@ -9621,11 +10016,29 @@ const TripDetail = {
         counter,
         el('button', { class:'flash-close', 'aria-label':'Cerrar', onclick: doClose, html: svg('close') }),
       ].filter(Boolean)),
+      stripHost,
       track,
       addBtn,
     ].filter(Boolean));
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onKey);
+    // Apertura "desde el cuadradito": la vista crece desde la pastilla pulsada.
+    if (opts.fromEl && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const r = opts.fromEl.getBoundingClientRect();
+      const sx = Math.max(0.06, r.width / window.innerWidth);
+      const sy = Math.max(0.06, r.height / window.innerHeight);
+      overlay.style.transformOrigin = 'top left';
+      overlay.style.transform = `translate(${r.left}px, ${r.top}px) scale(${sx}, ${sy})`;
+      overlay.style.opacity = '0';
+      overlay.style.borderRadius = '18px';
+      requestAnimationFrame(() => {
+        overlay.style.transition = 'transform .4s var(--ease), opacity .22s ease-out, border-radius .4s var(--ease)';
+        overlay.style.transform = 'none';
+        overlay.style.opacity = '1';
+        overlay.style.borderRadius = '0';
+      });
+      setTimeout(() => { overlay.style.transition = ''; overlay.style.transformOrigin = ''; }, 460);
+    }
     await renderCards(focusDay || todayIso());
     if (!keys.length) { doClose(); UI.toast('No hay días que mostrar'); }
   },
@@ -9940,7 +10353,9 @@ const TripDetail = {
       }
       case 'comida': {
         if (place) return place;
-        return tCity ? `Comida en ${tCity}` : 'Comida';
+        // La hora decide la etiqueta: 19:00 → "Cena en Barichara", no "Comida en…".
+        const meal = typeLabelFor({ type:'comida', time: ($('#f-time')?.value || '').trim() });
+        return tCity ? `${meal} en ${tCity}` : meal;
       }
       case 'lugar': {
         return place || (tCity ? `Visita en ${tCity}` : 'Visita');
@@ -10564,9 +10979,14 @@ const TripDetail = {
       el('datalist', { id:'tz-list' }, COMMON_TIMEZONES.map(tz => el('option', { value: tz }))),
       el('div', { class:'field-hint', text:'IANA TZ. Útil para vuelos transoceánicos: muestra la hora local de cada extremo en el planning.' }),
     ]);
+    // Zonas horarias: solo donde cambian de verdad (vuelo o transporte de largo
+    // recorrido). En coche/taxi/metro/teleférico son ruido.
+    const NO_TZ_MODES = ['coche', 'taxi', 'metro', 'teleferico'];
     const refreshTzVisibility = () => {
       const type = $('#f-type')?.value || it.type;
-      tzBlock.style.display = (type === 'vuelo' || type === 'transporte') ? '' : 'none';
+      const modo = (it.metadata || {}).modo || '';
+      const show = (type === 'vuelo') || (type === 'transporte' && !NO_TZ_MODES.includes(modo));
+      tzBlock.style.display = show ? '' : 'none';
     };
 
     // Bloque de metadata específica por tipo (aerolínea, asiento, modelo coche…)
@@ -10581,7 +11001,12 @@ const TripDetail = {
       const grid = el('div', { class:'form-grid-2' });
       const single = el('div');
       const meta = it.metadata || {};
-      def.fields.forEach(f => {
+      // Transporte: el modo decide qué campos se piden (un coche no tiene vagón).
+      const allow = def.byMode && def.byMode[meta.modo];
+      let fields = allow ? def.fields.filter(f => allow.includes(f.id)) : def.fields;
+      // En el asistente el modo ya se ha elegido en su propio paso: no se repite.
+      if (isWizard && type === 'transporte') fields = fields.filter(f => f.id !== 'modo');
+      fields.forEach(f => {
         let node;
         if (f.type === 'seats') {
           node = renderSeatsField(f, Array.isArray(meta.asientos) ? meta.asientos : []);
@@ -10592,10 +11017,16 @@ const TripDetail = {
               el('option', { value:o.value, selected: (meta[f.id] || '') === o.value ? true : null }, o.label))),
           ]);
         } else {
+          // Ajustes del campo según el modo (p. ej. en taxi, "Compañía" pasa a
+          // ser "Compañía o app" y sugiere Uber/Cabify).
+          const byMode = (f.byMode && f.byMode[meta.modo]) || null;
+          const listId = (byMode && byMode.suggest) ? `meta-${f.id}-list` : null;
           node = el('div', { class:'form-row' }, [
-            el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label }),
-            el('input', { id:`meta-${f.id}`, type: f.type || 'text', value: meta[f.id] || '', placeholder: f.placeholder || '' }),
-          ]);
+            el('label', { class:'muted', style:{fontSize:'12px'}, text: (byMode && byMode.label) || f.label }),
+            el('input', { id:`meta-${f.id}`, type: f.type || 'text', value: meta[f.id] || '',
+              placeholder: (byMode && byMode.placeholder) || f.placeholder || '', list: listId }),
+            listId ? el('datalist', { id: listId }, byMode.suggest.map(o => el('option', { value:o }))) : null,
+          ].filter(Boolean));
         }
         if (f.full) single.appendChild(node);
         else grid.appendChild(node);
@@ -10928,22 +11359,279 @@ const TripDetail = {
         renderBorderPicker();
         renderPeople();
         placePeopleBlock();
+        // El asistente recalcula qué pasos aplican al tipo nuevo.
+        if (typeof TripDetail._wzRender === 'function') TripDetail._wzRender();
       }},
         TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
       ),
     ]);
 
-    const body = el('div', {}, [
+    // ---- Filas sueltas (título, notas, importe): antes iban inline dentro de
+    //      `body`; ahora son nodos con nombre para poder repartirlos por pasos. ----
+    const titleRow = el('div', { class:'form-row', id:'title-row' }, [
+      el('label', { text:'Título (auto si lo dejas vacío)' }),
+      el('input', { id:'f-title', type:'text', value: it.title || '' }),
+    ]);
+    const notesRow = el('div', { class:'form-row' }, [
+      el('label', { text:'Notas' }),
+      el('textarea', { id:'f-notes' }, it.notes || ''),
+    ]);
+    const amountRow = el('div', { class:'form-row', id:'f-amount-row' }, [
+      el('div', { style:{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'} }, [
+        el('label', { text:'Importe asociado (crea gasto)', style:{margin:0} }),
+        el('div', { class:'gap' }),
+        // Toggle manual del recordatorio — por si descartaste sin querer.
+        el('button', { type:'button', id:'f-expense-remind', class:'expense-remind-btn',
+          title:'Recordarme añadir el gasto', 'aria-pressed': currentExpenseReminder ? 'true':'false',
+          onclick: () => { currentExpenseReminder = !currentExpenseReminder; refreshExpenseReminderUI(); } },
+          [ el('span', { text:'⚠️' }), el('span', { text:'Recordar gasto' }) ]),
+      ]),
+      // Concepto opcional — por defecto el título de la parada al guardar si lo dejas vacío
+      el('input', { id:'f-concept', type:'text', placeholder:'Concepto (por defecto: título)',
+        value: linkedBudget?.concept || '', style:{marginTop:'8px'} }),
+      el('div', { class:'form-grid-2', style:{marginTop:'8px'} }, [
+        el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00',
+          value: linkedBudget ? String(linkedBudget.amount) : '' }),
+        el('input', { id:'f-cur', type:'text', placeholder:t.default_currency || 'EUR',
+          value: linkedBudget ? (linkedBudget.currency || t.default_currency || 'EUR') : (t.default_currency || 'EUR') }),
+      ]),
+      el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado". Vacíalo a 0 para eliminarlo.' }),
+      // Banner de advertencia (oculto) — aparece al guardar sin gasto en un evento nuevo.
+      el('div', { id:'f-expense-warn', class:'expense-warn', style:{display:'none'} }, [
+        el('div', { class:'expense-warn-msg' }, [ el('span', { text:'⚠️' }), el('span', { text:'No has añadido ningún gasto a este evento.' }) ]),
+        el('div', { class:'expense-warn-actions' }, [
+          el('button', { type:'button', class:'btn btn-sm btn-primary', id:'ew-add' }, 'Añadir gasto'),
+          el('button', { type:'button', class:'btn btn-sm', id:'ew-remind' }, [ el('span',{text:'⚠️'}), 'Recordar más tarde' ]),
+          el('button', { type:'button', class:'btn btn-sm btn-ghost', id:'ew-discard' }, 'Descartar' ),
+        ]),
+      ]),
+    ]);
+
+    // ======================================================================
+    // ASISTENTE POR PASOS (solo al CREAR una parada nueva)
+    // ----------------------------------------------------------------------
+    // El formulario completo tenía ~25 campos a la vez y la mayoría no aplican
+    // al tipo elegido. Aquí los mismos bloques se reparten en pasos y se enseña
+    // solo el del momento: el resto sigue en el DOM (oculto), así que `collect()`
+    // y todos los `refresh*()` siguen funcionando exactamente igual.
+    // Al EDITAR se muestra el formulario completo de siempre (tocar un campo
+    // suelto no debe obligar a pasar por un asistente).
+    // ======================================================================
+    const isWizard = !existing;
+
+    // Grid visual de tipos (sustituye al <select>, que se queda oculto como
+    // fuente de verdad para todo el código existente).
+    const typeGrid = el('div', { class:'wz-grid' });
+    const renderTypeGrid = () => {
+      typeGrid.innerHTML = '';
+      const cur = $('#f-type')?.value || it.type;
+      TYPES_PLANNING.forEach(o => {
+        typeGrid.appendChild(el('button', {
+          type:'button', class:'wz-cell' + (cur === o.id ? ' sel' : ''),
+          'aria-pressed': cur === o.id ? 'true' : 'false',
+          onclick: () => {
+            const sel = $('#f-type');
+            if (sel && sel.value !== o.id) { sel.value = o.id; sel.dispatchEvent(new Event('change')); }
+            renderTypeGrid();
+            wzGo(wzI + 1);
+          },
+        }, [ el('span', { class:'em', text:o.emoji }), el('span', { class:'n', text:o.label }) ]));
+      });
+    };
+
+    // Recoge en `it.metadata` lo que haya escrito en los campos del tipo, para
+    // no perderlo cuando se vuelve atrás y se re-renderiza el bloque.
+    const harvestMeta = () => {
+      const def = PLANNING_METADATA[$('#f-type')?.value || it.type];
+      if (!def) return;
+      const meta = Object.assign({}, it.metadata || {});
+      def.fields.forEach(f => {
+        if (f.type === 'seats') {
+          const wrap = document.getElementById('meta-seats-wrap');
+          if (!wrap) return;
+          const seats = Array.from(wrap.querySelectorAll('.seats-row')).map(r => ({
+            nombre:  (r.querySelector('.seat-name')?.value || '').trim(),
+            asiento: (r.querySelector('.seat-seat')?.value || '').trim(),
+          })).filter(x => x.nombre || x.asiento);
+          if (seats.length) meta.asientos = seats; else delete meta.asientos;
+        } else {
+          const node = document.getElementById(`meta-${f.id}`);
+          if (!node) return;
+          const v = (node.value || '').trim();
+          if (v) meta[f.id] = v; else delete meta[f.id];
+        }
+      });
+      it.metadata = meta;
+    };
+
+    // Paso "¿en qué te mueves?" — solo para tipo transporte. El modo decide
+    // después qué campos se piden (ver `PLANNING_METADATA.transporte.byMode`).
+    const MODE_OPTS = (((PLANNING_METADATA.transporte || {}).fields || [])
+      .find(f => f.id === 'modo') || {}).options || [];
+    // Orden de la rejilla (3 por fila): lo más usado primero. "Avión" no es un
+    // modo de transporte: es el tipo `vuelo`, con sus propios campos, así que
+    // elegirlo cambia el tipo del evento en vez de guardar un modo.
+    const WZ_MODES = [
+      { v:'coche',  l:'Coche' },
+      { v:'__vuelo', l:'Avión', e:'✈️' },
+      { v:'tren',   l:'Tren' },
+      { v:'taxi',   l:'Taxi' },
+      { v:'metro',  l:'Metro' },
+      { v:'bus',    l:'Autobús' },
+      { v:'ferry',  l:'Ferry' },
+      { v:'barco',  l:'Barco' },
+      { v:'teleferico', l:'Teleférico' },
+    ];
+    const modeGrid = el('div', { class:'wz-grid' });
+    const renderModeGrid = () => {
+      modeGrid.innerHTML = '';
+      const cur = (it.metadata && it.metadata.modo) || '';
+      WZ_MODES.forEach(o => {
+        modeGrid.appendChild(el('button', {
+          type:'button', class:'wz-cell' + (cur === o.v ? ' sel' : ''),
+          'aria-pressed': cur === o.v ? 'true' : 'false',
+          onclick: () => {
+            harvestMeta();
+            if (o.v === '__vuelo') {
+              // Cambia de tipo: el paso "modo" desaparece y el índice actual
+              // pasa a ser el de "Datos del vuelo".
+              const sel = $('#f-type');
+              if (sel) { sel.value = 'vuelo'; sel.dispatchEvent(new Event('change')); }
+              renderTypeGrid();
+              wzGo(wzI);
+              return;
+            }
+            it.metadata = Object.assign({}, it.metadata || {}, { modo: o.v });
+            renderMetadata();
+            refreshTzVisibility();
+            renderModeGrid();
+            wzGo(wzI + 1);
+          },
+        }, [ el('span', { class:'em', text: o.e || TRANSPORT_EMOJI[o.v] || '🚆' }),
+             el('span', { class:'n', text:o.l }) ]));
+      });
+    };
+
+    // Definición de los pasos. `donde`/`datos`/`modo` se saltan si no aplican.
+    const WZ_STEPS = [
+      { id:'tipo',     q:'¿Qué quieres añadir?', h:'Elige el tipo: solo te pediré los datos que ese tipo necesita.' },
+      { id:'modo',     q:'¿En qué te mueves?',   h:'' },
+      { id:'donde',    q:'¿Dónde es?',           h:'Búscalo y se queda con sus coordenadas para mapas, rutas y tiempos.' },
+      { id:'datos',    q:'Datos',                h:'Lo que tengas a mano. Todo es opcional.' },
+      { id:'cuando',   q:'¿Cuándo?',             h:'Sin hora también vale: la parada queda al final del día.' },
+      { id:'detalles', q:'Últimos detalles',     h:'Título, estado y gasto. Puedes guardar ahora y completarlo luego.' },
+    ];
+    const wzStepEls = {};
+    const wzStep = (id, kids) => (wzStepEls[id] = el('div', { class:'wz-step' + (id === 'tipo' ? ' on' : ''), data:{ step:id } }, kids.filter(Boolean)));
+    const wzAvailable = () => {
+      const type = $('#f-type')?.value || it.type;
+      return WZ_STEPS.filter(st => {
+        if (st.id === 'modo')  return type === 'transporte';
+        if (st.id === 'donde') return TYPES_WITH_PLACE.includes(type);
+        if (st.id === 'datos') return !!PLANNING_METADATA[type];
+        return true;
+      });
+    };
+
+    const wzBar    = el('div', { class:'wz-bar' });
+    const wzKicker = el('div', { class:'wz-kicker' });
+    const wzTitle  = el('h3', { class:'wz-title' });
+    const wzHint   = el('p',  { class:'wz-hint' });
+    const wzSummary = el('div', { class:'wz-summary' });
+    const wzBack = el('button', { class:'btn btn-ghost', type:'button',
+      onclick: () => { if (wzI === 0) UI.closeSheet(); else wzGo(wzI - 1); } }, 'Cancelar');
+    const wzNext = el('button', { class:'btn btn-primary', type:'button',
+      onclick: () => wzGo(wzI + 1) }, 'Siguiente →');
+    const wzSaveNow = el('button', { class:'btn btn-ghost wz-savenow', type:'button',
+      title:'Guardar con lo que llevas; el resto puedes completarlo luego',
+      onclick: () => { const b = document.getElementById('wz-save-proxy'); if (b) b.click(); } }, 'Guardar ya');
+
+    let wzI = 0;
+    // Resumen de lo elegido, para que el último paso tenga contexto.
+    const wzRenderSummary = () => {
+      wzSummary.innerHTML = '';
+      const type = $('#f-type')?.value || it.type;
+      const td = typeDef(type);
+      const mv = (id) => (document.getElementById(`meta-${id}`)?.value || '').trim();
+      const modoLbl = (MODE_OPTS.find(o => o.value === ((it.metadata || {}).modo || '')) || {}).label;
+      const quePartes = [
+        (type === 'transporte' && modoLbl) ? modoLbl : td.label,
+        (mv('origen') && mv('destino')) ? `${mv('origen')} → ${mv('destino')}` : '',
+        (document.getElementById('f-place')?.value || '').trim(),
+      ].filter(Boolean);
+      const isRange = RANGE_TYPES.includes(type);
+      const d = isRange ? (document.getElementById('tr-d1')?.value || '') : (document.getElementById('f-day')?.value || '');
+      const h1 = isRange ? (document.getElementById('tr-t1')?.value || '') : (document.getElementById('f-time')?.value || '');
+      const h2 = isRange ? (document.getElementById('tr-t2')?.value || '') : (document.getElementById('f-end-time')?.value || '');
+      const cuando = [ d ? fmtDate(d, { weekday:'short', day:'numeric', month:'short' }) : '',
+                       h1 ? (h2 ? `${h1} – ${h2}` : h1) : '' ].filter(Boolean).join(' · ');
+      const row = (k, v) => el('div', { class:'wz-sum-row' }, [ el('i', { text:k }), el('b', { text:v }) ]);
+      if (quePartes.length) wzSummary.appendChild(row('Qué', `${planEmoji({ type, metadata: it.metadata })} ${quePartes.join(' · ')}`));
+      if (cuando) wzSummary.appendChild(row('Cuándo', cuando));
+    };
+    const wzRender = () => {
+      if (!isWizard) return;
+      const steps = wzAvailable();
+      if (wzI > steps.length - 1) wzI = steps.length - 1;
+      if (wzI < 0) wzI = 0;
+      const cur = steps[wzI];
+      Object.entries(wzStepEls).forEach(([id, node]) => node.classList.toggle('on', id === cur.id));
+      wzBar.innerHTML = '';
+      steps.forEach((st, i) => wzBar.appendChild(el('i', { class: i < wzI ? 'done' : (i === wzI ? 'on' : '') })));
+      const type = $('#f-type')?.value || it.type;
+      wzKicker.textContent = `Paso ${wzI + 1} de ${steps.length}` + (wzI > 0 ? ` · ${typeDef(type).label}` : '');
+      wzTitle.textContent = (cur.id === 'datos' && PLANNING_METADATA[type])
+        ? PLANNING_METADATA[type].label
+        : (cur.id === 'donde' && type === 'hotel') ? '¿Qué alojamiento?' : cur.q;
+      wzHint.textContent = cur.h || '';
+      wzHint.style.display = cur.h ? '' : 'none';
+      const last = (wzI === steps.length - 1);
+      wzBack.textContent = wzI === 0 ? 'Cancelar' : '← Atrás';
+      wzNext.style.display = last ? 'none' : '';
+      wzSaveNow.style.display = (!last && wzI > 0) ? '' : 'none';
+      const saveBtn = document.getElementById('wz-save-proxy');
+      if (saveBtn) saveBtn.style.display = last ? '' : 'none';
+      if (last) {
+        wzRenderSummary();
+        const ti = document.getElementById('f-title');
+        if (ti && !ti.value.trim()) {
+          const auto = TripDetail._defaultTitle(type, t);
+          if (auto) ti.placeholder = auto;
+        }
+      }
+    };
+    const wzGo = (i) => {
+      if (!isWizard) return;
+      harvestMeta();
+      wzI = i;
+      wzRender();
+      const sb = $('#sheet-body'); if (sb) sb.scrollTop = 0;
+    };
+    // Al cambiar de tipo cambian los pasos disponibles: hay que repintar.
+    TripDetail._wzRender = wzRender;
+
+    const wizardBody = () => {
+      typeRow.style.display = 'none';        // el <select> sigue ahí, pero oculto
+      renderTypeGrid(); renderModeGrid();
+      return el('div', { class:'wz' }, [
+        el('div', { class:'wz-head' }, [ wzBar, wzKicker, wzTitle, wzHint ]),
+        wzStep('tipo',  [ typeGrid, typeRow, peopleSlotTop ]),
+        wzStep('modo',  [ modeGrid ]),
+        wzStep('donde', [ placeBlock, travelBlock ]),
+        wzStep('datos', [ importBlock, metadataBlock, returnFlightWrap, tzBlock ]),
+        wzStep('cuando',[ datesBlock ]),
+        wzStep('detalles', [ wzSummary, titleRow, statusRow, consultaBlock, peopleSlotBottom, amountRow, notesRow, colorRow ]),
+      ]);
+    };
+
+    const flatBody = () => el('div', {}, [
       // 1) Tipo — arriba del todo (define qué campos aplican).
       typeRow,
       // 1b) Personas, solo si el tipo es "personas": es el dato principal de ese
       // tipo, así que va pegado al selector de Tipo (placePeopleBlock la mueve aquí).
       peopleSlotTop,
       // 2) Título.
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Título (auto si lo dejas vacío)' }),
-        el('input', { id:'f-title', type:'text', value: it.title || '' }),
-      ]),
+      titleRow,
       // 3) Fecha y hora (Día + Hora uno al lado del otro).
       datesBlock,
       // 4) Lugar + búsqueda + dirección.
@@ -10953,55 +11641,19 @@ const TripDetail = {
       // 5) Personas (con quién) — posición habitual para el resto de tipos.
       peopleSlotBottom,
       // ---- resto de campos ----
-      // Importador de reservas (solo tipos con reserva).
       importBlock,
-      // Estado
       statusRow,
-      // Datos específicos del tipo (aerolínea, asientos, habitación…)
       metadataBlock,
-      // Acción "vuelo de vuelta" (solo vuelos)
       returnFlightWrap,
-      // Zonas horarias (vuelo/transporte)
       tzBlock,
-      // Color de la tarjeta (override libre)
       colorRow,
-      // Notas
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Notas' }),
-        el('textarea', { id:'f-notes' }, it.notes || ''),
-      ]),
+      notesRow,
       consultaBlock,
-      el('div', { class:'form-row', id:'f-amount-row' }, [
-        el('div', { style:{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'} }, [
-          el('label', { text:'Importe asociado (crea gasto)', style:{margin:0} }),
-          el('div', { class:'gap' }),
-          // Toggle manual del recordatorio — por si descartaste sin querer.
-          el('button', { type:'button', id:'f-expense-remind', class:'expense-remind-btn',
-            title:'Recordarme añadir el gasto', 'aria-pressed': currentExpenseReminder ? 'true':'false',
-            onclick: () => { currentExpenseReminder = !currentExpenseReminder; refreshExpenseReminderUI(); } },
-            [ el('span', { text:'⚠️' }), el('span', { text:'Recordar gasto' }) ]),
-        ]),
-        // Concepto opcional — por defecto el título de la parada al guardar si lo dejas vacío
-        el('input', { id:'f-concept', type:'text', placeholder:'Concepto (por defecto: título)',
-          value: linkedBudget?.concept || '', style:{marginTop:'8px'} }),
-        el('div', { class:'form-grid-2', style:{marginTop:'8px'} }, [
-          el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00',
-            value: linkedBudget ? String(linkedBudget.amount) : '' }),
-          el('input', { id:'f-cur', type:'text', placeholder:t.default_currency || 'EUR',
-            value: linkedBudget ? (linkedBudget.currency || t.default_currency || 'EUR') : (t.default_currency || 'EUR') }),
-        ]),
-        el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado". Vacíalo a 0 para eliminarlo.' }),
-        // Banner de advertencia (oculto) — aparece al guardar sin gasto en un evento nuevo.
-        el('div', { id:'f-expense-warn', class:'expense-warn', style:{display:'none'} }, [
-          el('div', { class:'expense-warn-msg' }, [ el('span', { text:'⚠️' }), el('span', { text:'No has añadido ningún gasto a este evento.' }) ]),
-          el('div', { class:'expense-warn-actions' }, [
-            el('button', { type:'button', class:'btn btn-sm btn-primary', id:'ew-add' }, 'Añadir gasto'),
-            el('button', { type:'button', class:'btn btn-sm', id:'ew-remind' }, [ el('span',{text:'⚠️'}), 'Recordar más tarde' ]),
-            el('button', { type:'button', class:'btn btn-sm btn-ghost', id:'ew-discard' }, 'Descartar' ),
-          ]),
-        ]),
-      ]),
+      amountRow,
     ]);
+
+    const body = isWizard ? wizardBody() : flatBody();
+
     setTimeout(refreshExpenseReminderUI, 0);
     setTimeout(() => {
       renderConsultationDates(); renderStatusPicker();
@@ -11009,6 +11661,7 @@ const TripDetail = {
       renderMetadata(); refreshPlaceVisibility(); refreshTravelVisibility(); refreshStandaloneTime();
       renderBorderPicker(); refreshSelectedPlace(); renderPeople(); placePeopleBlock();
       refreshImportVisibility();
+      wzRender();
     }, 0);
 
     const collect = () => {
@@ -11064,17 +11717,23 @@ const TripDetail = {
       const metaDef = PLANNING_METADATA[it.type];
       if (metaDef) {
         const meta = {};
+        const prevMeta = it.metadata || {};
         metaDef.fields.forEach(f => {
           if (f.type === 'seats') {
+            const wrap = document.getElementById('meta-seats-wrap');
+            // Campo no pintado (el modo no lo pide): conservamos lo que ya hubiera.
+            if (!wrap) { if (prevMeta.asientos) meta.asientos = prevMeta.asientos; return; }
             // Repetidor: recolectar filas (nombre, asiento)
-            const rows = Array.from(document.querySelectorAll('#meta-seats-wrap .seats-row'));
+            const rows = Array.from(wrap.querySelectorAll('.seats-row'));
             const seats = rows.map(r => ({
               nombre:  (r.querySelector('.seat-name')?.value  || '').trim(),
               asiento: (r.querySelector('.seat-seat')?.value  || '').trim(),
             })).filter(s => s.nombre || s.asiento);
             if (seats.length) meta.asientos = seats;
           } else {
-            const v = ($(`#meta-${f.id}`)?.value || '').trim();
+            const node = document.getElementById(`meta-${f.id}`);
+            if (!node) { if (prevMeta[f.id] != null && prevMeta[f.id] !== '') meta[f.id] = prevMeta[f.id]; return; }
+            const v = (node.value || '').trim();
             if (v) meta[f.id] = v;
           }
         });
@@ -11174,7 +11833,7 @@ const TripDetail = {
       }
     };
 
-    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+    const save = el('button', { class:'btn btn-primary', id:'wz-save-proxy', onclick: async () => {
       if (!collect()) return;
       const amtRaw = ($('#f-amount')?.value || '').trim();
       const hasAmount = amtRaw !== '' && !isNaN(parseFloat(amtRaw)) && parseFloat(amtRaw) > 0;
@@ -11183,6 +11842,8 @@ const TripDetail = {
       // Evento NUEVO sin gasto → avisar con 3 opciones.
       const warn = document.getElementById('f-expense-warn');
       if (!warn) return persistAndClose();
+      // En el asistente el aviso vive en el último paso: hay que llevar ahí al usuario.
+      if (isWizard) wzGo(99);
       warn.style.display = 'block';
       warn.scrollIntoView({ behavior:'smooth', block:'center' });
       document.getElementById('ew-add').onclick = () => {
@@ -11218,8 +11879,12 @@ const TripDetail = {
     UI.openSheet({
       title: existing ? 'Editar parada' : 'Nueva parada',
       body,
-      footer:[delBtn, dupBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save].filter(Boolean),
+      footer: (isWizard
+        ? [wzBack, wzSaveNow, wzNext, save]
+        : [delBtn, dupBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save]
+      ).filter(Boolean),
     });
+    if (isWizard) wzRender();
   },
 
   // Marca/desmarca un item del planning como "visto". Persistencia + actualización
