@@ -383,9 +383,16 @@ begin
     'travel_docs','visited_countries',
     'wardrobe_items','wardrobe_catalog'
   ]) loop
+    -- `insert or update`, no solo `update`. El pull de cada dispositivo es
+    -- incremental (`.gt('updated_at', since)` en SYNC.pullAll), así que una fila
+    -- que ENTRA con un `updated_at` anterior al último sync de otro dispositivo
+    -- no se descarga ahí nunca: está en la base y no aparece en la app. Pasa con
+    -- cualquier import de datos archivados (ver imports/), donde el cliente manda
+    -- el `updated_at` original. Sellando también el insert, lo que entra es
+    -- siempre más nuevo que cualquier watermark ya emitido.
     execute format(
       'drop trigger if exists trg_touch_%I on %I;
-       create trigger trg_touch_%I before update on %I
+       create trigger trg_touch_%I before insert or update on %I
        for each row execute function touch_updated_at();',
       t, t, t, t
     );
