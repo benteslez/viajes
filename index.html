@@ -1199,6 +1199,45 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .now-label { font-size:11.5px; font-weight:700; color:var(--danger); font-feature-settings:"tnum"; text-transform:uppercase; letter-spacing:.04em; }
 /* Hueco libre entre paradas */
 .gap-chip { font-size:12px; color:var(--text-muted); font-style:italic; margin:1px 0 1px 52px; }
+/* El mismo hueco, pero ocupado: se está viajando (transporte sin hora de llegada). */
+.gap-chip.gap-moving { display:inline-flex; align-items:center; gap:6px; font-style:normal; font-weight:600;
+  color:var(--tipo-transporte); background:color-mix(in srgb, var(--tipo-transporte) 9%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, var(--tipo-transporte) 22%, transparent);
+  border-radius:var(--r-pill); padding:2px 10px; }
+
+/* ===== Asistente por pasos del editor de paradas ("Nueva parada") ===== */
+.wz-head { margin:-4px 0 16px; }
+.wz-bar { display:flex; gap:5px; margin-bottom:13px; }
+.wz-bar i { height:4px; border-radius:3px; flex:1; background:var(--line); transition:background .2s var(--ease); }
+.wz-bar i.on { background:var(--accent); }
+.wz-bar i.done { background:color-mix(in srgb, var(--accent) 45%, var(--bg-elev)); }
+.wz-kicker { font-size:10.5px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); }
+.wz-title { font-size:20px; font-weight:800; letter-spacing:-.03em; margin:3px 0 0; }
+.wz-hint { font-size:12.5px; color:var(--text-muted); margin:5px 0 0; font-weight:500; line-height:1.45; }
+.wz-step { display:none; animation:wz-in .22s var(--ease); }
+.wz-step.on { display:block; }
+@keyframes wz-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { .wz-step { animation:none; } }
+.wz-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:9px; }
+.wz-cell {
+  border:1px solid var(--line); border-radius:15px; background:var(--bg-elev); color:var(--text);
+  padding:13px 6px 11px; text-align:center; cursor:pointer; font-family:inherit;
+  transition:border-color .15s var(--ease), background .15s var(--ease), transform .12s var(--ease);
+}
+.wz-cell:active { transform:scale(.97); }
+.wz-cell .em { display:block; font-size:22px; line-height:1; margin-bottom:6px; }
+.wz-cell .n { font-size:11.5px; font-weight:700; }
+.wz-cell.sel { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.wz-summary { border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; margin-bottom:16px; }
+.wz-sum-row { display:flex; gap:10px; align-items:center; padding:9px 12px; font-size:13px; }
+.wz-sum-row + .wz-sum-row { border-top:1px solid var(--line-soft); }
+.wz-sum-row i { font-style:normal; font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--text-muted); width:58px; flex:none; }
+.wz-sum-row b { font-weight:700; min-width:0; word-break:break-word; }
+.wz .btn.wz-savenow { margin-left:auto; }
+/* En el asistente, el primer paso no necesita ver el <select> de tipo. */
+.wz #f-type { display:none; }
 
 /* Badge del estado al lado del título */
 .status-badge {
@@ -2998,18 +3037,31 @@ const PLANNING_METADATA = {
   },
   transporte: {
     label:'Datos del transporte',
+    // Campos relevantes SEGÚN EL MODO. Si el modo no está aquí, se piden todos
+    // (tren, autobús, ferry, barco). En coche/taxi/metro no tiene sentido pedir
+    // vagón, asientos o localizador: se queda en origen, destino y poco más.
+    byMode: {
+      coche: ['modo','origen','destino'],
+      taxi:  ['modo','origen','destino','compania'],
+      metro: ['modo','origen','destino','numero'],
+      teleferico: ['modo','origen','destino','compania','url'],
+    },
     fields: [
       { id:'modo',       label:'Tipo de transporte', type:'select', options:[
-        { value:'', label:'Tren / general' },
-        { value:'tren',  label:'Tren' },
-        { value:'bus',   label:'Autobús' },
+        { value:'', label:'Sin especificar' },
         { value:'coche', label:'Coche' },
-        { value:'ferry', label:'Ferry' },
-        { value:'metro', label:'Metro' },
+        { value:'tren',  label:'Tren' },
         { value:'taxi',  label:'Taxi' },
+        { value:'metro', label:'Metro' },
+        { value:'bus',   label:'Autobús' },
+        { value:'ferry', label:'Ferry' },
         { value:'barco', label:'Barco' },
+        { value:'teleferico', label:'Teleférico' },
       ] },
-      { id:'compania',   label:'Compañía',         placeholder:'Renfe, JR, Eurostar…' },
+      { id:'compania',   label:'Compañía',         placeholder:'Renfe, JR, Eurostar…',
+        // En taxi la "compañía" es la app: Uber, Cabify… (sugerencias, no cerrado).
+        byMode:{ taxi:{ label:'Compañía o app', placeholder:'Uber, Cabify, Bolt, taxi local…',
+                        suggest:['Uber','Cabify','Bolt','FREE NOW','Taxi local'] } } },
       { id:'numero',     label:'Línea o número',   placeholder:'AVE 02701 · Línea 5' },
       { id:'origen',     label:'Origen',           placeholder:'Madrid Atocha' },
       { id:'destino',    label:'Destino',          placeholder:'Sevilla Sta. Justa' },
@@ -3098,7 +3150,7 @@ const tripSettings = (t) => (t && t.settings && typeof t.settings === 'object' &
 const tripSettingsMut = (t) => { if (!t.settings || typeof t.settings !== 'object' || Array.isArray(t.settings)) t.settings = {}; return t.settings; };
 
 // Modos de transporte → emoji. El icono del evento cambia según metadata.modo.
-const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢' };
+const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢', teleferico:'🚡' };
 // Emoji efectivo de un planning item (transporte varía con su modo).
 const planEmoji = (it) => {
   if (it && it.type === 'transporte') {
@@ -3335,9 +3387,21 @@ const mealLabel = (time) => {
   const mins = (+m[1]) * 60 + (+m[2]);
   if (mins >= 420  && mins < 720)  return 'Desayuno';  // 07:00–11:59
   if (mins >= 720  && mins < 960)  return 'Comida';    // 12:00–15:59
-  if (mins >= 960  && mins < 1110) return 'Merienda';  // 16:00–18:29
-  if (mins >= 1110 && mins <= 1380) return 'Cena';     // 18:30–23:00
+  if (mins >= 960  && mins < 1020) return 'Merienda';  // 16:00–16:59
+  if (mins >= 1020 && mins <= 1439) return 'Cena';     // 17:00–23:59
   return 'Restaurante';
+};
+
+// Etiqueta de tipo que se muestra en la card. Igual que `typeDef(type).label`
+// salvo en "comida", donde la hora manda: a las 19:00 no pone "Comida", pone
+// "Cena" (desayuno / comida / merienda / cena según `mealLabel`).
+const typeLabelFor = (it) => {
+  if (!it) return '';
+  if (it.type === 'comida') {
+    const m = mealLabel(it.time);
+    return m === 'Restaurante' ? 'Comida' : m;   // sin hora → "Comida" genérica
+  }
+  return typeDef(it.type).label;
 };
 
 // Momento principal de un planning item como Date, o null si no tiene hora precisa.
@@ -9023,6 +9087,28 @@ const TripDetail = {
       const _useParts = _timed.length >= 2 && _nonVirt.length === _timed.length && new Set(_timed.map(x => _partOf(x.time))).size >= 2;
       const _useThread = _timed.length >= 2 && _nonVirt.length === _timed.length;
       const _timeMin = (s) => { const m = String(s).match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; };
+      // Fin REAL de una parada (en minutos) para medir el hueco que deja detrás.
+      // Un transporte de 08:00 a 14:00 no deja 7 h libres hasta las 15:00: deja 1 h.
+      //   · `min`    → minuto en que acaba de verdad (null si no se sabe)
+      //   · `moving` → el tiempo posterior es trayecto, no ocio (transporte sin llegada)
+      const _endInfo = (x) => {
+        const isMove = (x.type === 'transporte' || x.type === 'vuelo' || x.type === 'coche');
+        // 1) Hora de fin explícita (lugar/comida/actividad… con "Hora fin").
+        if (x.end_time && _timeMin(x.end_time) != null) return { min: _timeMin(x.end_time), moving:false };
+        // 2) Transporte/vuelo/coche: hora de llegada, si es el mismo día.
+        if (isMove) {
+          const d1 = x.consultation_planned_d1 || x.day_date;
+          const sameDay = !x.consultation_planned_d2 || x.consultation_planned_d2 === d1;
+          const t2 = x.consultation_planned_t2;
+          if (t2 && sameDay && _timeMin(t2) != null) return { min: _timeMin(t2), moving:false };
+          // Sin hora de llegada: lo que viene después es viaje, no tiempo libre.
+          return { min:null, moving:true };
+        }
+        // 3) Duración declarada de la visita (solo si la puso el usuario).
+        const dur = x.metadata && x.metadata.duration_min;
+        if (dur != null && !isNaN(dur) && +dur > 0) return { min: (_timeMin(x.time) || 0) + (+dur), moving:false };
+        return { min:null, moving:false };
+      };
       const _isToday = (k === todayStr);
       const _nowM = _isToday ? (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })() : null;
       const _nowLine = () => { const d = new Date(); const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0'); return el('div', { class:'now-line' }, [ el('span', { class:'now-dot' }), el('span', { class:'now-label', text:`ahora ${hh}:${mm}` }) ]); };
@@ -9039,13 +9125,23 @@ const TripDetail = {
         if (_isToday && !_nowInserted && !it._virtual && it.time && _timeMin(it.time) != null && _timeMin(it.time) >= _nowM) {
           list.appendChild(_nowLine()); _nowInserted = true;
         }
-        // Hueco libre entre paradas con hora (≥120 min y sin tramo de ruta entre ellas).
+        // Hueco entre paradas con hora (≥120 min y sin tramo de ruta entre ellas).
+        // Se mide desde el FIN real de la anterior (llegada / hora fin / duración),
+        // no desde su hora de inicio: si no, un traslado de 6 h salía como "libre 7h".
         if (!it._virtual && it.time && _prevTimed) {
-          const gap = _timeMin(it.time) - _timeMin(_prevTimed.time);
+          const startM = _timeMin(it.time);
+          const prevStartM = _timeMin(_prevTimed.time);
+          const info = _endInfo(_prevTimed);
+          const endM = (info.min != null && info.min > prevStartM) ? Math.min(info.min, startM) : prevStartM;
+          const gap = startM - endM;
           const hasLeg = (_prevTimed.lat != null && _prevTimed.lng != null && it.lat != null && it.lng != null);
           if (gap >= 120 && !hasLeg) {
             const h = Math.floor(gap / 60), m = gap % 60;
-            list.appendChild(el('div', { class:'gap-chip', text: `libre ${h}h${m ? ` ${m}m` : ''}` }));
+            const dur = `${h}h${m ? ` ${m}m` : ''}`;
+            // Transporte sin hora de llegada → ese rato se está viajando, no libre.
+            list.appendChild(info.moving
+              ? el('div', { class:'gap-chip gap-moving', text: `${planEmoji(_prevTimed)} viajando ~${dur}` })
+              : el('div', { class:'gap-chip', text: `libre ${dur}` }));
           }
         }
         const card = this._planningItem(it, t);
@@ -9434,7 +9530,7 @@ const TripDetail = {
         // localizador, ruta…). Si no hay nada, la fila queda vacía pero reserva alto.
         (() => {
           const isTransportType = ['vuelo', 'transporte', 'coche'].includes(it.type);
-          const subText = subParts.join(' · ') || ((isVirtual || isTransportType) ? '' : td.label);
+          const subText = subParts.join(' · ') || ((isVirtual || isTransportType) ? '' : typeLabelFor(it));
           return el('div', { class:'li-subrow' }, [
             subText ? el('span', { class:'li-sub-text', text: subText }) : null,
           ].filter(Boolean));
@@ -9921,7 +10017,9 @@ const TripDetail = {
       }
       case 'comida': {
         if (place) return place;
-        return tCity ? `Comida en ${tCity}` : 'Comida';
+        // La hora decide la etiqueta: 19:00 → "Cena en Barichara", no "Comida en…".
+        const meal = typeLabelFor({ type:'comida', time: ($('#f-time')?.value || '').trim() });
+        return tCity ? `${meal} en ${tCity}` : meal;
       }
       case 'lugar': {
         return place || (tCity ? `Visita en ${tCity}` : 'Visita');
@@ -10545,9 +10643,14 @@ const TripDetail = {
       el('datalist', { id:'tz-list' }, COMMON_TIMEZONES.map(tz => el('option', { value: tz }))),
       el('div', { class:'field-hint', text:'IANA TZ. Útil para vuelos transoceánicos: muestra la hora local de cada extremo en el planning.' }),
     ]);
+    // Zonas horarias: solo donde cambian de verdad (vuelo o transporte de largo
+    // recorrido). En coche/taxi/metro/teleférico son ruido.
+    const NO_TZ_MODES = ['coche', 'taxi', 'metro', 'teleferico'];
     const refreshTzVisibility = () => {
       const type = $('#f-type')?.value || it.type;
-      tzBlock.style.display = (type === 'vuelo' || type === 'transporte') ? '' : 'none';
+      const modo = (it.metadata || {}).modo || '';
+      const show = (type === 'vuelo') || (type === 'transporte' && !NO_TZ_MODES.includes(modo));
+      tzBlock.style.display = show ? '' : 'none';
     };
 
     // Bloque de metadata específica por tipo (aerolínea, asiento, modelo coche…)
@@ -10562,7 +10665,12 @@ const TripDetail = {
       const grid = el('div', { class:'form-grid-2' });
       const single = el('div');
       const meta = it.metadata || {};
-      def.fields.forEach(f => {
+      // Transporte: el modo decide qué campos se piden (un coche no tiene vagón).
+      const allow = def.byMode && def.byMode[meta.modo];
+      let fields = allow ? def.fields.filter(f => allow.includes(f.id)) : def.fields;
+      // En el asistente el modo ya se ha elegido en su propio paso: no se repite.
+      if (isWizard && type === 'transporte') fields = fields.filter(f => f.id !== 'modo');
+      fields.forEach(f => {
         let node;
         if (f.type === 'seats') {
           node = renderSeatsField(f, Array.isArray(meta.asientos) ? meta.asientos : []);
@@ -10573,10 +10681,16 @@ const TripDetail = {
               el('option', { value:o.value, selected: (meta[f.id] || '') === o.value ? true : null }, o.label))),
           ]);
         } else {
+          // Ajustes del campo según el modo (p. ej. en taxi, "Compañía" pasa a
+          // ser "Compañía o app" y sugiere Uber/Cabify).
+          const byMode = (f.byMode && f.byMode[meta.modo]) || null;
+          const listId = (byMode && byMode.suggest) ? `meta-${f.id}-list` : null;
           node = el('div', { class:'form-row' }, [
-            el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label }),
-            el('input', { id:`meta-${f.id}`, type: f.type || 'text', value: meta[f.id] || '', placeholder: f.placeholder || '' }),
-          ]);
+            el('label', { class:'muted', style:{fontSize:'12px'}, text: (byMode && byMode.label) || f.label }),
+            el('input', { id:`meta-${f.id}`, type: f.type || 'text', value: meta[f.id] || '',
+              placeholder: (byMode && byMode.placeholder) || f.placeholder || '', list: listId }),
+            listId ? el('datalist', { id: listId }, byMode.suggest.map(o => el('option', { value:o }))) : null,
+          ].filter(Boolean));
         }
         if (f.full) single.appendChild(node);
         else grid.appendChild(node);
@@ -10909,22 +11023,279 @@ const TripDetail = {
         renderBorderPicker();
         renderPeople();
         placePeopleBlock();
+        // El asistente recalcula qué pasos aplican al tipo nuevo.
+        if (typeof TripDetail._wzRender === 'function') TripDetail._wzRender();
       }},
         TYPES_PLANNING.map(o => el('option', { value:o.id, selected: it.type===o.id?true:null }, o.label))
       ),
     ]);
 
-    const body = el('div', {}, [
+    // ---- Filas sueltas (título, notas, importe): antes iban inline dentro de
+    //      `body`; ahora son nodos con nombre para poder repartirlos por pasos. ----
+    const titleRow = el('div', { class:'form-row', id:'title-row' }, [
+      el('label', { text:'Título (auto si lo dejas vacío)' }),
+      el('input', { id:'f-title', type:'text', value: it.title || '' }),
+    ]);
+    const notesRow = el('div', { class:'form-row' }, [
+      el('label', { text:'Notas' }),
+      el('textarea', { id:'f-notes' }, it.notes || ''),
+    ]);
+    const amountRow = el('div', { class:'form-row', id:'f-amount-row' }, [
+      el('div', { style:{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'} }, [
+        el('label', { text:'Importe asociado (crea gasto)', style:{margin:0} }),
+        el('div', { class:'gap' }),
+        // Toggle manual del recordatorio — por si descartaste sin querer.
+        el('button', { type:'button', id:'f-expense-remind', class:'expense-remind-btn',
+          title:'Recordarme añadir el gasto', 'aria-pressed': currentExpenseReminder ? 'true':'false',
+          onclick: () => { currentExpenseReminder = !currentExpenseReminder; refreshExpenseReminderUI(); } },
+          [ el('span', { text:'⚠️' }), el('span', { text:'Recordar gasto' }) ]),
+      ]),
+      // Concepto opcional — por defecto el título de la parada al guardar si lo dejas vacío
+      el('input', { id:'f-concept', type:'text', placeholder:'Concepto (por defecto: título)',
+        value: linkedBudget?.concept || '', style:{marginTop:'8px'} }),
+      el('div', { class:'form-grid-2', style:{marginTop:'8px'} }, [
+        el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00',
+          value: linkedBudget ? String(linkedBudget.amount) : '' }),
+        el('input', { id:'f-cur', type:'text', placeholder:t.default_currency || 'EUR',
+          value: linkedBudget ? (linkedBudget.currency || t.default_currency || 'EUR') : (t.default_currency || 'EUR') }),
+      ]),
+      el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado". Vacíalo a 0 para eliminarlo.' }),
+      // Banner de advertencia (oculto) — aparece al guardar sin gasto en un evento nuevo.
+      el('div', { id:'f-expense-warn', class:'expense-warn', style:{display:'none'} }, [
+        el('div', { class:'expense-warn-msg' }, [ el('span', { text:'⚠️' }), el('span', { text:'No has añadido ningún gasto a este evento.' }) ]),
+        el('div', { class:'expense-warn-actions' }, [
+          el('button', { type:'button', class:'btn btn-sm btn-primary', id:'ew-add' }, 'Añadir gasto'),
+          el('button', { type:'button', class:'btn btn-sm', id:'ew-remind' }, [ el('span',{text:'⚠️'}), 'Recordar más tarde' ]),
+          el('button', { type:'button', class:'btn btn-sm btn-ghost', id:'ew-discard' }, 'Descartar' ),
+        ]),
+      ]),
+    ]);
+
+    // ======================================================================
+    // ASISTENTE POR PASOS (solo al CREAR una parada nueva)
+    // ----------------------------------------------------------------------
+    // El formulario completo tenía ~25 campos a la vez y la mayoría no aplican
+    // al tipo elegido. Aquí los mismos bloques se reparten en pasos y se enseña
+    // solo el del momento: el resto sigue en el DOM (oculto), así que `collect()`
+    // y todos los `refresh*()` siguen funcionando exactamente igual.
+    // Al EDITAR se muestra el formulario completo de siempre (tocar un campo
+    // suelto no debe obligar a pasar por un asistente).
+    // ======================================================================
+    const isWizard = !existing;
+
+    // Grid visual de tipos (sustituye al <select>, que se queda oculto como
+    // fuente de verdad para todo el código existente).
+    const typeGrid = el('div', { class:'wz-grid' });
+    const renderTypeGrid = () => {
+      typeGrid.innerHTML = '';
+      const cur = $('#f-type')?.value || it.type;
+      TYPES_PLANNING.forEach(o => {
+        typeGrid.appendChild(el('button', {
+          type:'button', class:'wz-cell' + (cur === o.id ? ' sel' : ''),
+          'aria-pressed': cur === o.id ? 'true' : 'false',
+          onclick: () => {
+            const sel = $('#f-type');
+            if (sel && sel.value !== o.id) { sel.value = o.id; sel.dispatchEvent(new Event('change')); }
+            renderTypeGrid();
+            wzGo(wzI + 1);
+          },
+        }, [ el('span', { class:'em', text:o.emoji }), el('span', { class:'n', text:o.label }) ]));
+      });
+    };
+
+    // Recoge en `it.metadata` lo que haya escrito en los campos del tipo, para
+    // no perderlo cuando se vuelve atrás y se re-renderiza el bloque.
+    const harvestMeta = () => {
+      const def = PLANNING_METADATA[$('#f-type')?.value || it.type];
+      if (!def) return;
+      const meta = Object.assign({}, it.metadata || {});
+      def.fields.forEach(f => {
+        if (f.type === 'seats') {
+          const wrap = document.getElementById('meta-seats-wrap');
+          if (!wrap) return;
+          const seats = Array.from(wrap.querySelectorAll('.seats-row')).map(r => ({
+            nombre:  (r.querySelector('.seat-name')?.value || '').trim(),
+            asiento: (r.querySelector('.seat-seat')?.value || '').trim(),
+          })).filter(x => x.nombre || x.asiento);
+          if (seats.length) meta.asientos = seats; else delete meta.asientos;
+        } else {
+          const node = document.getElementById(`meta-${f.id}`);
+          if (!node) return;
+          const v = (node.value || '').trim();
+          if (v) meta[f.id] = v; else delete meta[f.id];
+        }
+      });
+      it.metadata = meta;
+    };
+
+    // Paso "¿en qué te mueves?" — solo para tipo transporte. El modo decide
+    // después qué campos se piden (ver `PLANNING_METADATA.transporte.byMode`).
+    const MODE_OPTS = (((PLANNING_METADATA.transporte || {}).fields || [])
+      .find(f => f.id === 'modo') || {}).options || [];
+    // Orden de la rejilla (3 por fila): lo más usado primero. "Avión" no es un
+    // modo de transporte: es el tipo `vuelo`, con sus propios campos, así que
+    // elegirlo cambia el tipo del evento en vez de guardar un modo.
+    const WZ_MODES = [
+      { v:'coche',  l:'Coche' },
+      { v:'__vuelo', l:'Avión', e:'✈️' },
+      { v:'tren',   l:'Tren' },
+      { v:'taxi',   l:'Taxi' },
+      { v:'metro',  l:'Metro' },
+      { v:'bus',    l:'Autobús' },
+      { v:'ferry',  l:'Ferry' },
+      { v:'barco',  l:'Barco' },
+      { v:'teleferico', l:'Teleférico' },
+    ];
+    const modeGrid = el('div', { class:'wz-grid' });
+    const renderModeGrid = () => {
+      modeGrid.innerHTML = '';
+      const cur = (it.metadata && it.metadata.modo) || '';
+      WZ_MODES.forEach(o => {
+        modeGrid.appendChild(el('button', {
+          type:'button', class:'wz-cell' + (cur === o.v ? ' sel' : ''),
+          'aria-pressed': cur === o.v ? 'true' : 'false',
+          onclick: () => {
+            harvestMeta();
+            if (o.v === '__vuelo') {
+              // Cambia de tipo: el paso "modo" desaparece y el índice actual
+              // pasa a ser el de "Datos del vuelo".
+              const sel = $('#f-type');
+              if (sel) { sel.value = 'vuelo'; sel.dispatchEvent(new Event('change')); }
+              renderTypeGrid();
+              wzGo(wzI);
+              return;
+            }
+            it.metadata = Object.assign({}, it.metadata || {}, { modo: o.v });
+            renderMetadata();
+            refreshTzVisibility();
+            renderModeGrid();
+            wzGo(wzI + 1);
+          },
+        }, [ el('span', { class:'em', text: o.e || TRANSPORT_EMOJI[o.v] || '🚆' }),
+             el('span', { class:'n', text:o.l }) ]));
+      });
+    };
+
+    // Definición de los pasos. `donde`/`datos`/`modo` se saltan si no aplican.
+    const WZ_STEPS = [
+      { id:'tipo',     q:'¿Qué quieres añadir?', h:'Elige el tipo: solo te pediré los datos que ese tipo necesita.' },
+      { id:'modo',     q:'¿En qué te mueves?',   h:'' },
+      { id:'donde',    q:'¿Dónde es?',           h:'Búscalo y se queda con sus coordenadas para mapas, rutas y tiempos.' },
+      { id:'datos',    q:'Datos',                h:'Lo que tengas a mano. Todo es opcional.' },
+      { id:'cuando',   q:'¿Cuándo?',             h:'Sin hora también vale: la parada queda al final del día.' },
+      { id:'detalles', q:'Últimos detalles',     h:'Título, estado y gasto. Puedes guardar ahora y completarlo luego.' },
+    ];
+    const wzStepEls = {};
+    const wzStep = (id, kids) => (wzStepEls[id] = el('div', { class:'wz-step' + (id === 'tipo' ? ' on' : ''), data:{ step:id } }, kids.filter(Boolean)));
+    const wzAvailable = () => {
+      const type = $('#f-type')?.value || it.type;
+      return WZ_STEPS.filter(st => {
+        if (st.id === 'modo')  return type === 'transporte';
+        if (st.id === 'donde') return TYPES_WITH_PLACE.includes(type);
+        if (st.id === 'datos') return !!PLANNING_METADATA[type];
+        return true;
+      });
+    };
+
+    const wzBar    = el('div', { class:'wz-bar' });
+    const wzKicker = el('div', { class:'wz-kicker' });
+    const wzTitle  = el('h3', { class:'wz-title' });
+    const wzHint   = el('p',  { class:'wz-hint' });
+    const wzSummary = el('div', { class:'wz-summary' });
+    const wzBack = el('button', { class:'btn btn-ghost', type:'button',
+      onclick: () => { if (wzI === 0) UI.closeSheet(); else wzGo(wzI - 1); } }, 'Cancelar');
+    const wzNext = el('button', { class:'btn btn-primary', type:'button',
+      onclick: () => wzGo(wzI + 1) }, 'Siguiente →');
+    const wzSaveNow = el('button', { class:'btn btn-ghost wz-savenow', type:'button',
+      title:'Guardar con lo que llevas; el resto puedes completarlo luego',
+      onclick: () => { const b = document.getElementById('wz-save-proxy'); if (b) b.click(); } }, 'Guardar ya');
+
+    let wzI = 0;
+    // Resumen de lo elegido, para que el último paso tenga contexto.
+    const wzRenderSummary = () => {
+      wzSummary.innerHTML = '';
+      const type = $('#f-type')?.value || it.type;
+      const td = typeDef(type);
+      const mv = (id) => (document.getElementById(`meta-${id}`)?.value || '').trim();
+      const modoLbl = (MODE_OPTS.find(o => o.value === ((it.metadata || {}).modo || '')) || {}).label;
+      const quePartes = [
+        (type === 'transporte' && modoLbl) ? modoLbl : td.label,
+        (mv('origen') && mv('destino')) ? `${mv('origen')} → ${mv('destino')}` : '',
+        (document.getElementById('f-place')?.value || '').trim(),
+      ].filter(Boolean);
+      const isRange = RANGE_TYPES.includes(type);
+      const d = isRange ? (document.getElementById('tr-d1')?.value || '') : (document.getElementById('f-day')?.value || '');
+      const h1 = isRange ? (document.getElementById('tr-t1')?.value || '') : (document.getElementById('f-time')?.value || '');
+      const h2 = isRange ? (document.getElementById('tr-t2')?.value || '') : (document.getElementById('f-end-time')?.value || '');
+      const cuando = [ d ? fmtDate(d, { weekday:'short', day:'numeric', month:'short' }) : '',
+                       h1 ? (h2 ? `${h1} – ${h2}` : h1) : '' ].filter(Boolean).join(' · ');
+      const row = (k, v) => el('div', { class:'wz-sum-row' }, [ el('i', { text:k }), el('b', { text:v }) ]);
+      if (quePartes.length) wzSummary.appendChild(row('Qué', `${planEmoji({ type, metadata: it.metadata })} ${quePartes.join(' · ')}`));
+      if (cuando) wzSummary.appendChild(row('Cuándo', cuando));
+    };
+    const wzRender = () => {
+      if (!isWizard) return;
+      const steps = wzAvailable();
+      if (wzI > steps.length - 1) wzI = steps.length - 1;
+      if (wzI < 0) wzI = 0;
+      const cur = steps[wzI];
+      Object.entries(wzStepEls).forEach(([id, node]) => node.classList.toggle('on', id === cur.id));
+      wzBar.innerHTML = '';
+      steps.forEach((st, i) => wzBar.appendChild(el('i', { class: i < wzI ? 'done' : (i === wzI ? 'on' : '') })));
+      const type = $('#f-type')?.value || it.type;
+      wzKicker.textContent = `Paso ${wzI + 1} de ${steps.length}` + (wzI > 0 ? ` · ${typeDef(type).label}` : '');
+      wzTitle.textContent = (cur.id === 'datos' && PLANNING_METADATA[type])
+        ? PLANNING_METADATA[type].label
+        : (cur.id === 'donde' && type === 'hotel') ? '¿Qué alojamiento?' : cur.q;
+      wzHint.textContent = cur.h || '';
+      wzHint.style.display = cur.h ? '' : 'none';
+      const last = (wzI === steps.length - 1);
+      wzBack.textContent = wzI === 0 ? 'Cancelar' : '← Atrás';
+      wzNext.style.display = last ? 'none' : '';
+      wzSaveNow.style.display = (!last && wzI > 0) ? '' : 'none';
+      const saveBtn = document.getElementById('wz-save-proxy');
+      if (saveBtn) saveBtn.style.display = last ? '' : 'none';
+      if (last) {
+        wzRenderSummary();
+        const ti = document.getElementById('f-title');
+        if (ti && !ti.value.trim()) {
+          const auto = TripDetail._defaultTitle(type, t);
+          if (auto) ti.placeholder = auto;
+        }
+      }
+    };
+    const wzGo = (i) => {
+      if (!isWizard) return;
+      harvestMeta();
+      wzI = i;
+      wzRender();
+      const sb = $('#sheet-body'); if (sb) sb.scrollTop = 0;
+    };
+    // Al cambiar de tipo cambian los pasos disponibles: hay que repintar.
+    TripDetail._wzRender = wzRender;
+
+    const wizardBody = () => {
+      typeRow.style.display = 'none';        // el <select> sigue ahí, pero oculto
+      renderTypeGrid(); renderModeGrid();
+      return el('div', { class:'wz' }, [
+        el('div', { class:'wz-head' }, [ wzBar, wzKicker, wzTitle, wzHint ]),
+        wzStep('tipo',  [ typeGrid, typeRow, peopleSlotTop ]),
+        wzStep('modo',  [ modeGrid ]),
+        wzStep('donde', [ placeBlock, travelBlock ]),
+        wzStep('datos', [ importBlock, metadataBlock, returnFlightWrap, tzBlock ]),
+        wzStep('cuando',[ datesBlock ]),
+        wzStep('detalles', [ wzSummary, titleRow, statusRow, consultaBlock, peopleSlotBottom, amountRow, notesRow, colorRow ]),
+      ]);
+    };
+
+    const flatBody = () => el('div', {}, [
       // 1) Tipo — arriba del todo (define qué campos aplican).
       typeRow,
       // 1b) Personas, solo si el tipo es "personas": es el dato principal de ese
       // tipo, así que va pegado al selector de Tipo (placePeopleBlock la mueve aquí).
       peopleSlotTop,
       // 2) Título.
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Título (auto si lo dejas vacío)' }),
-        el('input', { id:'f-title', type:'text', value: it.title || '' }),
-      ]),
+      titleRow,
       // 3) Fecha y hora (Día + Hora uno al lado del otro).
       datesBlock,
       // 4) Lugar + búsqueda + dirección.
@@ -10934,55 +11305,19 @@ const TripDetail = {
       // 5) Personas (con quién) — posición habitual para el resto de tipos.
       peopleSlotBottom,
       // ---- resto de campos ----
-      // Importador de reservas (solo tipos con reserva).
       importBlock,
-      // Estado
       statusRow,
-      // Datos específicos del tipo (aerolínea, asientos, habitación…)
       metadataBlock,
-      // Acción "vuelo de vuelta" (solo vuelos)
       returnFlightWrap,
-      // Zonas horarias (vuelo/transporte)
       tzBlock,
-      // Color de la tarjeta (override libre)
       colorRow,
-      // Notas
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Notas' }),
-        el('textarea', { id:'f-notes' }, it.notes || ''),
-      ]),
+      notesRow,
       consultaBlock,
-      el('div', { class:'form-row', id:'f-amount-row' }, [
-        el('div', { style:{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'} }, [
-          el('label', { text:'Importe asociado (crea gasto)', style:{margin:0} }),
-          el('div', { class:'gap' }),
-          // Toggle manual del recordatorio — por si descartaste sin querer.
-          el('button', { type:'button', id:'f-expense-remind', class:'expense-remind-btn',
-            title:'Recordarme añadir el gasto', 'aria-pressed': currentExpenseReminder ? 'true':'false',
-            onclick: () => { currentExpenseReminder = !currentExpenseReminder; refreshExpenseReminderUI(); } },
-            [ el('span', { text:'⚠️' }), el('span', { text:'Recordar gasto' }) ]),
-        ]),
-        // Concepto opcional — por defecto el título de la parada al guardar si lo dejas vacío
-        el('input', { id:'f-concept', type:'text', placeholder:'Concepto (por defecto: título)',
-          value: linkedBudget?.concept || '', style:{marginTop:'8px'} }),
-        el('div', { class:'form-grid-2', style:{marginTop:'8px'} }, [
-          el('input', { id:'f-amount', type:'number', step:'0.01', placeholder:'0,00',
-            value: linkedBudget ? String(linkedBudget.amount) : '' }),
-          el('input', { id:'f-cur', type:'text', placeholder:t.default_currency || 'EUR',
-            value: linkedBudget ? (linkedBudget.currency || t.default_currency || 'EUR') : (t.default_currency || 'EUR') }),
-        ]),
-        el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado". Vacíalo a 0 para eliminarlo.' }),
-        // Banner de advertencia (oculto) — aparece al guardar sin gasto en un evento nuevo.
-        el('div', { id:'f-expense-warn', class:'expense-warn', style:{display:'none'} }, [
-          el('div', { class:'expense-warn-msg' }, [ el('span', { text:'⚠️' }), el('span', { text:'No has añadido ningún gasto a este evento.' }) ]),
-          el('div', { class:'expense-warn-actions' }, [
-            el('button', { type:'button', class:'btn btn-sm btn-primary', id:'ew-add' }, 'Añadir gasto'),
-            el('button', { type:'button', class:'btn btn-sm', id:'ew-remind' }, [ el('span',{text:'⚠️'}), 'Recordar más tarde' ]),
-            el('button', { type:'button', class:'btn btn-sm btn-ghost', id:'ew-discard' }, 'Descartar' ),
-          ]),
-        ]),
-      ]),
+      amountRow,
     ]);
+
+    const body = isWizard ? wizardBody() : flatBody();
+
     setTimeout(refreshExpenseReminderUI, 0);
     setTimeout(() => {
       renderConsultationDates(); renderStatusPicker();
@@ -10990,6 +11325,7 @@ const TripDetail = {
       renderMetadata(); refreshPlaceVisibility(); refreshTravelVisibility(); refreshStandaloneTime();
       renderBorderPicker(); refreshSelectedPlace(); renderPeople(); placePeopleBlock();
       refreshImportVisibility();
+      wzRender();
     }, 0);
 
     const collect = () => {
@@ -11045,17 +11381,23 @@ const TripDetail = {
       const metaDef = PLANNING_METADATA[it.type];
       if (metaDef) {
         const meta = {};
+        const prevMeta = it.metadata || {};
         metaDef.fields.forEach(f => {
           if (f.type === 'seats') {
+            const wrap = document.getElementById('meta-seats-wrap');
+            // Campo no pintado (el modo no lo pide): conservamos lo que ya hubiera.
+            if (!wrap) { if (prevMeta.asientos) meta.asientos = prevMeta.asientos; return; }
             // Repetidor: recolectar filas (nombre, asiento)
-            const rows = Array.from(document.querySelectorAll('#meta-seats-wrap .seats-row'));
+            const rows = Array.from(wrap.querySelectorAll('.seats-row'));
             const seats = rows.map(r => ({
               nombre:  (r.querySelector('.seat-name')?.value  || '').trim(),
               asiento: (r.querySelector('.seat-seat')?.value  || '').trim(),
             })).filter(s => s.nombre || s.asiento);
             if (seats.length) meta.asientos = seats;
           } else {
-            const v = ($(`#meta-${f.id}`)?.value || '').trim();
+            const node = document.getElementById(`meta-${f.id}`);
+            if (!node) { if (prevMeta[f.id] != null && prevMeta[f.id] !== '') meta[f.id] = prevMeta[f.id]; return; }
+            const v = (node.value || '').trim();
             if (v) meta[f.id] = v;
           }
         });
@@ -11155,7 +11497,7 @@ const TripDetail = {
       }
     };
 
-    const save = el('button', { class:'btn btn-primary', onclick: async () => {
+    const save = el('button', { class:'btn btn-primary', id:'wz-save-proxy', onclick: async () => {
       if (!collect()) return;
       const amtRaw = ($('#f-amount')?.value || '').trim();
       const hasAmount = amtRaw !== '' && !isNaN(parseFloat(amtRaw)) && parseFloat(amtRaw) > 0;
@@ -11164,6 +11506,8 @@ const TripDetail = {
       // Evento NUEVO sin gasto → avisar con 3 opciones.
       const warn = document.getElementById('f-expense-warn');
       if (!warn) return persistAndClose();
+      // En el asistente el aviso vive en el último paso: hay que llevar ahí al usuario.
+      if (isWizard) wzGo(99);
       warn.style.display = 'block';
       warn.scrollIntoView({ behavior:'smooth', block:'center' });
       document.getElementById('ew-add').onclick = () => {
@@ -11199,8 +11543,12 @@ const TripDetail = {
     UI.openSheet({
       title: existing ? 'Editar parada' : 'Nueva parada',
       body,
-      footer:[delBtn, dupBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save].filter(Boolean),
+      footer: (isWizard
+        ? [wzBack, wzSaveNow, wzNext, save]
+        : [delBtn, dupBtn, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), confirmBtn, save]
+      ).filter(Boolean),
     });
+    if (isWizard) wzRender();
   },
 
   // Marca/desmarca un item del planning como "visto". Persistencia + actualización
