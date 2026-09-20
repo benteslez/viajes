@@ -1383,12 +1383,35 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-group .day-head-main .day-collapse { margin-left:auto; flex:none; }
 /* Si la fila de chips se queda sin nada visible, no ocupa sitio. */
 .day-group .day-meta-row:empty { display:none; }
-/* Hueco al final para que el último día también pueda subir a la cabecera.
-   Lo dimensiona el JS con lo que falte; aquí solo se asegura de que no estorbe. */
-.plan-cola { pointer-events:none; }
-/* Al saltar a un día desde la tira, que no quede tapado por ella (el JS ajusta
-   --dia-tope con la altura real de la barra y la tira). */
-.day-group { scroll-margin-top:var(--dia-tope, 184px); }
+/* ======================================================================
+   CARRUSEL DE DÍAS — el planning es un día por pantalla. El scroll vertical
+   se queda dentro del día; para cambiar de día se desliza a los lados.
+   ====================================================================== */
+.plan-pager {
+  display:flex; align-items:flex-start;
+  overflow-x:auto; overflow-y:hidden;
+  scroll-snap-type:x mandatory; overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none; -ms-overflow-style:none;
+  margin:0 -16px;                        /* a sangre: el día ocupa la pantalla */
+  /* El alto lo pone el JS: el del día que se ve y, como mínimo, lo que queda de
+     pantalla bajo la tira (si no, no habría recorrido para subirla arriba). */
+  min-height:60vh;
+}
+.plan-pager::-webkit-scrollbar { display:none; }
+.plan-page {
+  flex:0 0 100%; max-width:100%; min-width:0;
+  scroll-snap-align:start; scroll-snap-stop:always;   /* nunca se salta un día */
+  /* Arriba, el aire que deja la tira; abajo, sitio para que el botón flotante
+     no se siente encima de la última parada del día. */
+  padding:10px 16px 66px;
+}
+.plan-page .day-group { margin:0; }
+.plan-page.day-past { display:none; }
+.show-past .plan-page.day-past { display:block; }
+/* Con el carrusel el hueco de abajo sobra: la página acaba donde acaba el día,
+   justo lo necesario para que la tira pueda quedarse pegada arriba del todo. */
+main:has(.plan-pager) { padding-bottom:0; }
 .day-head-txt .day-date .day-wd::first-letter { text-transform:uppercase; }
 .day-group .day-meta-row { padding:0 15px; margin:6px 0 0; }
 .day-group .day-note-card { margin:10px 15px 0; }
@@ -10007,8 +10030,9 @@ const TripDetail = {
       if (tb && strip.isConnected && getComputedStyle(strip).position === 'sticky') {
         strip.style.top = tb.offsetHeight + 'px';
       }
-      // Misma cuenta para el scroll nativo (el scroll-margin-top de cada día).
-      document.documentElement.style.setProperty('--dia-tope', TripDetail._topeSuperior() + 'px');
+      // Con el alto real de la tira ya medido, el carrusel rehace su cuenta:
+      // el hueco que le queda de pantalla depende justo de eso.
+      if (TripDetail._pager && TripDetail._pager.isConnected && TripDetail._medirPager) TripDetail._medirPager();
     });
     // Deja a la vista el día activo (o el de hoy) sin mover la página.
     // Marca el día y, SOLO si su pastilla no se ve entera, la trae a la vista.
@@ -10163,24 +10187,29 @@ const TripDetail = {
       groups.forEach(g => toggleDayGroup(g, g.dataset.day, anyOpen));
       collapseAllBtn.lastChild.textContent = anyOpen ? 'Desplegar todo' : 'Plegar todo';
     } }, [ el('span', { html: svg('chevron') }), el('span', { text: allCollapsedNow ? 'Desplegar todo' : 'Plegar todo' }) ]);
-    // Botón "vista tarjetas": pantalla completa, un día por tarjeta, deslizable.
-    const flashBtn = el('button', { class:'btn btn-sm', title:'Vista en tarjetas (un día por pantalla)',
-      onclick: () => TripDetail.openPlanningFlashcards(t) }, [ el('span', { html: svg('copy') }), el('span', { text:'Tarjetas' }) ]);
     const calBtn = el('button', { class:'btn btn-sm', title:'Vista de calendario (mes)',
       onclick: () => TripDetail.openPlanningCalendar(t) }, [ el('span', { html: svg('cal') }), el('span', { text:'Calendario' }) ]);
-    if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ calBtn, flashBtn, collapseAllBtn ]));
+    // Ya no hay botón de pantalla completa: el planning ES la vista de un día
+    // por pantalla, así que abrir otra igual encima no tenía sentido.
+    if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ calBtn, collapseAllBtn ]));
 
-    // Tira de días (pegada arriba): un toque BAJA a ese día en la misma lista.
-    // Antes abría la vista de tarjetas a pantalla completa y se perdía el hilo
-    // del scroll; la pantalla completa vive ahora en su propio botón.
+    // Qué día se enseña al entrar: el que se estaba viendo si sigue existiendo,
+    // hoy si el viaje está en marcha y, si no, el primero.
+    const todayStr = todayIso();
+    const diaPrevio = (TripDetail._planTrip === t.id) ? TripDetail._diaVisible : null;
+    const diaInicial = keys.includes(diaPrevio) ? diaPrevio
+                     : (keys.includes(todayStr) ? todayStr : keys[0]);
+    TripDetail._planTrip = t.id;
+
+    // Tira de días (pegada arriba): un toque salta a ese día y sube la tira al
+    // borde superior de la pantalla, que es lo que hacía la pantalla completa.
     const dayStrip = (keys.length > 1) ? TripDetail._dayStrip(t, keys, byDay, {
-      active: keys.includes(todayIso()) ? todayIso() : null,
-      onPick: (k) => TripDetail._scrollToDay(k, { root }),
+      active: diaInicial,
+      onPick: (k) => TripDetail._irADia(k, { animar:true }),
     }) : null;
     if (dayStrip) root.appendChild(dayStrip);
 
     // Viaje EN CURSO: ocultamos los días ya pasados y dejamos un botón para verlos.
-    const todayStr = todayIso();
     const isEnCurso = tripStatus(t) === 'curso';
     const pastKeys = isEnCurso ? keys.filter(k => k !== 'sin-fecha' && k < todayStr) : [];
     if (pastKeys.length) {
@@ -10205,6 +10234,9 @@ const TripDetail = {
       const prev = isoLocal(d);
       return nightMap[prev] || nightMap[k] || null;
     };
+    // Cada día, su página del carrusel. No hay scroll que pase de un día a otro:
+    // se desliza a los lados, como se hacía en la pantalla completa.
+    const pager = el('div', { class:'plan-pager' });
     for (const k of keys) {
       const collapsed = TripDetail._collapsedDays.has(k);
       const isPast = pastKeys.includes(k);
@@ -10293,14 +10325,6 @@ const TripDetail = {
             html: svg('plus'),
             'aria-label':'Añadir evento a este día',
           }) : null,
-          // Pantalla completa de ESTE día: la vista de tarjetas, donde se pasa
-          // de día deslizando. Es la puerta que antes era el cuadradito de la tira.
-          el('button', {
-            class:'icon-btn day-full-btn', title:'Ver este día a pantalla completa',
-            'aria-label':'Ver este día a pantalla completa',
-            html: svg('expand'),
-            onclick: (e) => TripDetail.openPlanningFlashcards(t, k, { fromEl: e.currentTarget.closest('.day-group') || e.currentTarget }),
-          }),
         ].filter(Boolean));
       const head = el('div', { class:'day-head' }, [ headMain ]);
       metaRow.appendChild(acciones);
@@ -10314,40 +10338,12 @@ const TripDetail = {
       const dayArr = byDay[k];
       const list = TripDetail._dayListEl(t, k, dayArr, { nextEv, todayStr, nightMap, morningHotel, renderToken });
       g.appendChild(list);
-      root.appendChild(g);
+      pager.appendChild(el('div', { class:'plan-page' + (isPast ? ' day-past' : ''), data:{ day:k } }, [ g ]));
     }
+    root.appendChild(pager);
 
     setTimeout(() => TripDetail._wirePlanningDnD(root, t), 0);
-    TripDetail._wirePlanningSwipe(root, keys);
-    requestAnimationFrame(() => TripDetail._ajustarCola(root));
-
-    // La tira sigue al scroll: el cuadradito del día que se está mirando queda
-    // marcado y centrado. Sin observer (o sin soporte) simplemente no pasa nada.
-    if (dayStrip && 'IntersectionObserver' in window) {
-      let lastK = null;
-      // El día que se está mirando es el ÚLTIMO que ya ha pasado por debajo de la
-      // cabecera, no el primero que asoma: si no, mientras quedara un píxel del día
-      // anterior seguía mandando él y la tira marcaba el cuadradito equivocado.
-      const marcarVisible = () => {
-        const linea = TripDetail._topeSuperior() + 4;
-        let k = null;
-        root.querySelectorAll('.day-group').forEach(g => {
-          if (!g.offsetParent) return;                      // días pasados ocultos
-          if (g.getBoundingClientRect().top <= linea) k = g.dataset.day;
-        });
-        if (!k) {                                           // aún por encima del primero
-          const primero = root.querySelector('.day-group');
-          k = primero ? primero.dataset.day : null;
-        }
-        if (k && k !== lastK) { lastK = k; TripDetail._diaVisible = k; dayStrip._focusDay(k); }
-      };
-      const obs = new IntersectionObserver(() => marcarVisible(),
-        { rootMargin: '-120px 0px -40% 0px', threshold: [0, .25, .5, 1] });
-      root.querySelectorAll('.day-group').forEach(g => obs.observe(g));
-      TripDetail._marcarDiaVisible = marcarVisible;
-      TripDetail._dayStripObs?.disconnect?.();
-      TripDetail._dayStripObs = obs;
-    }
+    TripDetail._wirePlanningPager(root, pager, dayStrip, diaInicial);
 
     // Clima por día (async): cada día usa las coords de DONDE SE DUERME esa noche
     // (hotel cuyo rango cubre la noche); si no hay, la primera parada del día con
@@ -10481,134 +10477,212 @@ const TripDetail = {
     return true;
   },
 
-  // Hasta dónde llega lo que se queda pegado arriba (barra + tira de días), más
-  // un respiro. Con un número fijo el día aterrizaba DEBAJO de la tira: la
-  // cabecera quedaba medio tapada y la pastilla de la fecha pegada al borde.
-  _AIRE_DIA: 24,          // respiro entre la tira de días y la tarjeta del día
+  // Dónde empieza el día: justo debajo de lo que se queda pegado arriba (la
+  // barra y la tira de días). Es el sitio al que sube la página al cambiar de
+  // día, y también lo que marca cuánta pantalla le queda al carrusel.
+  _AIRE_DIA: 24,          // respiro de reserva, si no hay tira que medir
   _topeSuperior() {
     const AIRE = TripDetail._AIRE_DIA;
-    const s = document.querySelector('.day-strip');
-    if (s) {
-      const cs = getComputedStyle(s);
-      const alto = s.getBoundingClientRect().height;
-      if (alto && (cs.position === 'sticky' || cs.position === 'fixed')) {
-        return (parseFloat(cs.top) || 0) + alto + AIRE;
+    const tira = document.querySelector('.day-strip');
+    const pager = TripDetail._pager;
+    if (tira) {
+      const cs = getComputedStyle(tira);
+      const pegada = (cs.position === 'sticky' || cs.position === 'fixed');
+      const topCss = pegada ? (parseFloat(cs.top) || 0) : 0;
+      // Con el carrusel delante, el tope es DONDE VA A QUEDAR su borde cuando la
+      // tira esté pegada arriba. Se mide por maquetación (offsetTop), que no se
+      // mueve con el scroll; el rect de un sticky sí, y ahí se iba la cuenta.
+      if (pegada && pager && pager.isConnected && pager.offsetParent === tira.offsetParent) {
+        return Math.max(0, topCss + (pager.offsetTop - tira.offsetTop));
       }
+      const alto = tira.getBoundingClientRect().height;
+      if (alto && pegada) return topCss + alto + AIRE;
     }
     const tb = document.querySelector('header.topbar');
     return (tb ? tb.offsetHeight : 56) + AIRE;
   },
 
-  // Sin esto, el último día no puede subir a la cabecera: la página se acaba y el
-  // scroll se queda a medias. Se añade justo el hueco que falta, ni un píxel más.
-  _ajustarCola(root) {
-    const raiz = root || document.querySelector('#view-root') || document;
-    const grupos = [...raiz.querySelectorAll('.day-group')].filter(g => g.offsetParent);
-    const ultimo = grupos[grupos.length - 1];
-    let cola = raiz.querySelector('.plan-cola');
-    if (!ultimo) { if (cola) cola.style.height = '0px'; return; }
-    if (!cola) {
-      cola = el('div', { class:'plan-cola', 'aria-hidden':'true' });
-      (ultimo.parentNode || raiz).appendChild(cola);
-    } else if (cola.previousElementSibling !== ultimo) {
-      (ultimo.parentNode || raiz).appendChild(cola);       // siempre al final
-    }
-    cola.style.height = '0px';
-    const falta = (window.innerHeight || 0) - TripDetail._topeSuperior() - ultimo.getBoundingClientRect().height;
-    cola.style.height = Math.max(0, Math.round(falta)) + 'px';
-  },
-
-  // Baja (o sube) hasta un día del planning con un desplazamiento corto y de
-  // duración fija: da igual que el salto sea de un día o de diez, siempre tarda
-  // lo mismo. El scroll nativo suave se alarga con la distancia y en un viaje de
-  // tres semanas se hacía eterno.
-  _scrollToDay(k, opts) {
+  // Sube la página hasta dejar la tira de días pegada al borde superior: el
+  // día empieza justo debajo y ocupa toda la pantalla. Es el efecto que antes
+  // hacía la pantalla completa, ahora dentro de la propia pestaña.
+  _subirTira(opts) {
     opts = opts || {};
-    const esc = (x) => (window.CSS && CSS.escape) ? CSS.escape(x) : x;
-    const raiz = opts.root || document;
-    const g = raiz.querySelector(`.day-group[data-day="${esc(k)}"]`);
-    if (!g) return false;
-    // Si el día estaba plegado o escondido (viaje en curso esconde los pasados),
-    // no tiene sentido llevar ahí al usuario y dejarle mirando una línea.
-    if (g.classList.contains('collapsed')) {
-      g.classList.remove('collapsed');
-      TripDetail._collapsedDays.delete(k);
-    }
-    if (!g.offsetParent && g.closest('.plan-root, #view-root')) {
-      const cont = g.closest('#view-root') || document.body;
-      cont.classList.add('show-past');
-    }
-    TripDetail._ajustarCola(opts.root);      // que haya sitio para subirlo del todo
+    const pager = opts.pager || TripDetail._pager;
+    if (!pager || !pager.isConnected) return false;
     const sc = document.scrollingElement || document.documentElement;
     const tope = Math.max(0, sc.scrollHeight - window.innerHeight);
-    const destino = Math.max(0, Math.min(tope, sc.scrollTop + g.getBoundingClientRect().top - TripDetail._topeSuperior()));
+    const destino = Math.max(0, Math.min(tope,
+      sc.scrollTop + pager.getBoundingClientRect().top - TripDetail._topeSuperior()));
     const inicio = sc.scrollTop, delta = destino - inicio;
     cancelAnimationFrame(TripDetail._scrollRaf || 0);
-    if (Math.abs(delta) < 2) return true;
-    const dur = opts.duracion || 340;
-    const t0 = performance.now();
-    // Al terminar se mide de verdad: con todo ya quieto, la tira está pegada en
-    // su sitio definitivo. Si el día se ha quedado por debajo de su borde (pasa
-    // cuando la barra de arriba cambia de alto con el área segura del móvil), se
-    // corrige lo que falte. Calcular y confiar no basta: hay que comprobarlo.
+    // Al terminar se mide de verdad: la barra de arriba cambia de alto con el
+    // área segura del móvil, así que calcular y confiar no basta.
     const ajustar = () => {
-      const tira = document.querySelector('.day-strip');
-      const limite = tira ? tira.getBoundingClientRect().bottom + TripDetail._AIRE_DIA
-                          : TripDetail._topeSuperior();
-      const falta = limite - g.getBoundingClientRect().top;
-      if (falta > 1) sc.scrollTop = Math.max(0, sc.scrollTop - falta);
-      if (typeof TripDetail._marcarDiaVisible === 'function') TripDetail._marcarDiaVisible();
+      const falta = TripDetail._topeSuperior() - pager.getBoundingClientRect().top;
+      if (Math.abs(falta) > 1) sc.scrollTop = Math.max(0, sc.scrollTop - falta);
     };
+    if (Math.abs(delta) < 2) { ajustar(); return true; }
+    if (opts.instantaneo || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      sc.scrollTop = destino; ajustar(); return true;
+    }
+    const dur = opts.duracion || 320;
+    const t0 = performance.now();
     const paso = (ahora) => {
       const p = Math.min(1, (ahora - t0) / dur);
-      sc.scrollTop = inicio + delta * (1 - Math.pow(1 - p, 3));   // easeOutCubic
+      sc.scrollTop = inicio + delta * (1 - Math.pow(1 - p, 3));    // easeOutCubic
+      // Dos pasadas: la primera corrige y la segunda comprueba que, con todo ya
+      // quieto (alturas incluidas), la tira se queda pegada donde toca.
       if (p < 1) TripDetail._scrollRaf = requestAnimationFrame(paso);
-      else requestAnimationFrame(ajustar);
+      else requestAnimationFrame(() => { ajustar(); requestAnimationFrame(ajustar); });
     };
     TripDetail._scrollRaf = requestAnimationFrame(paso);
-    TripDetail._diaVisible = k;
     return true;
   },
 
-  // Deslizar a los lados sobre el planning pasa de día, igual que en la vista de
-  // tarjetas, pero moviendo el scroll en vez de cambiar de pantalla. No se toca
-  // el gesto vertical: solo se mide al soltar, sin preventDefault.
-  _wirePlanningSwipe(root, keys) {
-    const dias = (keys || []).filter(k => k !== 'sin-fecha');
-    if (dias.length < 2) return;
-    let x0 = 0, y0 = 0, t0 = 0, vale = false;
-    root.addEventListener('touchstart', (e) => {
-      vale = false;
-      if (e.touches.length !== 1) return;
-      const tg = e.target;
-      // La tira de días y los campos ya usan el gesto horizontal para lo suyo.
-      if (tg && tg.closest && tg.closest('.day-strip, input, textarea, select, .flashview')) return;
-      const px = e.touches[0].clientX;
-      // Los bordes son del sistema: ahí el deslizamiento horizontal es "atrás"
-      // del navegador y si lo pisamos, la página se va y vuelve al principio.
-      if (px < 32 || px > (window.innerWidth || 0) - 32) return;
-      x0 = px; y0 = e.touches[0].clientY; t0 = Date.now(); vale = true;
-    }, { passive: true });
-    root.addEventListener('touchend', (e) => {
-      if (!vale) return;
-      vale = false;
-      const p = e.changedTouches && e.changedTouches[0];
-      if (!p) return;
-      const dx = p.clientX - x0, dy = p.clientY - y0;
-      if (Date.now() - t0 > 700) return;
-      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
-      const actual = TripDetail._diaVisible;
-      let i = dias.indexOf(actual);
-      if (i < 0) {
-        // Sin día marcado aún: el primero que asome por arriba.
-        const g = [...root.querySelectorAll('.day-group')]
-          .find(x => x.getBoundingClientRect().bottom > 160);
-        i = g ? dias.indexOf(g.dataset.day) : 0;
-        if (i < 0) i = 0;
+  // Páginas del carrusel que se pueden ver (el viaje en curso esconde las de los
+  // días pasados hasta que se piden).
+  _paginasVisibles(pager) {
+    return [...(pager || document).querySelectorAll('.plan-page')].filter(p => p.offsetParent !== null);
+  },
+
+  // Va a un día del carrusel: lo destapa si hacía falta, desliza hasta su página
+  // y sube la tira arriba del todo.
+  _irADia(k, opts) {
+    opts = opts || {};
+    const pager = opts.pager || TripDetail._pager;
+    if (!pager || !pager.isConnected) return false;
+    const esc = (x) => (window.CSS && CSS.escape) ? CSS.escape(x) : x;
+    const pag = pager.querySelector(`.plan-page[data-day="${esc(k)}"]`);
+    if (!pag) return false;
+    // Día pasado escondido o plegado: llevar ahí al usuario y dejarle mirando
+    // una página en blanco no sirve de nada.
+    if (!pag.offsetParent) {
+      const cont = pager.closest('#view-root') || document.body;
+      cont.classList.add('show-past');
+    }
+    const g = pag.querySelector('.day-group');
+    if (g && g.classList.contains('collapsed')) {
+      g.classList.remove('collapsed');
+      TripDetail._collapsedDays.delete(k);
+    }
+    const ps = TripDetail._paginasVisibles(pager);
+    const i = ps.indexOf(pag);
+    if (i < 0) return false;
+    TripDetail._diaVisible = k;
+    if (TripDetail._pagerStrip) TripDetail._pagerStrip._focusDay(k, { smooth:true });
+    if (TripDetail._medirPager) TripDetail._medirPager(pag);   // sitio para el que entra
+    const izq = i * (pager.clientWidth || 1);
+    if (Math.abs(pager.scrollLeft - izq) > 1) {
+      const suave = opts.animar && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+      pager.scrollTo({ left: izq, behavior: suave ? 'smooth' : 'auto' });
+    }
+    TripDetail._subirTira({ pager });
+    return true;
+  },
+
+  // Carrusel del planning: el dedo pasa de día y la tira de arriba le sigue.
+  // Ya no hay gesto propio que medir — el deslizamiento es el scroll nativo con
+  // anclaje, que sigue al dedo y frena solo; nosotros solo miramos dónde cae.
+  _wirePlanningPager(root, pager, dayStrip, diaInicial) {
+    TripDetail._pager = pager;
+    TripDetail._pagerStrip = dayStrip;
+    const paginas = () => TripDetail._paginasVisibles(pager);
+    const ancho = () => pager.clientWidth || 1;
+    const altoDe = (p) => p ? Math.ceil(p.getBoundingClientRect().height) : 0;
+    // El carrusel mide lo que mida el día que se está viendo: así un día corto no
+    // arrastra el hueco del día más largo del viaje. Mientras se desliza manda el
+    // más alto de los dos que se ven, para que ninguno se corte a medio gesto.
+    // El mínimo es lo que queda de pantalla bajo la tira: sin ese recorrido no
+    // habría forma de subirla arriba del todo.
+    const medir = (extra) => {
+      const ps = paginas();
+      if (!ps.length) return;
+      const f = pager.scrollLeft / ancho();
+      const i = Math.max(0, Math.min(ps.length - 1, Math.floor(f + .02)));
+      const j = Math.max(0, Math.min(ps.length - 1, Math.ceil(f - .02)));
+      const min = Math.max(240, (window.innerHeight || 0) - TripDetail._topeSuperior());
+      pager.style.minHeight = min + 'px';
+      pager.style.height = Math.max(min, altoDe(ps[i]), altoDe(ps[j]), altoDe(extra)) + 'px';
+    };
+    TripDetail._medirPager = medir;
+
+    let raf = 0, fin = 0, asentado = diaInicial;
+    const alDeslizar = () => {
+      medir();
+      const ps = paginas();
+      const p = ps[Math.max(0, Math.min(ps.length - 1, Math.round(pager.scrollLeft / ancho())))];
+      const k = p && p.dataset.day;
+      if (k && k !== TripDetail._diaVisible) {
+        TripDetail._diaVisible = k;
+        if (dayStrip) dayStrip._focusDay(k, { smooth:true });
       }
-      const j = Math.max(0, Math.min(dias.length - 1, i + (dx < 0 ? 1 : -1)));
-      if (j !== i) TripDetail._scrollToDay(dias[j], { root });
-    }, { passive: true });
+    };
+    pager.addEventListener('scroll', () => {
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; alDeslizar(); });
+      clearTimeout(fin);
+      fin = setTimeout(() => {
+        medir();
+        // Solo al CAMBIAR de día: si no, un roce lateral movería la página a la
+        // fuerza mientras se está leyendo tan tranquilo.
+        if (TripDetail._diaVisible !== asentado) {
+          asentado = TripDetail._diaVisible;
+          TripDetail._subirTira({ pager });
+        }
+      }, 150);
+    }, { passive:true });
+
+    // Con el teclado (y en escritorio, donde no hay dedo que deslizar).
+    const alTeclado = (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (!pager.isConnected) return;
+      const a = document.activeElement;
+      if (a && a.closest && a.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (document.querySelector('#sheet.show, .flashview, .calview, .detailview')) return;
+      const ps = paginas();
+      let i = ps.findIndex(p => p.dataset.day === TripDetail._diaVisible);
+      if (i < 0) i = 0;
+      const j = Math.max(0, Math.min(ps.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)));
+      if (j === i || !ps[j]) return;
+      e.preventDefault();
+      asentado = ps[j].dataset.day;
+      TripDetail._irADia(ps[j].dataset.day, { pager, animar:true });
+    };
+    // Girar el móvil cambia el ancho de página: el día que se veía tiene que
+    // seguir siendo el que se ve.
+    const alRedimensionar = () => {
+      if (!pager.isConnected) return;
+      const ps = paginas();
+      let i = ps.findIndex(p => p.dataset.day === TripDetail._diaVisible);
+      if (i < 0) i = 0;
+      pager.scrollLeft = i * ancho();
+      medir();
+    };
+    if (TripDetail._planWin) {
+      window.removeEventListener('resize', TripDetail._planWin.resize);
+      document.removeEventListener('keydown', TripDetail._planWin.key);
+    }
+    TripDetail._planWin = { resize: alRedimensionar, key: alTeclado };
+    window.addEventListener('resize', alRedimensionar);
+    document.addEventListener('keydown', alTeclado);
+
+    // El clima, las fotos y las rutas llegan tarde y cambian el alto del día:
+    // hay que volver a medir cuando pasa.
+    TripDetail._pagerRO?.disconnect?.();
+    if ('ResizeObserver' in window) {
+      const ro = new ResizeObserver(() => { medir(); });
+      paginas().forEach(p => ro.observe(p));
+      TripDetail._pagerRO = ro;
+    }
+
+    // Colocarse en el día de entrada sin animación (aún no se ha visto nada).
+    const ps = paginas();
+    let i = ps.findIndex(p => p.dataset.day === diaInicial);
+    if (i < 0) i = 0;
+    if (ps[i]) { TripDetail._diaVisible = asentado = ps[i].dataset.day; }
+    pager.scrollLeft = i * ancho();
+    medir();
+    if (dayStrip && TripDetail._diaVisible) dayStrip._focusDay(TripDetail._diaVisible);
+    requestAnimationFrame(() => { pager.scrollLeft = i * ancho(); medir(); });
   },
 
   _planningItem(it, t, opts) {
