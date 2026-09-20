@@ -2007,15 +2007,48 @@ main:has(.plan-pager) { padding-bottom:0; }
 @media (prefers-reduced-motion: reduce) { .flashview.opening * { animation:none !important; } }
 
 /* Pestañas del editor al EDITAR una parada (saltar directo a un bloque) */
-.wz-tabs { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; margin:0 -16px 12px; padding:0 16px 2px; }
-.wz-tabs::-webkit-scrollbar { display:none; }
-.wz-tab {
-  flex:0 0 auto; cursor:pointer; font-family:inherit;
-  font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:var(--r-pill);
-  border:1px solid var(--line); background:var(--bg-elev); color:var(--text-muted);
-  transition:background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+/* Pastilla de "qué estás creando": ocupa una línea en vez del titular gordo
+   que antes se comía media pantalla antes del primer campo. */
+.wz-chip {
+  display:flex; align-items:center; gap:9px; margin:0 0 16px; padding:9px 11px;
+  border:1px solid var(--line); border-radius:var(--r-md); background:var(--bg-soft);
 }
-.wz-tab.on { background:var(--text); border-color:var(--text); color:var(--text-inv); }
+.wz-chip .em { font-size:19px; line-height:1; }
+.wz-chip b { font-size:14.5px; font-weight:800; letter-spacing:-.01em; min-width:0; }
+.wz-chip-btn {
+  margin-left:auto; flex:none; border:0; background:transparent; cursor:pointer;
+  font-family:inherit; font-size:12.5px; font-weight:700; color:var(--accent);
+  padding:4px 2px;
+}
+
+/* Lo que casi nunca se toca, plegado. <details> nativo: sin estado que mantener. */
+.wz-sec { border-top:1px solid var(--line-soft); margin-top:18px; }
+.wz-sec > summary {
+  display:flex; align-items:baseline; gap:8px; cursor:pointer; list-style:none;
+  padding:14px 0 12px; font-size:14px; font-weight:800; letter-spacing:-.01em;
+}
+.wz-sec > summary::-webkit-details-marker { display:none; }
+/* El chevron lo pinta el ::after para no depender del marcador del navegador,
+   que en Safari no se puede colocar. */
+.wz-sec > summary::after {
+  content:''; margin-left:auto; flex:none; width:8px; height:8px;
+  border-right:2px solid var(--text-muted); border-bottom:2px solid var(--text-muted);
+  transform:rotate(45deg) translate(-2px,-2px); transition:transform .18s var(--ease);
+}
+.wz-sec[open] > summary::after { transform:rotate(-135deg) translate(-2px,-2px); }
+.wz-sec .wz-sec-s { font-size:12px; font-weight:500; color:var(--text-muted); }
+.wz-sec .wz-sec-body > .form-row:first-child { margin-top:0; }
+
+/* Pliegue pequeño, dentro de un bloque (p. ej. "hora de fin" en las fechas). */
+.wz-mini > summary {
+  cursor:pointer; list-style:none; margin-top:9px;
+  font-size:12.5px; font-weight:700; color:var(--accent);
+}
+.wz-mini > summary::-webkit-details-marker { display:none; }
+.wz-mini > summary::before { content:'+ '; font-weight:800; }
+.wz-mini[open] > summary::before { content:'– '; }
+.wz-mini[open] > summary { margin-bottom:6px; }
+
 .wz-edit .wz-title { font-size:17px; }
 /* Duplicar / Borrar, al final del último paso */
 .wz-danger-row { display:flex; gap:8px; margin-top:22px; padding-top:16px; border-top:1px solid var(--line-soft); }
@@ -13427,6 +13460,10 @@ const TripDetail = {
       const fPlace = $('#f-place'); if (fPlace && it.place_name) fPlace.value = it.place_name;
       const fAddr  = $('#f-address'); if (fAddr && it.address) fAddr.value = it.address;
       const fSearch = $('#f-search'); if (fSearch) fSearch.value = '';
+      // Si el buscador acaba de escribir en los campos de a mano, se abren: que
+      // nadie tenga que preguntarse dónde ha ido a parar lo que encontró.
+      const manual = document.getElementById('place-manual');
+      if (manual && (it.place_name || it.address)) manual.open = true;
       refreshSelectedPlace();
     };
 
@@ -13603,13 +13640,19 @@ const TripDetail = {
           cell('Día', dayInput),
           cell(showEnd ? 'Hora inicio' : 'Hora', timeInput('f-time', it.time)),
         ]));
-        // "Día fin" + "Hora fin" (solo lugar/playa): por si el evento acaba otro día.
+        // "Día fin" + "Hora fin": la parada normal empieza y acaba el mismo día,
+        // así que van plegados. Se abren solos si ya traen algo, para que al
+        // editar no desaparezca de la vista nada de lo que hay guardado.
         if (showEnd) {
           const endDayInput = el('input', { id:'f-end-day', type:'date',
             value: (it.metadata && it.metadata.end_date) || it.day_date || '', min: it.day_date || '' });
-          datesBlock.appendChild(el('div', { class:'form-grid-2' }, [
-            cell('Día fin', endDayInput),
-            cell('Hora fin', timeInput('f-end-time', it.end_time)),
+          const hayFin = !!(it.end_time || ((it.metadata && it.metadata.end_date) && it.metadata.end_date !== it.day_date));
+          datesBlock.appendChild(el('details', { class:'wz-mini', open: hayFin ? true : null }, [
+            el('summary', { text:'Hora de fin o acaba otro día' }),
+            el('div', { class:'form-grid-2' }, [
+              cell('Día fin', endDayInput),
+              cell('Hora fin', timeInput('f-end-time', it.end_time)),
+            ]),
           ]));
           // Al fijar el día de inicio, el día de fin se rellena con esa misma fecha (mínimo).
           // La hora de fin se deja vacía: el evento puede ser "a las 11:00" sin fin definido.
@@ -13864,27 +13907,33 @@ const TripDetail = {
 
     const placeBlock = el('div', { id:'place-block' }, [
       el('div', { class:'form-row' }, [
-        el('label', { text:'Buscar lugar o pegar enlace del mapa' }),
-        el('input', { id:'f-search', type:'text', placeholder:'Ej. Museo del Prado Madrid · o pega un enlace de Google Maps',
+        el('label', { text:'Dónde' }),
+        el('input', { id:'f-search', type:'text', placeholder:'Busca el sitio o pega su enlace del mapa',
           oninput: (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => doSearch(e.target.value), 800); },
           // Al pegar no se espera: el enlace se resuelve al momento.
           onpaste: (e) => { clearTimeout(searchTimer); setTimeout(() => doSearch(e.target.value), 0); } }),
         el('div', { id:'plan-search-results', class:'search-results', style:{display:'block'} }),
         selectedPlaceBlock,
-        el('div', { class:'field-hint', text:'Si el buscador no lo encuentra, pega aquí el enlace del sitio en Google Maps (o en Apple Maps, o unas coordenadas "4.598, -74.076"): se coge el punto del enlace. Y si no, escribe los campos a mano abajo.' }),
+        el('div', { class:'field-hint', text:'Si no lo encuentra, pega el enlace del mapa o unas coordenadas.' }),
       ]),
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Lugar' }),
-        el('input', { id:'f-place', type:'text', value: it.place_name || '', onpaste: (e) => tragarEnlace(e) }),
-      ]),
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Dirección' }),
-        el('input', { id:'f-address', type:'text', value: it.address || '', onpaste: (e) => tragarEnlace(e) }),
-      ]),
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Zona / población (para agrupar gastos)' }),
-        el('input', { id:'f-zona', type:'text', value: it.zona || '', placeholder:'Ej. Benidorm, Villalba…' }),
-        el('div', { class:'field-hint', text:'Opcional. Agrupa en el presupuesto los gastos de este evento por esta zona (si está vacío, se usa el Lugar).' }),
+      // Escribirlo a mano es el respaldo de cuando el buscador no acierta. Se
+      // abre solo si ya hay algo escrito, para que al editar no se esconda nada.
+      el('details', { class:'wz-mini', id:'place-manual',
+        open: (it.place_name || it.address || it.zona) ? true : null }, [
+        el('summary', { text:'Escribirlo a mano' }),
+        el('div', { class:'form-row' }, [
+          el('label', { text:'Nombre del sitio' }),
+          el('input', { id:'f-place', type:'text', value: it.place_name || '', onpaste: (e) => tragarEnlace(e) }),
+        ]),
+        el('div', { class:'form-row' }, [
+          el('label', { text:'Dirección' }),
+          el('input', { id:'f-address', type:'text', value: it.address || '', onpaste: (e) => tragarEnlace(e) }),
+        ]),
+        el('div', { class:'form-row' }, [
+          el('label', { text:'Zona / población' }),
+          el('input', { id:'f-zona', type:'text', value: it.zona || '', placeholder:'Ej. Benidorm, Villalba…' }),
+          el('div', { class:'field-hint', text:'Agrupa en el presupuesto los gastos por esta zona. Vacío: se usa el nombre del sitio.' }),
+        ]),
       ]),
     ]);
     const refreshPlaceVisibility = () => {
@@ -14209,30 +14258,78 @@ const TripDetail = {
     // ======================================================================
     const isWizard = !existing;
 
-    // Grid visual de tipos (sustituye al <select>, que se queda oculto como
-    // fuente de verdad para todo el código existente).
+    // Rejilla de "¿qué añades?". Antes eran DOS pantallas: primero el tipo y
+    // luego, si habías dicho "Transporte", el medio. Pero elegir "Avión" o
+    // "Tren" ES decir qué añades: separarlo obligaba a dos toques y a un paso
+    // entero para lo más frecuente. Aquí van juntos, y los medios raros
+    // (taxi, metro, ferry…) se quedan detrás de "Otro transporte" para no
+    // llenar la pantalla con nueve iconos que casi nunca se usan.
     const typeGrid = el('div', { class:'wz-grid' });
-    // Vuelo y coche NO son tipos sueltos aquí: son formas de transporte y se
-    // eligen dentro de "Transporte". Así la primera pantalla queda limpia.
-    const WZ_TYPES = ['lugar', 'comida', 'transporte', 'hotel', 'actividad', 'compras',
-                      'playa', 'personas', 'gestion', 'otro']
-      .map(id => TYPES_PLANNING.find(x => x.id === id)).filter(Boolean);
+    const OPC_PRINCIPALES = [
+      { id:'lugar' }, { id:'comida' }, { id:'hotel' },
+      { id:'vuelo' },
+      { id:'transporte', modo:'tren',  label:'Tren',  emoji:TRANSPORT_EMOJI.tren },
+      { id:'transporte', modo:'coche', label:'Coche', emoji:TRANSPORT_EMOJI.coche },
+      { id:'actividad' }, { id:'playa' }, { id:'compras' },
+      { id:'personas' }, { id:'gestion' },
+      { otros:true, label:'Otro transporte', emoji:TRANSPORT_EMOJI.bus },
+      { id:'otro' },
+    ];
+    const OPC_TRANSPORTE = [
+      { volver:true, label:'Volver', emoji:'←' },
+      { id:'transporte', modo:'bus',        label:'Autobús',   emoji:TRANSPORT_EMOJI.bus },
+      { id:'transporte', modo:'taxi',       label:'Taxi',      emoji:TRANSPORT_EMOJI.taxi },
+      { id:'transporte', modo:'metro',      label:'Metro',     emoji:TRANSPORT_EMOJI.metro },
+      { id:'transporte', modo:'ferry',      label:'Ferry',     emoji:TRANSPORT_EMOJI.ferry },
+      { id:'transporte', modo:'barco',      label:'Barco',     emoji:TRANSPORT_EMOJI.barco },
+      { id:'transporte', modo:'teleferico', label:'Teleférico',emoji:TRANSPORT_EMOJI.teleferico },
+      { id:'coche',      label:'Coche de alquiler', emoji:TRANSPORT_EMOJI.coche },
+    ];
+    let verTransportes = false;
+    // ¿Qué celda sale marcada? El modo guardado manda sobre el tipo, porque un
+    // "transporte" sin modo no dice nada.
+    const opcionActual = () => {
+      const ty = $('#f-type')?.value || it.type;
+      const modo = (it.metadata || {}).modo || '';
+      return ty === 'transporte' ? `transporte:${modo}` : ty;
+    };
+    const claveOpc = (o) => o.modo ? `${o.id}:${o.modo}` : o.id;
+    // Elegir una celda deja el tipo y, si toca, el medio, y pasa al formulario.
+    const elegirOpcion = (o) => {
+      harvestMeta();
+      const sel = $('#f-type');
+      if (o.id === 'coche') {
+        // Coche de alquiler: setCarRental traduce origen/destino a recogida y
+        // devolución, así que no se pierde lo escrito si se cambia de idea.
+        setCarRental(true);
+      } else {
+        if (sel && sel.value !== o.id) { sel.value = o.id; sel.dispatchEvent(new Event('change')); }
+        if (o.id === 'transporte') {
+          it.metadata = Object.assign({}, it.metadata || {}, { modo: o.modo });
+          renderMetadata(); refreshTzVisibility(); refreshImportVisibility();
+        }
+      }
+      renderTypeGrid(); renderModeExtra();
+      wzGo(1);
+    };
     const renderTypeGrid = () => {
       typeGrid.innerHTML = '';
-      const raw = $('#f-type')?.value || it.type;
-      // Un vuelo o un coche de alquiler se enseñan como "Transporte" marcado.
-      const cur = (raw === 'vuelo' || raw === 'coche') ? 'transporte' : raw;
-      WZ_TYPES.forEach(o => {
+      const cur = opcionActual();
+      const lista = verTransportes ? OPC_TRANSPORTE : OPC_PRINCIPALES;
+      lista.forEach(o => {
+        const td = o.id ? typeDef(o.id) : null;
+        const etiqueta = o.label || (td && td.label) || '';
+        const emoji = o.emoji || (td && td.emoji) || '📌';
+        const marcada = !o.otros && !o.volver && claveOpc(o) === cur;
         typeGrid.appendChild(el('button', {
-          type:'button', class:'wz-cell' + (cur === o.id ? ' sel' : ''),
-          'aria-pressed': cur === o.id ? 'true' : 'false',
+          type:'button', class:'wz-cell' + (marcada ? ' sel' : '') + (o.volver ? ' wz-cell-volver' : ''),
+          'aria-pressed': marcada ? 'true' : 'false',
           onclick: () => {
-            const sel = $('#f-type');
-            if (sel && sel.value !== o.id) { sel.value = o.id; sel.dispatchEvent(new Event('change')); }
-            renderTypeGrid();
-            wzGo(wzI + 1);
+            if (o.otros)  { verTransportes = true;  renderTypeGrid(); return; }
+            if (o.volver) { verTransportes = false; renderTypeGrid(); return; }
+            elegirOpcion(o);
           },
-        }, [ el('span', { class:'em', text:o.emoji }), el('span', { class:'n', text:o.label }) ]));
+        }, [ el('span', { class:'em', text:emoji }), el('span', { class:'n', text:etiqueta }) ]));
       });
     };
 
@@ -14265,26 +14362,13 @@ const TripDetail = {
     // después qué campos se piden (ver `PLANNING_METADATA.transporte.byMode`).
     const MODE_OPTS = (((PLANNING_METADATA.transporte || {}).fields || [])
       .find(f => f.id === 'modo') || {}).options || [];
-    // Orden de la rejilla (3 por fila): lo más usado primero. "Avión" no es un
-    // modo de transporte: es el tipo `vuelo`, con sus propios campos, así que
-    // elegirlo cambia el tipo del evento en vez de guardar un modo.
-    const WZ_MODES = [
-      { v:'coche',  l:'Coche' },
-      { v:'__vuelo', l:'Avión', e:'✈️' },
-      { v:'tren',   l:'Tren' },
-      { v:'taxi',   l:'Taxi' },
-      { v:'metro',  l:'Metro' },
-      { v:'bus',    l:'Autobús' },
-      { v:'ferry',  l:'Ferry' },
-      { v:'barco',  l:'Barco' },
-      { v:'teleferico', l:'Teleférico' },
-    ];
-    const modeGrid = el('div', { class:'wz-grid' });
     const modeExtra = el('div', { class:'wz-extra' });
     // Qué celda está marcada: el vuelo y el coche de alquiler son TIPOS propios,
     // el resto son modos dentro de "transporte".
+    const selTipo = () => typeRow.querySelector('#f-type');
+    const tipoActual = () => selTipo()?.value || it.type;
     const currentMode = () => {
-      const type = $('#f-type')?.value || it.type;
+      const type = tipoActual();
       if (type === 'vuelo') return '__vuelo';
       if (type === 'coche') return 'coche';          // coche de alquiler
       return (it.metadata && it.metadata.modo) || '';
@@ -14309,15 +14393,16 @@ const TripDetail = {
         if (sel && sel.value !== 'transporte') { sel.value = 'transporte'; sel.dispatchEvent(new Event('change')); }
       }
       renderMetadata(); refreshTzVisibility(); refreshImportVisibility(); renderStatusPicker();
-      renderTypeGrid(); renderModeGrid(); renderModeExtra(); wzRender();
+      renderTypeGrid(); renderModeExtra(); wzRender();
     };
     // Casilla que aparece SOLO al elegir coche.
     const renderModeExtra = () => {
       modeExtra.innerHTML = '';
-      const isCar = (currentMode() === 'coche');
+      const ty = tipoActual();
+      const isCar = (ty === 'coche' || ty === 'transporte') && currentMode() === 'coche';
       modeExtra.style.display = isCar ? '' : 'none';
       if (!isCar) return;
-      const rental = (($('#f-type')?.value || it.type) === 'coche');
+      const rental = (tipoActual() === 'coche');
       const chk = el('input', { type:'checkbox', id:'wz-car-rental', checked: rental ? true : null });
       chk.addEventListener('change', () => setCarRental(chk.checked));
       modeExtra.appendChild(el('label', { class:'wz-check' + (rental ? ' on' : '') }, [
@@ -14328,69 +14413,23 @@ const TripDetail = {
         ]),
       ]));
     };
-    const renderModeGrid = () => {
-      modeGrid.innerHTML = '';
-      const cur = currentMode();
-      WZ_MODES.forEach(o => {
-        modeGrid.appendChild(el('button', {
-          type:'button', class:'wz-cell' + (cur === o.v ? ' sel' : ''),
-          'aria-pressed': cur === o.v ? 'true' : 'false',
-          onclick: () => {
-            harvestMeta();
-            if (o.v === '__vuelo') {
-              // Cambia de tipo: el paso sigue siendo este, pero ya con los
-              // datos propios del vuelo detrás.
-              const sel = $('#f-type');
-              if (sel && sel.value !== 'vuelo') { sel.value = 'vuelo'; sel.dispatchEvent(new Event('change')); }
-              renderTypeGrid(); renderModeGrid(); renderModeExtra();
-              wzGo(wzI + 1);
-              return;
-            }
-            if (o.v === 'coche') {
-              // Al elegir coche NO se avanza: primero hay que decir si es de
-              // alquiler (la casilla de debajo), porque cambia lo que se pide.
-              const wasRental = (($('#f-type')?.value || it.type) === 'coche');
-              setCarRental(wasRental);
-              return;
-            }
-            const sel = $('#f-type');
-            if (sel && sel.value !== 'transporte') { sel.value = 'transporte'; sel.dispatchEvent(new Event('change')); }
-            it.metadata = Object.assign({}, it.metadata || {}, { modo: o.v });
-            renderMetadata();
-            refreshTzVisibility();
-            refreshImportVisibility();
-            renderTypeGrid(); renderModeGrid(); renderModeExtra();
-            wzGo(wzI + 1);
-          },
-        }, [ el('span', { class:'em', text: o.e || TRANSPORT_EMOJI[o.v] || '🚆' }),
-             el('span', { class:'n', text:o.l }) ]));
-      });
-    };
 
-    // Definición de los pasos. `donde`/`datos`/`modo` se saltan si no aplican.
-    // `q`/`h` → al crear (asistente). `e`/`lab` → al editar (pestañas).
+    // DOS pasos y ya: elegir qué es, y rellenarlo.
+    //
+    // Antes eran seis (tipo · medio · lugar · datos · cuándo · detalles), y al
+    // editar se convertían en seis pestañas. Añadir un sitio costaba cuatro
+    // pantallas y un vuelo cinco, con dos de ellas sin un solo campo (eran
+    // rejillas de iconos). Todo lo que se pedía en los pasos 2 a 6 cabe en una
+    // pantalla si lo raro se pliega, que es lo que hace `wzStep('form')`.
     const WZ_STEPS = [
-      { id:'tipo',     lab:'Tipo',     e:'Tipo de parada',      q:'¿Qué quieres añadir?', h:'Elige el tipo: solo te pediré los datos que ese tipo necesita.' },
-      { id:'modo',     lab:'Medio',    e:'Medio de transporte', q:'¿En qué te mueves?',   h:'' },
-      { id:'donde',    lab:'Lugar',    e:'Lugar',               q:'¿Dónde es?',           h:'Búscalo y se queda con sus coordenadas para mapas, rutas y tiempos.' },
-      { id:'datos',    lab:'Datos',    e:'Datos',               q:'Datos',                h:'Lo que tengas a mano. Todo es opcional.' },
-      { id:'cuando',   lab:'Cuándo',   e:'Fecha y hora',        q:'¿Cuándo?',             h:'Sin hora también vale: la parada queda al final del día.' },
-      { id:'detalles', lab:'Detalles', e:'Detalles',            q:'Últimos detalles',     h:'Título, estado y gasto. Puedes guardar ahora y completarlo luego.' },
+      { id:'tipo', q:'¿Qué quieres añadir?', h:'Solo te pediré los datos que ese tipo necesita.' },
+      { id:'form', q:'',                     h:'' },
     ];
     const wzStepEls = {};
     const wzStep = (id, kids) => (wzStepEls[id] = el('div', { class:'wz-step' + (id === 'tipo' ? ' on' : ''), data:{ step:id } }, kids.filter(Boolean)));
-    const wzAvailable = () => {
-      const type = $('#f-type')?.value || it.type;
-      return WZ_STEPS.filter(st => {
-        if (st.id === 'modo')  return ['transporte', 'vuelo', 'coche'].includes(type);
-        if (st.id === 'donde') return TYPES_WITH_PLACE.includes(type);
-        if (st.id === 'datos') return !!PLANNING_METADATA[type];
-        return true;
-      });
-    };
+    const wzAvailable = () => WZ_STEPS;
 
     const wzBar    = el('div', { class:'wz-bar' });
-    const wzTabs   = el('div', { class:'wz-tabs' });
     const wzKicker = el('div', { class:'wz-kicker' });
     const wzTitle  = el('h3', { class:'wz-title' });
     const wzHint   = el('p',  { class:'wz-hint' });
@@ -14433,42 +14472,36 @@ const TripDetail = {
       const cur = steps[wzI];
       Object.entries(wzStepEls).forEach(([id, node]) => node.classList.toggle('on', id === cur.id));
       const type = $('#f-type')?.value || it.type;
-      const datosLbl = PLANNING_METADATA[type] ? PLANNING_METADATA[type].label : 'Datos';
+      const enForm = (cur.id === 'form');
+      if (enForm && TripDetail._wzChip) TripDetail._wzChip();
 
-      // --- Editar: pestañas clicables, se salta a lo que quieras tocar ---
+      // --- Editar: no hay pasos, solo el formulario ---
       if (!isWizard) {
         wzBar.style.display = 'none';
         wzKicker.style.display = 'none';
-        wzTabs.innerHTML = '';
-        steps.forEach((st, i) => {
-          wzTabs.appendChild(el('button', {
-            type:'button', class:'wz-tab' + (i === wzI ? ' on' : ''),
-            'aria-pressed': i === wzI ? 'true' : 'false',
-            onclick: () => wzGo(i),
-          }, st.id === 'datos' ? 'Datos' : st.lab));
-        });
         wzTitle.style.display = 'none';
         wzHint.style.display = 'none';
         return;
       }
 
-      // --- Crear: asistente paso a paso ---
-      wzTabs.style.display = 'none';
+      // --- Crear: elegir qué es y rellenarlo ---
       wzBar.innerHTML = '';
       steps.forEach((st, i) => wzBar.appendChild(el('i', { class: i < wzI ? 'done' : (i === wzI ? 'on' : '') })));
-      wzKicker.textContent = `Paso ${wzI + 1} de ${steps.length}` + (wzI > 0 ? ` · ${typeDef(type).label}` : '');
-      wzTitle.textContent = (cur.id === 'datos' && PLANNING_METADATA[type])
-        ? datosLbl
-        : (cur.id === 'donde' && type === 'hotel') ? '¿Qué alojamiento?' : cur.q;
+      // En el formulario el tipo ya lo canta la pastilla de arriba: repetirlo en
+      // un titular gordo solo gasta la media pantalla que hace falta para ver
+      // los campos.
+      wzKicker.style.display = enForm ? 'none' : '';
+      wzTitle.style.display  = enForm ? 'none' : '';
+      wzHint.style.display   = enForm ? 'none' : (cur.h ? '' : 'none');
+      wzKicker.textContent = `Paso ${wzI + 1} de ${steps.length}`;
+      wzTitle.textContent = cur.q || '';
       wzHint.textContent = cur.h || '';
-      wzHint.style.display = cur.h ? '' : 'none';
-      const last = (wzI === steps.length - 1);
       wzBack.textContent = wzI === 0 ? 'Cancelar' : '← Atrás';
-      wzNext.style.display = last ? 'none' : '';
-      wzSaveNow.style.display = (!last && wzI > 0) ? '' : 'none';
+      wzNext.style.display = enForm ? 'none' : '';
+      wzSaveNow.style.display = 'none';
       const saveBtn = document.getElementById('wz-save-proxy');
-      if (saveBtn) saveBtn.style.display = last ? '' : 'none';
-      if (last) {
+      if (saveBtn) saveBtn.style.display = enForm ? '' : 'none';
+      if (enForm) {
         wzRenderSummary();
         const ti = document.getElementById('f-title');
         if (ti && !ti.value.trim()) {
@@ -14486,20 +14519,72 @@ const TripDetail = {
     // Al cambiar de tipo cambian los pasos disponibles: hay que repintar.
     TripDetail._wzRender = wzRender;
 
+    // Sección plegable para lo que casi nunca se toca. <details> nativo: se
+    // abre solo si ya trae algo escrito (lo comprueba `plegable`), así al
+    // editar nada queda escondido sin avisar.
+    const plegable = (titulo, sub, kids, abierta) => el('details', {
+      class:'wz-sec', open: abierta ? true : null,
+    }, [
+      el('summary', {}, [
+        el('span', { class:'wz-sec-t', text:titulo }),
+        sub ? el('span', { class:'wz-sec-s', text:sub }) : null,
+      ].filter(Boolean)),
+      el('div', { class:'wz-sec-body' }, kids.filter(Boolean)),
+    ]);
+
+    // Cabecera del formulario: qué se está creando, con un atajo para cambiarlo
+    // sin tener que buscar un "atrás".
+    const wzChip = el('div', { class:'wz-chip' });
+    const renderChip = () => {
+      const ty = $('#f-type')?.value || it.type;
+      const td = typeDef(ty);
+      const modo = (it.metadata || {}).modo || '';
+      const etiqueta = (ty === 'transporte' && modo)
+        ? ((MODE_OPTS.find(o => o.value === modo) || {}).label || td.label)
+        : td.label;
+      wzChip.innerHTML = '';
+      wzChip.appendChild(el('span', { class:'em', text: planEmoji({ type: ty, metadata: it.metadata }) }));
+      wzChip.appendChild(el('b', { text: etiqueta }));
+      wzChip.appendChild(el('button', { type:'button', class:'wz-chip-btn',
+        onclick: () => { harvestMeta(); wzGo(0); } }, 'Cambiar'));
+    };
+    TripDetail._wzChip = renderChip;
+
     const wizardBody = () => {
       typeRow.style.display = 'none';        // el <select> sigue ahí, pero oculto
-      renderTypeGrid(); renderModeGrid(); renderModeExtra();
-      // Al editar se entra por el primer paso con contenido (el tipo rara vez
-      // se cambia) y el resumen del último paso sobra.
+      renderTypeGrid(); renderModeExtra(); renderChip();
+      // Al editar no hay paso de tipo que enseñar: se entra directamente al
+      // formulario. El resumen sobra, porque los datos ya se ven.
       if (!isWizard) { wzI = 1; wzSummary.style.display = 'none'; }
+      // ¿Trae ya algo lo que va plegado? Entonces se abre. Ojo: NO basta con
+      // tener estado —casi todo lo tiene— o la sección estaría siempre abierta
+      // y el pliegue no serviría de nada. Lo que no se ve, se resume al lado.
+      const importe = linkedBudget && linkedBudget.amount ? linkedBudget.amount : null;
+      const hayReserva = !!(it.consultation_url || it.consultation_price != null || importe);
+      const hayMas = !!((Array.isArray(it.people) && it.people.length) || it.notes || it.custom_color);
+      const estadoLbl = (currentStatus && currentStatus !== 'ninguno')
+        ? (STATUS_PLANNING.find(x => x.id === currentStatus) || {}).label : null;
+      const subReserva = [ estadoLbl, importe != null ? fmtMoney(importe, linkedBudget.currency) : null ]
+        .filter(Boolean).join(' · ') || 'Estado, enlace, precio';
+      const subMas = [
+        (Array.isArray(it.people) && it.people.length) ? fmtList(it.people) : null,
+        it.notes ? 'con nota' : null,
+      ].filter(Boolean).join(' · ') || 'Personas, notas, color';
       return el('div', { class:'wz' + (isWizard ? '' : ' wz-edit') }, [
-        el('div', { class:'wz-head' }, [ wzBar, wzTabs, wzKicker, wzTitle, wzHint ]),
-        wzStep('tipo',  [ typeGrid, typeRow, peopleSlotTop ]),
-        wzStep('modo',  [ modeGrid, modeExtra ]),
-        wzStep('donde', [ placeBlock, travelBlock ]),
-        wzStep('datos', [ importBlock, metadataBlock, returnFlightWrap, tzBlock ]),
-        wzStep('cuando',[ datesBlock ]),
-        wzStep('detalles', [ wzSummary, titleRow, statusRow, consultaBlock, peopleSlotBottom, amountRow, notesRow, colorRow ]),
+        el('div', { class:'wz-head' }, [ wzBar, wzKicker, wzTitle, wzHint ]),
+        wzStep('tipo', [ typeGrid, typeRow ]),
+        wzStep('form', [
+          wzChip, typeRow, peopleSlotTop,
+          // Lo que se viene a rellenar, en el orden en que se piensa: cuándo,
+          // dónde, y los datos propios del tipo.
+          datesBlock,
+          placeBlock, travelBlock,
+          modeExtra, importBlock, metadataBlock, returnFlightWrap, tzBlock,
+          titleRow,
+          plegable('Reserva y gasto', subReserva, [ statusRow, consultaBlock, amountRow ], hayReserva),
+          plegable('Más', subMas, [ peopleSlotBottom, notesRow, colorRow ], hayMas),
+          wzSummary,
+        ]),
       ]);
     };
 
@@ -14531,18 +14616,18 @@ const TripDetail = {
       amountRow,
     ]);
 
-    // Antes, al EDITAR salía el formulario completo de una tacada (25 campos).
-    // Ahora se usan los mismos pasos, pero con pestañas para ir directo a lo
-    // que quieras tocar. `flatBody` queda como reserva por si hiciera falta.
+    // Crear y editar comparten el mismo formulario; al crear va precedido de la
+    // pantalla de "¿qué añades?". `flatBody` queda como reserva por si hiciera
+    // falta el listado plano de toda la vida.
     const body = wizardBody();
     void flatBody;
-    // Duplicar y Borrar van al final del último paso: en el pie no caben junto
+    // Duplicar y Borrar van al final del formulario: en el pie no caben junto
     // a Cancelar y Guardar en una pantalla de móvil.
     const attachDangerRow = () => {
-      if (isWizard || !wzStepEls.detalles) return;
+      if (isWizard || !wzStepEls.form) return;
       const kids = [dupBtn, delBtn].filter(Boolean);
       if (!kids.length) return;
-      wzStepEls.detalles.appendChild(el('div', { class:'wz-danger-row' }, kids));
+      wzStepEls.form.appendChild(el('div', { class:'wz-danger-row' }, kids));
     };
 
     setTimeout(refreshExpenseReminderUI, 0);
@@ -14551,7 +14636,7 @@ const TripDetail = {
       refreshTimeVisibility(); refreshHotelDatesVisibility(); refreshTzVisibility();
       renderMetadata(); refreshPlaceVisibility(); refreshTravelVisibility(); refreshStandaloneTime();
       renderBorderPicker(); refreshSelectedPlace(); renderPeople(); placePeopleBlock();
-      refreshImportVisibility();
+      refreshImportVisibility(); renderModeExtra(); renderTypeGrid();
       wzRender();
     }, 0);
 
@@ -14739,9 +14824,12 @@ const TripDetail = {
       // Evento NUEVO sin gasto → avisar con 3 opciones.
       const warn = document.getElementById('f-expense-warn');
       if (!warn) return persistAndClose();
-      // En el asistente el aviso vive en el último paso: hay que llevar ahí al usuario.
+      // En el asistente el aviso vive en el formulario: hay que llevar ahí al usuario.
       if (isWizard) wzGo(99);
       warn.style.display = 'block';
+      // Y el aviso cuelga de "Reserva y gasto", que va plegado: sin abrirlo, al
+      // pulsar Guardar no pasaba nada de nada.
+      warn.closest('details')?.setAttribute('open', '');
       warn.scrollIntoView({ behavior:'smooth', block:'center' });
       document.getElementById('ew-add').onclick = () => {
         warn.style.display = 'none';
