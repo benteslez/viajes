@@ -1375,8 +1375,9 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-group .day-head-main .day-collapse { margin-left:auto; flex:none; }
 /* Si la fila de chips se queda sin nada visible, no ocupa sitio. */
 .day-group .day-meta-row:empty { display:none; }
-/* Al saltar a un día desde la tira, que no quede tapado por ella. */
-.day-group { scroll-margin-top:150px; }
+/* Al saltar a un día desde la tira, que no quede tapado por ella (el JS ajusta
+   --dia-tope con la altura real de la barra y la tira). */
+.day-group { scroll-margin-top:var(--dia-tope, 184px); }
 .day-head-txt .day-date .day-wd::first-letter { text-transform:uppercase; }
 .day-group .day-meta-row { padding:0 15px; margin:6px 0 0; }
 .day-group .day-note-card { margin:10px 15px 0; }
@@ -9896,6 +9897,8 @@ const TripDetail = {
       if (tb && strip.isConnected && getComputedStyle(strip).position === 'sticky') {
         strip.style.top = tb.offsetHeight + 'px';
       }
+      // Misma cuenta para el scroll nativo (el scroll-margin-top de cada día).
+      document.documentElement.style.setProperty('--dia-tope', TripDetail._topeSuperior() + 'px');
     });
     // Deja a la vista el día activo (o el de hoy) sin mover la página.
     // Marca el día y, SOLO si su pastilla no se ve entera, la trae a la vista.
@@ -10355,6 +10358,23 @@ const TripDetail = {
     return true;
   },
 
+  // Hasta dónde llega lo que se queda pegado arriba (barra + tira de días), más
+  // un respiro. Con un número fijo el día aterrizaba DEBAJO de la tira: la
+  // cabecera quedaba medio tapada y la pastilla de la fecha pegada al borde.
+  _topeSuperior() {
+    const AIRE = 16;
+    const s = document.querySelector('.day-strip');
+    if (s) {
+      const cs = getComputedStyle(s);
+      const alto = s.getBoundingClientRect().height;
+      if (alto && (cs.position === 'sticky' || cs.position === 'fixed')) {
+        return (parseFloat(cs.top) || 0) + alto + AIRE;
+      }
+    }
+    const tb = document.querySelector('header.topbar');
+    return (tb ? tb.offsetHeight : 56) + AIRE;
+  },
+
   // Baja (o sube) hasta un día del planning con un desplazamiento corto y de
   // duración fija: da igual que el salto sea de un día o de diez, siempre tarda
   // lo mismo. El scroll nativo suave se alarga con la distancia y en un viaje de
@@ -10377,7 +10397,7 @@ const TripDetail = {
     }
     const sc = document.scrollingElement || document.documentElement;
     const tope = Math.max(0, sc.scrollHeight - window.innerHeight);
-    const destino = Math.max(0, Math.min(tope, sc.scrollTop + g.getBoundingClientRect().top - 150));
+    const destino = Math.max(0, Math.min(tope, sc.scrollTop + g.getBoundingClientRect().top - TripDetail._topeSuperior()));
     const inicio = sc.scrollTop, delta = destino - inicio;
     cancelAnimationFrame(TripDetail._scrollRaf || 0);
     if (Math.abs(delta) < 2) return true;
