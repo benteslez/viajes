@@ -1280,7 +1280,9 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   border-bottom:1px solid var(--line-soft);
 }
 .day-strip-inner {
-  display:flex; gap:8px; overflow-x:auto;
+  /* Con pocos días las pastillas se centran; en cuanto sobresalen, `safe` hace
+     que vuelvan a empezar por la izquierda (si no, la primera queda inalcanzable). */
+  display:flex; gap:8px; overflow-x:auto; justify-content:safe center;
   scrollbar-width:none; -ms-overflow-style:none; padding:2px 0 2px;
   overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;
 }
@@ -1375,6 +1377,9 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-group .day-head-main .day-collapse { margin-left:auto; flex:none; }
 /* Si la fila de chips se queda sin nada visible, no ocupa sitio. */
 .day-group .day-meta-row:empty { display:none; }
+/* Hueco al final para que el último día también pueda subir a la cabecera.
+   Lo dimensiona el JS con lo que falte; aquí solo se asegura de que no estorbe. */
+.plan-cola { pointer-events:none; }
 /* Al saltar a un día desde la tira, que no quede tapado por ella (el JS ajusta
    --dia-tope con la altura real de la barra y la tira). */
 .day-group { scroll-margin-top:var(--dia-tope, 184px); }
@@ -10265,19 +10270,32 @@ const TripDetail = {
 
     setTimeout(() => TripDetail._wirePlanningDnD(root, t), 0);
     TripDetail._wirePlanningSwipe(root, keys);
+    requestAnimationFrame(() => TripDetail._ajustarCola(root));
 
     // La tira sigue al scroll: el cuadradito del día que se está mirando queda
     // marcado y centrado. Sin observer (o sin soporte) simplemente no pasa nada.
     if (dayStrip && 'IntersectionObserver' in window) {
       let lastK = null;
-      const obs = new IntersectionObserver((entries) => {
-        const vis = entries.filter(e => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (!vis) return;
-        const k = vis.target.dataset.day;
-        if (k && k !== lastK) { lastK = k; TripDetail._diaVisible = k; dayStrip._focusDay(k); }   // sin animación
-      }, { rootMargin: '-150px 0px -55% 0px', threshold: 0 });
+      // El día que se está mirando es el ÚLTIMO que ya ha pasado por debajo de la
+      // cabecera, no el primero que asoma: si no, mientras quedara un píxel del día
+      // anterior seguía mandando él y la tira marcaba el cuadradito equivocado.
+      const marcarVisible = () => {
+        const linea = TripDetail._topeSuperior() + 4;
+        let k = null;
+        root.querySelectorAll('.day-group').forEach(g => {
+          if (!g.offsetParent) return;                      // días pasados ocultos
+          if (g.getBoundingClientRect().top <= linea) k = g.dataset.day;
+        });
+        if (!k) {                                           // aún por encima del primero
+          const primero = root.querySelector('.day-group');
+          k = primero ? primero.dataset.day : null;
+        }
+        if (k && k !== lastK) { lastK = k; TripDetail._diaVisible = k; dayStrip._focusDay(k); }
+      };
+      const obs = new IntersectionObserver(() => marcarVisible(),
+        { rootMargin: '-120px 0px -40% 0px', threshold: [0, .25, .5, 1] });
       root.querySelectorAll('.day-group').forEach(g => obs.observe(g));
+      TripDetail._marcarDiaVisible = marcarVisible;
       TripDetail._dayStripObs?.disconnect?.();
       TripDetail._dayStripObs = obs;
     }
@@ -10432,6 +10450,25 @@ const TripDetail = {
     return (tb ? tb.offsetHeight : 56) + AIRE;
   },
 
+  // Sin esto, el último día no puede subir a la cabecera: la página se acaba y el
+  // scroll se queda a medias. Se añade justo el hueco que falta, ni un píxel más.
+  _ajustarCola(root) {
+    const raiz = root || document.querySelector('#view-root') || document;
+    const grupos = [...raiz.querySelectorAll('.day-group')].filter(g => g.offsetParent);
+    const ultimo = grupos[grupos.length - 1];
+    let cola = raiz.querySelector('.plan-cola');
+    if (!ultimo) { if (cola) cola.style.height = '0px'; return; }
+    if (!cola) {
+      cola = el('div', { class:'plan-cola', 'aria-hidden':'true' });
+      (ultimo.parentNode || raiz).appendChild(cola);
+    } else if (cola.previousElementSibling !== ultimo) {
+      (ultimo.parentNode || raiz).appendChild(cola);       // siempre al final
+    }
+    cola.style.height = '0px';
+    const falta = (window.innerHeight || 0) - TripDetail._topeSuperior() - ultimo.getBoundingClientRect().height;
+    cola.style.height = Math.max(0, Math.round(falta)) + 'px';
+  },
+
   // Baja (o sube) hasta un día del planning con un desplazamiento corto y de
   // duración fija: da igual que el salto sea de un día o de diez, siempre tarda
   // lo mismo. El scroll nativo suave se alarga con la distancia y en un viaje de
@@ -10452,6 +10489,7 @@ const TripDetail = {
       const cont = g.closest('#view-root') || document.body;
       cont.classList.add('show-past');
     }
+    TripDetail._ajustarCola(opts.root);      // que haya sitio para subirlo del todo
     const sc = document.scrollingElement || document.documentElement;
     const tope = Math.max(0, sc.scrollHeight - window.innerHeight);
     const destino = Math.max(0, Math.min(tope, sc.scrollTop + g.getBoundingClientRect().top - TripDetail._topeSuperior()));
@@ -10470,6 +10508,7 @@ const TripDetail = {
                           : TripDetail._topeSuperior();
       const falta = limite - g.getBoundingClientRect().top;
       if (falta > 1) sc.scrollTop = Math.max(0, sc.scrollTop - falta);
+      if (typeof TripDetail._marcarDiaVisible === 'function') TripDetail._marcarDiaVisible();
     };
     const paso = (ahora) => {
       const p = Math.min(1, (ahora - t0) / dur);
