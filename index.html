@@ -1200,18 +1200,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .now-label { font-size:11.5px; font-weight:700; color:var(--danger); font-feature-settings:"tnum"; text-transform:uppercase; letter-spacing:.04em; }
 /* Hueco libre entre paradas */
 .gap-chip { font-size:12.5px; color:var(--text-muted); font-style:italic; margin:1px 0 1px 52px; }
-/* El mismo hueco, pero ocupado: se está viajando (transporte sin hora de llegada). */
-.gap-chip.gap-moving { display:inline-flex; align-items:center; gap:6px; font-style:normal; font-weight:600;
-  color:var(--tipo-transporte); background:color-mix(in srgb, var(--tipo-transporte) 9%, var(--bg-elev));
-  border:1px solid color-mix(in srgb, var(--tipo-transporte) 22%, transparent);
-  border-radius:var(--r-pill); padding:2px 10px; }
-/* En oscuro el azul del tipo es demasiado apagado sobre fondo oscuro. */
-:root[data-tema="oscuro"] .gap-chip.gap-moving { color:#93c5fd;
-  background:color-mix(in srgb, #60a5fa 12%, var(--bg-elev)); border-color:color-mix(in srgb, #60a5fa 30%, transparent); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-tema]) .gap-chip.gap-moving { color:#93c5fd;
-    background:color-mix(in srgb, #60a5fa 12%, var(--bg-elev)); border-color:color-mix(in srgb, #60a5fa 30%, transparent); }
-}
 
 /* ======================================================================
    FILA DE PARADA — versión compacta: hora en pastilla del color del tipo,
@@ -1831,8 +1819,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   border:0; border-top:1px solid color-mix(in srgb, var(--tipo-hotel) 16%, transparent);
   box-shadow:none;
 }
-/* El chip de hueco/viaje se ajusta a su texto (si no, ocupa todo el ancho). */
-.gap-chip.gap-moving { align-self:flex-start; width:max-content; max-width:100%; }
 
 /* ======================================================================
    VISTA TARJETAS — la tira de días vive bajo la barra superior.
@@ -9596,6 +9582,25 @@ const TripDetail = {
       if (b - a < 360) b = a + 360;
       return { a, b };
     })();
+    // Traslados sin hora de llegada: se estima su duración hasta la siguiente
+    // parada con hora, y ese dato va DENTRO del billete.
+    const _moveEst = {};
+    {
+      const esMov = (x) => ['transporte', 'vuelo', 'coche'].includes(x.type);
+      for (let i = 0; i < dayArr.length; i++) {
+        const x = dayArr[i];
+        if (x._virtual || !esMov(x) || !x.time) continue;
+        if (_endInfo(x).min != null) continue;          // ya tiene hora de llegada
+        const a = _timeMin(x.time);
+        for (let j = i + 1; j < dayArr.length; j++) {
+          const y = dayArr[j];
+          if (y._virtual || !y.time) continue;
+          const bm = _timeMin(y.time);
+          if (bm != null && a != null && bm > a) _moveEst[x.id] = bm - a;
+          break;
+        }
+      }
+    }
     let _placeN = 0;
     let _lastPart = null, _threadSeen = 0, _nowInserted = false, _prevTimed = null;
     for (let di = 0; di < dayArr.length; di++) {
@@ -9629,17 +9634,17 @@ const TripDetail = {
         const gap = startM - endM;
         const hasLeg = (_prevTimed.lat != null && _prevTimed.lng != null && it.lat != null && it.lng != null);
         if (gap >= 120 && !hasLeg) {
-          const h = Math.floor(gap / 60), m = gap % 60;
-          const dur = `${h}h${m ? ` ${m}m` : ''}`;
-          // Transporte sin hora de llegada → ese rato se está viajando, no libre.
-          list.appendChild(info.moving
-            ? el('div', { class:'gap-chip gap-moving', text: `${planEmoji(_prevTimed)} viajando ~${dur}` })
-            : el('div', { class:'gap-chip', text: `libre ${dur}` }));
+          // Si el hueco es en realidad el trayecto, no se anota aquí: la
+          // duración estimada ya sale en el talón del billete.
+          if (!info.moving) {
+            const h = Math.floor(gap / 60), m = gap % 60;
+            list.appendChild(el('div', { class:'gap-chip', text: `libre ${h}h${m ? ` ${m}m` : ''}` }));
+          }
         }
       }
       // Lugares numerados: el día se lee como una ruta 1 → 2 → 3.
       const _num = (!it._virtual && _PLACE_TYPES.includes(it.type)) ? ++_placeN : null;
-      const card = this._planningItem(it, t, { num: _num, win: _win });
+      const card = this._planningItem(it, t, { num: _num, win: _win, est: _moveEst[it.id] });
       if (_useThread && !it._virtual && it.time) {
         card.classList.add('li-thread'); _threadSeen++;
         if (_threadSeen === 1) card.classList.add('thread-first');
@@ -10490,12 +10495,17 @@ const TripDetail = {
               ? campo('Datos', [ el('span', { text: extra }) ], 'tk-f-x') : null,
           ].filter(Boolean)),
         ]),
-        el('div', { class:'tk-stub' }, boarding.dur
-          ? [ el('span', { class:'tk-f-l', text:'Duración' }), el('b', { text: (() => {
-                const h = Math.floor(boarding.dur / 60), m = boarding.dur % 60;
-                return h ? (m ? `${h}h ${String(m).padStart(2, '0')}` : `${h} h`) : `${m}m`;
-              })() }) ]
-          : [ el('span', { class:'tk-stub-em', text: planEmoji(it), 'aria-hidden':'true' }) ]),
+        (() => {
+          const mins = boarding.dur || opts.est || null;
+          const aprox = !boarding.dur && !!opts.est;
+          if (!mins) return el('div', { class:'tk-stub' }, [ el('span', { class:'tk-stub-em', text: planEmoji(it), 'aria-hidden':'true' }) ]);
+          const h = Math.floor(mins / 60), m = mins % 60;
+          const txt = h ? (m ? `${h}h ${String(m).padStart(2, '0')}` : `${h} h`) : `${m}m`;
+          return el('div', { class:'tk-stub' }, [
+            el('span', { class:'tk-f-l', text: aprox ? 'En ruta' : 'Duración' }),
+            el('b', { text: (aprox ? '~' : '') + txt }),
+          ]);
+        })(),
       ]);
     })() : null;
 
