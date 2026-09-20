@@ -1795,12 +1795,25 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   background:linear-gradient(135deg, #065f46 0%, #15803d 62%, #22c55e 100%);
   box-shadow:0 6px 18px color-mix(in srgb, #065f46 28%, transparent);
 }
+/* Nombre con su aro delante, como el tramo del billete lleva el suyo */
+.kc-linea {
+  display:flex; align-items:center; justify-content:center; gap:9px; min-width:0;
+  /* El aro se come ~1,9em de la línea, así que el nombre baja un escalón para
+     no recortarse antes de tiempo. */
+  --kc-fs:clamp(12.5px, calc((100vw - 200px) * .0605), 18px);
+}
+.kc-ic {
+  flex:none; width:calc(var(--kc-fs) * 1.85); height:calc(var(--kc-fs) * 1.85);
+  border-radius:50%; border:1.5px solid rgba(255,255,255,.6); background:transparent;
+  display:flex; align-items:center; justify-content:center;
+  font-size:calc(var(--kc-fs) * .62); line-height:1;
+}
 /* Mismo cuerpo que las ciudades del billete y mismo comportamiento fluido:
    crece con el ancho hasta los 19px de diseño. */
 .kc-n {
-  font-size:clamp(14px, calc((100vw - 162px) * .0658), 19px);
+  font-size:var(--kc-fs, clamp(14px, calc((100vw - 162px) * .0658), 19px));
   font-weight:800; letter-spacing:-.03em; line-height:1.15; text-align:center;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
 /* · Salida: el mismo disco que las comidas, pero solo el ARO en verde sobre
@@ -3010,17 +3023,50 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 .timeline-item.visited .meal-kick .mk-t { color:var(--text-muted); }
 .timeline-item.visited .meal-kick .mk-ln { background:var(--line); }
 .timeline-item.visited .ml-h { color:var(--text-muted) !important; }
-/* Billete usado: se le arranca el talón. La parte de la derecha —la que en un
-   billete de verdad se queda el revisor— pasa a gris y el resto baja el color
-   sin apagarse del todo: así se sigue leyendo a qué viaje corresponde. */
-.timeline-item.visited .li-ticket { filter:saturate(.5); opacity:.86; box-shadow:none; }
-.timeline-item.visited .tk-stub {
+/* Billete o llave ya usados: el papel NO se vuelve gris, conserva su color
+   —azul el traslado, verde el alojamiento— pero desleído sobre el fondo, y el
+   texto pasa a los colores del tema para que siga legíble. El talón, que es la
+   parte que en un billete de verdad se arranca, sí queda neutro. */
+.timeline-item.visited .li-ticket  { --usado:#312e81; }
+.timeline-item.visited .li-keycard { --usado:#15803d; }
+.timeline-item.visited .li-ticket,
+.timeline-item.visited .li-keycard {
+  filter:none; opacity:1; box-shadow:none; color:var(--text);
+  background:linear-gradient(135deg,
+    color-mix(in srgb, var(--usado) 26%, var(--bg-elev)),
+    color-mix(in srgb, var(--usado) 13%, var(--bg-elev)));
+}
+.timeline-item.visited .li-ticket::before,
+.timeline-item.visited .li-keycard::before { opacity:.25; }
+.timeline-item.visited .tk-kind,  .timeline-item.visited .kc-kind,
+.timeline-item.visited .tk-f-l,   .timeline-item.visited .kc-f-l { color:var(--text-muted); }
+.timeline-item.visited .tk-city,  .timeline-item.visited .kc-n,
+.timeline-item.visited .tk-f-v,   .timeline-item.visited .kc-f-v,
+.timeline-item.visited .tk-stub b,.timeline-item.visited .kc-stub b,
+.timeline-item.visited .tk-stub .tk-stub-eur { color:var(--text); }
+.timeline-item.visited .tk-ic, .timeline-item.visited .kc-ic {
+  border-color:color-mix(in srgb, var(--usado) 45%, var(--line));
+}
+.timeline-item.visited .tk-status, .timeline-item.visited .kc-status {
+  background:var(--bg-soft); color:var(--text-muted);
+}
+.timeline-item.visited .tk-next { color:var(--text-muted); }
+/* El talón arrancado: neutro y con su troquel en la línea del tema */
+.timeline-item.visited .tk-stub, .timeline-item.visited .kc-stub {
   background:var(--bg-soft); border-left-color:var(--line);
 }
-.timeline-item.visited .tk-stub .tk-f-l { color:var(--text-muted); }
-.timeline-item.visited .tk-stub b,
-.timeline-item.visited .tk-stub .tk-stub-eur { color:var(--text); }
+.timeline-item.visited .tk-stub::before, .timeline-item.visited .tk-stub::after,
+.timeline-item.visited .kc-stub::before, .timeline-item.visited .kc-stub::after {
+  background:var(--bg-elev);
+}
 .timeline-item.visited .tk-stub .tk-stub-rule { background:var(--line); }
+.timeline-item.visited .li-ticket .card-next {
+  border-top-color:var(--line); background:color-mix(in srgb, var(--usado) 8%, transparent);
+}
+.timeline-item.visited .li-ticket .card-next .card-next-tag { color:var(--text-muted); }
+.timeline-item.visited .li-ticket .card-next .ne-count {
+  background:var(--bg-soft); color:var(--text);
+}
 /* La barra de horario de las actividades pierde el morado con el resto */
 .timeline-item.visited .li-actbar .ab-bar { background:var(--line-soft); }
 .timeline-item.visited .li-actbar .ab-bar i { background:var(--text-muted); }
@@ -10490,8 +10536,10 @@ const TripDetail = {
     // la pastilla de la hora, el disco de la comida o el aro del billete. Es el
     // gesto que se hace sobre la marcha, andando; el menú de acciones era un
     // rodeo. Los virtuales (noches, check-out) no se marcan: no son paradas.
-    const _marcable = (nodo) => {
-      if (!nodo || isVirtual || !canEdit()) return nodo;
+    const _marcable = (nodo, opts2) => {
+      // La llave del alojamiento es un item virtual (la primera noche), pero
+      // dormir ahí sí es algo que se hace: lleva marcador como el billete.
+      if (!nodo || !canEdit() || (isVirtual && !(opts2 && opts2.aunqueVirtual))) return nodo;
       nodo.classList.add('li-mark');
       nodo.removeAttribute('aria-hidden');
       nodo.setAttribute('role', 'button');
@@ -10778,7 +10826,10 @@ const TripDetail = {
                 el('span', { class:'kc-kind', text:'Alojamiento' }),
                 (statusDef) ? el('span', { class:`kc-status s-${status}`, text: statusDef.label }) : null,
               ].filter(Boolean)),
-              el('div', { class:'kc-n', text: hName }),
+              el('div', { class:'kc-linea' }, [
+                _marcable(el('span', { class:'kc-ic', text:'🏨', 'aria-hidden':'true' }), { aunqueVirtual:true }),
+                el('span', { class:'kc-n', text: hName }),
+              ]),
               el('div', { class:'kc-fields' }, [
                 campo('Check-in', ci || '—'),
                 campo('Check-out', co || '—'),
@@ -13734,25 +13785,40 @@ const TripDetail = {
 
   async toggleVisited(it) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-    it.visited = !it.visited;
-    it.visited_at = it.visited ? new Date().toISOString() : null;
+    // Los items virtuales (las noches del alojamiento) son COPIAS con marcas de
+    // pintado: guardarlos tal cual metería esas marcas en la base. Se marca el
+    // registro de verdad y se refleja en la copia que hay en pantalla.
+    const esVirtual = !!it._virtual;
+    let base = it;
+    if (esVirtual) {
+      try { base = await DB.get('planning_items', it.id); } catch (_) { base = null; }
+      if (!base) { UI.toast('No se pudo guardar'); return; }
+    }
+    const valor = !base.visited;
+    base.visited = valor;
+    base.visited_at = valor ? new Date().toISOString() : null;
     try {
-      await DB.put('planning_items', it);
-      // Buscar la card en el DOM por su data-id y togglear las clases / botón.
-      const card = document.querySelector(`.timeline-item[data-id="${CSS.escape(it.id)}"]`);
-      if (card) {
-        card.classList.toggle('visited', !!it.visited);
+      await DB.put('planning_items', base);
+      it.visited = valor;
+      // Un alojamiento ocupa varias filas (llave, noches, salida) con el mismo
+      // id: todas cuentan la misma estancia, así que se marcan juntas.
+      document.querySelectorAll(`.timeline-item[data-id="${CSS.escape(it.id)}"]`).forEach(card => {
+        card.classList.toggle('visited', valor);
+        card.querySelectorAll('.li-mark').forEach(m => {
+          m.setAttribute('aria-pressed', valor ? 'true' : 'false');
+          m.setAttribute('title', valor ? 'Quitar la marca de visto' : 'Marcar como visto');
+        });
         const btn = card.querySelector('.li-actions button[aria-pressed]');
         if (btn) {
-          btn.classList.toggle('btn-visited-on', !!it.visited);
-          btn.setAttribute('aria-pressed', it.visited ? 'true' : 'false');
-          btn.setAttribute('title', it.visited ? 'Marcar como no visto' : 'Marcar como visto');
+          btn.classList.toggle('btn-visited-on', valor);
+          btn.setAttribute('aria-pressed', valor ? 'true' : 'false');
+          btn.setAttribute('title', valor ? 'Marcar como no visto' : 'Marcar como visto');
         }
-      }
-      UI.toast(it.visited ? 'Marcado como visto' : 'Sin marcar');
+      });
+      UI.toast(valor ? 'Marcado como visto' : 'Sin marcar');
     } catch (e) {
       console.warn('toggleVisited', e);
-      it.visited = !it.visited; // revert estado en memoria
+      base.visited = !valor; it.visited = !valor;   // revertir en memoria
       UI.toast('No se pudo guardar');
     }
   },
