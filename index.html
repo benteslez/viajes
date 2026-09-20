@@ -10997,15 +10997,34 @@ const TripDetail = {
     TripDetail._diaVisible = k;
     if (TripDetail._pagerStrip) TripDetail._pagerStrip._focusDay(k, { smooth:true });
     if (TripDetail._medirPager) TripDetail._medirPager(pag);   // sitio para el que entra
-    const izq = i * (pager.clientWidth || 1);
-    if (Math.abs(pager.scrollLeft - izq) > 1) {
-      const suave = opts.animar && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-      pager.scrollTo({ left: izq, behavior: suave ? 'smooth' : 'auto' });
+    const w = pager.clientWidth || 1;
+    const izq = i * w;
+    const dist = Math.abs(pager.scrollLeft - izq);
+    if (dist > 1) {
+      // Saltar varios días NO se anima: con el anclaje "nunca te saltes un día"
+      // el navegador frena en el primero que pilla por el camino y te deja a
+      // medias (y de paso desfila el viaje entero por delante). Directo.
+      const suave = opts.animar && dist <= w * 1.2
+        && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (suave) pager.scrollTo({ left: izq, behavior:'smooth' });
+      else pager.scrollLeft = izq;
     }
     TripDetail._subirTira({ pager });
-    // Con el día ya puesto, el alto pasa a ser el suyo exacto (al ir de un día
-    // largo a uno corto, durante el salto solo se permite crecer).
-    setTimeout(() => { if (TripDetail._medirPager) TripDetail._medirPager(null, true); }, 420);
+    // Comprobar que se ha quedado donde se pidió: si el navegador frenó antes,
+    // se termina a mano. Y con el día ya puesto, el alto pasa a ser el suyo
+    // exacto (durante el salto solo se permite crecer).
+    setTimeout(() => {
+      if (!pager.isConnected) return;
+      const ps2 = TripDetail._paginasVisibles(pager);
+      const j = ps2.findIndex(x => x.dataset.day === k);
+      if (j >= 0) {
+        const destino = j * (pager.clientWidth || 1);
+        if (Math.abs(pager.scrollLeft - destino) > 2) pager.scrollLeft = destino;
+        TripDetail._diaVisible = k;
+        if (TripDetail._pagerStrip) TripDetail._pagerStrip._focusDay(k, { smooth:true });
+      }
+      if (TripDetail._medirPager) TripDetail._medirPager(null, true);
+    }, 420);
     return true;
   },
 
