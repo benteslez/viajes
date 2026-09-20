@@ -1427,6 +1427,34 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .timeline-item.list-item.type-vuelo.is-next,
 .timeline-list .timeline-item.list-item.type-coche.is-next { background:var(--accent-bg) !important; }
 
+/* Comidas: pastilla redonda con los cubiertos + composición de carta.
+   El color vive en la pastilla y en la hora; el resto es tipografía. */
+.li-meal {
+  flex:0 0 40px; width:40px; height:40px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; font-size:18px; line-height:1;
+  background:linear-gradient(135deg, #fb923c, #ea580c);
+  box-shadow:0 2px 8px color-mix(in srgb, #ea580c 28%, transparent);
+}
+.meal-kick { display:flex; align-items:center; gap:8px; margin-bottom:1px; }
+.meal-kick .mk-t {
+  font-size:9.5px; font-weight:800; letter-spacing:.16em; text-transform:uppercase;
+  color:#c2410c; white-space:nowrap;
+}
+.meal-kick .mk-ln {
+  flex:1; height:1px; background:linear-gradient(90deg, color-mix(in srgb, #f97316 38%, transparent), transparent);
+}
+.timeline-list .timeline-item.type-comida .li-title { font-size:17px; letter-spacing:-.028em; }
+.li-subrow .ml-h { color:#c2410c; font-weight:800; font-size:12.5px; font-feature-settings:"tnum"; flex:none; }
+.li-subrow .ml-dot { width:3px; height:3px; border-radius:50%; background:var(--line); flex:none; margin:0 2px; }
+:root[data-tema="oscuro"] .meal-kick .mk-t,
+:root[data-tema="oscuro"] .li-subrow .ml-h { color:#fdba74; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema]) .meal-kick .mk-t,
+  :root:not([data-tema]) .li-subrow .ml-h { color:#fdba74; }
+}
+/* La fila de comida respira un poco más: es un momento del día. */
+.timeline-list .timeline-item.type-comida.list-item { padding-top:11px; padding-bottom:11px; align-items:center; }
+
 /* Lugares: círculo con el número de orden. Ligero: aro fino, sin relleno,
    y el número centrado de verdad (flex + line-height 1, sin descuadres). */
 .li-num {
@@ -10453,6 +10481,10 @@ const TripDetail = {
       return ncNode;
     }
 
+    // Comida: se compone como el encabezado de una carta — momento en
+    // versalitas, nombre grande y debajo la hora con los datos.
+    const isMeal = (!isVirtual && it.type === 'comida');
+
     // Billete: se monta aquí porque necesita el subtítulo ya construido
     // (asientos, localizador, personas…) para la línea de abajo.
     const ticket = boarding ? (() => {
@@ -10519,9 +10551,11 @@ const TripDetail = {
       // Pastilla de hora a la izquierda, del color del tipo. Siempre hay una
       // (sin hora, "—"; en alojamiento, "noche"), para que todas las filas
       // arranquen en la misma columna y el ojo baje en línea recta.
+      // Comidas: pastilla redonda naranja con los cubiertos, a la izquierda.
+      (isMeal) ? el('div', { class:'li-meal', 'aria-hidden':'true' }, el('span', { text: planEmoji(it) })) : null,
       // Lugares: el orden de la ruta, en un círculo ligero.
       (opts.num && !isVirtual) ? el('div', { class:'li-num' }, el('span', { text: String(opts.num) })) : null,
-      ticket ? null : (() => {
+      (ticket || isMeal) ? null : (() => {
         if (timeRangeText) {
           const _p = String(timeRangeText).split(' – ');
           return el('div', { class:'li-time' + (opts.num ? ' li-time-plain' : '') }, [
@@ -10535,8 +10569,12 @@ const TripDetail = {
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
-      (ticket || opts.num) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
+      (ticket || opts.num || isMeal) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
+        isMeal ? el('div', { class:'meal-kick' }, [
+          el('span', { class:'mk-t', text: typeLabelFor(it) }),
+          el('span', { class:'mk-ln' }),
+        ]) : null,
         ticket
           ? el('div', { class:'li-title', style:{display:'flex', alignItems:'center', gap:'6px'} }, [ ticket ])
           : el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
@@ -10569,8 +10607,12 @@ const TripDetail = {
           const isTransportType = ['vuelo', 'transporte', 'coche'].includes(it.type);
           // Sin repetidos: el lugar y el organizador suelen ser lo mismo.
           const subText = [...new Set(subParts.filter(Boolean))].join(' · ')
-            || ((isVirtual || isTransportType) ? '' : typeLabelFor(it));
+            || ((isVirtual || isTransportType || isMeal) ? '' : typeLabelFor(it));
+          // En las comidas la hora va aquí, en naranja, delante de los datos.
+          const mealTime = isMeal && timeRangeText ? String(timeRangeText).replace(' – ', ' – ') : '';
           return el('div', { class:'li-subrow' }, [
+            mealTime ? el('span', { class:'ml-h', text: mealTime }) : null,
+            (mealTime && subText) ? el('span', { class:'ml-dot' }) : null,
             subText ? el('span', { class:'li-sub-text', text: subText }) : null,
           ].filter(Boolean));
         })(),
