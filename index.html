@@ -1265,7 +1265,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Los tramos y huecos se alinean con la columna del texto */
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
-.timeline-list .timeline-item.night-cont { align-items:center; }
 
 /* ======================================================================
    TIRA DE DÍAS — cuadraditos con la fecha, arrastrables en horizontal.
@@ -1604,7 +1603,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Los tramos y huecos se alinean con la columna del texto */
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
-.timeline-list .timeline-item.night-cont { align-items:center; }
 
 /* ======================================================================
    TIRA DE DÍAS — cuadraditos con la fecha, arrastrables en horizontal.
@@ -1840,12 +1838,102 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   color:var(--text-muted); font-size:12.5px; font-weight:600;
 }
 .dia-libre .btn { padding:3px 10px; font-size:12px; }
-/* El día cierra con el alojamiento: pie de la tarjeta, a sangre */
-.day-group .timeline-list > .timeline-item.type-hotel:last-child {
-  margin:10px -9px -12px; padding:11px 15px; border-radius:0 0 21px 21px;
-  background:color-mix(in srgb, var(--tipo-hotel) 7%, var(--bg-elev));
-  border:0; border-top:1px solid color-mix(in srgb, var(--tipo-hotel) 16%, transparent);
+/* ======================================================================
+   ALOJAMIENTO — tres caras: llegada (tarjeta llave), noches siguientes
+   (pie del día) y salida (disco gris).
+   ====================================================================== */
+/* · Noches siguientes: franja verde a sangre al pie de la tarjeta del día · */
+.timeline-list .timeline-item.li-sleep {
+  display:flex; align-items:center; gap:11px;
+  margin:10px -9px -12px; padding:12px 15px; border-radius:0 0 21px 21px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--tipo-hotel) 9%, var(--bg-elev)),
+                                     color-mix(in srgb, var(--tipo-hotel) 5%, var(--bg-elev)));
+  border:0; border-top:1px solid color-mix(in srgb, var(--tipo-hotel) 20%, transparent);
   box-shadow:none;
+}
+.timeline-list .timeline-item.li-sleep::after { display:none; }   /* sin separador encima */
+.flash-card .timeline-list > .timeline-item.li-sleep { border-radius:0 0 19px 19px; margin:8px -9px -10px; }
+.li-sleep .sl-ic {
+  flex:0 0 36px; width:36px; height:36px; border-radius:12px; font-size:17px;
+  display:flex; align-items:center; justify-content:center;
+  background:color-mix(in srgb, var(--tipo-hotel) 16%, var(--bg-elev));
+}
+.li-sleep .sl-main { display:block; flex:1 1 auto; min-width:0; }
+.li-sleep .sl-t { font-size:15px; font-weight:800; letter-spacing:-.02em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.li-sleep .sl-s { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
+  color:var(--tipo-hotel); margin-top:1px; white-space:nowrap; }
+:root[data-tema="oscuro"] .li-sleep .sl-s { color:#6ee7b7; }
+@media (prefers-color-scheme: dark) { :root:not([data-tema]) .li-sleep .sl-s { color:#6ee7b7; } }
+.sl-dots { display:flex; gap:3px; flex:none; }
+.sl-dots i { width:6px; height:6px; border-radius:50%; background:color-mix(in srgb, var(--tipo-hotel) 25%, transparent); }
+.sl-dots i.on { background:var(--tipo-hotel); }
+.li-sleep .sl-go {
+  margin-left:auto; flex:none;
+  font-size:10.5px; font-weight:800; color:var(--tipo-hotel); text-decoration:none;
+  border:1px solid color-mix(in srgb, var(--tipo-hotel) 30%, transparent);
+  background:var(--bg-elev); border-radius:var(--r-pill); padding:3px 10px; white-space:nowrap;
+}
+
+/* · Llegada: tarjeta llave · */
+.timeline-list .timeline-item.has-keycard {
+  padding:0; gap:0; background:transparent !important; box-shadow:none !important; margin:8px 0;
+}
+.timeline-list .timeline-item.has-keycard::after { display:none; }
+.timeline-list .timeline-item.has-keycard .li-main { min-width:0; width:100%; }
+.li-keycard {
+  position:relative; display:flex; width:100%; min-width:0; border-radius:16px; overflow:hidden;
+  color:#fff; background:linear-gradient(135deg, #065f46 0%, #15803d 62%, #22c55e 100%);
+  box-shadow:0 6px 18px color-mix(in srgb, #065f46 26%, transparent);
+}
+.li-keycard::before {
+  content:''; position:absolute; inset:0; pointer-events:none; opacity:.5;
+  background:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 1px, transparent 1px 13px);
+}
+.kc-main { flex:1; min-width:0; padding:11px 13px 12px; position:relative; z-index:1; }
+.kc-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.kc-kind { font-size:9.5px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.72); }
+.kc-status { margin-left:auto; flex:none; font-size:9px; font-weight:800; letter-spacing:.06em;
+  text-transform:uppercase; padding:3px 8px; border-radius:var(--r-pill); background:rgba(255,255,255,.18); color:#fff; }
+.kc-status.s-por_iniciar { background:#f59e0b; color:#3b2400; }
+.kc-status.s-cancelado { background:#ef4444; }
+.kc-n { font-size:18px; font-weight:800; letter-spacing:-.03em; line-height:1.2;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kc-fields { display:flex; align-items:flex-start; gap:13px; margin-top:9px; min-width:0; }
+.kc-f { min-width:0; display:flex; flex-direction:column; gap:1px; }
+.kc-f:last-child { flex:1 1 0; }
+.kc-f-l { font-size:8px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.55); }
+.kc-f-v { font-size:13px; font-weight:800; font-feature-settings:"tnum";
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kc-stub {
+  flex:0 0 74px; position:relative; z-index:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:2px; padding:8px 6px; text-align:center;
+  border-left:2px dashed rgba(255,255,255,.35); background:rgba(255,255,255,.08);
+}
+.kc-stub b { font-size:15px; font-weight:800; }
+.kc-stub::before, .kc-stub::after { content:''; position:absolute; left:-9px; width:16px; height:16px;
+  border-radius:50%; background:var(--bg-elev); }
+.kc-stub::before { top:-9px; } .kc-stub::after { bottom:-9px; }
+.timeline-list .timeline-item.has-keycard .li-actions { position:absolute; right:84px; top:8px;
+  background:rgba(6,78,59,.5); border-radius:var(--r-pill); padding:1px 3px; }
+.timeline-list .timeline-item.has-keycard .li-actions .icon-btn { color:#fff; width:26px; height:26px; }
+
+/* · Salida: el mismo disco que las comidas, pero solo el ARO en verde sobre
+     fondo blanco, con la puerta dentro. Salir pesa menos que llegar. · */
+.li-meal.li-out {
+  background:var(--bg-elev); box-shadow:none;
+  border:2px solid color-mix(in srgb, var(--tipo-hotel) 75%, transparent);
+}
+.meal-kick.mk-out .mk-t { color:var(--tipo-hotel); }
+.meal-kick.mk-out .mk-ln { background:linear-gradient(90deg, color-mix(in srgb, var(--tipo-hotel) 32%, transparent), transparent); }
+.timeline-list .timeline-item.virtual.checkout .li-subrow .ml-h { color:var(--tipo-hotel); }
+:root[data-tema="oscuro"] .li-meal.li-out { border-color:#34d399; }
+:root[data-tema="oscuro"] .meal-kick.mk-out .mk-t,
+:root[data-tema="oscuro"] .timeline-list .timeline-item.virtual.checkout .li-subrow .ml-h { color:#6ee7b7; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema]) .li-meal.li-out { border-color:#34d399; }
+  :root:not([data-tema]) .meal-kick.mk-out .mk-t,
+  :root:not([data-tema]) .timeline-list .timeline-item.virtual.checkout .li-subrow .ml-h { color:#6ee7b7; }
 }
 
 /* ======================================================================
@@ -2899,49 +2987,11 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 }
 .btn-visited-on svg { stroke:#fff; }
 
-/* ===========================================================================
-   Tarjeta de NOCHE-CONTINUACIÓN del mismo hotel
-   ----------------------------------------------------------------------------
-   Cuando una tarjeta `_virtual:'night'` NO es la primera noche del hotel,
-   se renderiza en variante compacta: solo nombre del hotel + botón "Cómo llegar".
-   La detección viene de la bandera `_isFirstNight` puesta por `_expandHotels`.
-   =========================================================================== */
-.timeline-item.night-cont {
-  padding: 6px 12px;
-  min-height: 36px;
-  gap: 10px;
-}
-.timeline-item.night-cont .item-emoji {
-  width: 26px; height: 26px;
-  font-size: 14px;
-  border-width: 1px;
-}
-.timeline-item.night-cont .li-main {
-  display:flex; align-items:center; gap:8px;
-  flex:1; min-width:0;
-}
-.timeline-item.night-cont .li-title {
-  font-size: 13.5px; font-weight: 600;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.timeline-item.night-cont .li-sub { display:none; }
-.timeline-item.night-cont .night-cont-meta {
-  font-size: 11.5px; color: var(--text-muted); font-weight:500;
-}
-.timeline-item.night-cont .night-cont-go {
-  display:inline-flex; align-items:center; gap:5px;
-  flex-shrink:0;
-  padding: 4px 10px; border-radius: var(--r-pill);
-  font-size: 12px; font-weight: 600;
-  background: var(--bg-elev); border: 1px solid var(--line);
-  color: var(--text); text-decoration: none;
-}
-.timeline-item.night-cont .night-cont-go svg { width:13px; height:13px; }
-.timeline-item.night-cont .night-cont-go:hover {
-  background: color-mix(in srgb, var(--tipo-hotel) 14%, var(--bg-elev));
-  border-color: color-mix(in srgb, var(--tipo-hotel) 50%, var(--line));
-  text-decoration: none;
-}
+/* ============================================================================
+   La noche de continuación ahora es el PIE DEL DÍA (.li-sleep, más abajo).
+   Los estilos compactos antiguos se han retirado: pisaban el nuevo diseño
+   (ponían `.li-main` en fila y el nombre a 13,5 px).
+   ========================================================================== */
 
 /* ===========================================================================
    Botón "paleta" en la card + popover para override de color manual
@@ -9242,9 +9292,12 @@ const TripDetail = {
       if (it.type === 'hotel' && d1 && d2 && d1 < d2) {
         let d = parseDate(d1);
         const end = parseDate(d2);
+        const _total = Math.max(1, daysBetween(d1, d2));   // noches del rango
+        let _n = 0;
         while (d < end) {
           const k = isoLocal(d);
-          items.push({ ...it, _virtual:'night', _isFirstNight:(k === d1), day_date:k, time:null });
+          items.push({ ...it, _virtual:'night', _isFirstNight:(k === d1), day_date:k, time:null,
+                       _nightN: ++_n, _nightTotal: _total });
           d.setDate(d.getDate() + 1);
         }
         items.push({ ...it, _virtual:'checkout', day_date:d2, time: it.consultation_planned_t2 || null });
@@ -9633,8 +9686,8 @@ const TripDetail = {
     let _lastPart = null, _threadSeen = 0, _nowInserted = false, _prevTimed = null;
     for (let di = 0; di < dayArr.length; di++) {
       const it = dayArr[di];
-      // Noche de continuación → va en la cabecera (chip de alojamiento), no como card.
-      if (it._virtual === 'night' && !it._isFirstNight) continue;
+      // Antes la noche de continuación se movía a la cabecera; ahora es el pie
+      // del día (franja verde a sangre), así que se queda en la lista.
       if (_useParts && !it._virtual && it.time) {
         const p = _partOf(it.time);
         if (p !== _lastPart) {
@@ -9985,7 +10038,6 @@ const TripDetail = {
       const dayMeta = noteMap[k];
       // Resumen del día: nº de paradas y alojamiento de continuación (noche sin check-in/out).
       const _stops = byDay[k].filter(x => !x._virtual).length;
-      const _contNight = byDay[k].find(x => x._virtual === 'night' && !x._isFirstNight);
       const _hotelDir = (it) => !it ? null
         : (it.lat != null && it.lng != null) ? `https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}`
         : it.address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(it.address)}`
@@ -10045,13 +10097,6 @@ const TripDetail = {
       if (_dayPill) metaKids.push(_dayPill);
       if (k !== 'sin-fecha') metaKids.push(el('span', { class:'wx-chip', id:`wx-${k}` }));
       if (k !== 'sin-fecha' && _stops > 0) metaKids.push(el('span', { class:'day-meta-stops', text: `${_stops} ${_stops === 1 ? 'parada' : 'paradas'}` }));
-      if (k !== 'sin-fecha' && _contNight) {
-        const hName = _contNight.place_name || _contNight.title || 'Alojamiento';
-        const hDir = _hotelDir(_contNight);
-        metaKids.push(hDir
-          ? el('a', { class:'day-hotel-chip', href: hDir, target:'_blank', rel:'noopener', title:'Cómo llegar al alojamiento', onclick: (e) => e.stopPropagation() }, [ '🛏 ', hName ])
-          : el('span', { class:'day-hotel-chip', text: `🛏 ${hName}` }));
-      }
       const metaRow = el('div', { class:'day-meta-row' }, metaKids);
 
       const head = el('div', { class:'day-head' }, [
@@ -10248,7 +10293,7 @@ const TripDetail = {
 
     // Título según virtual
     let displayTitle = it.title;
-    if (isCheckout) displayTitle = `${it.title} — Check-out`;
+    if (isCheckout) displayTitle = it.place_name || (it.metadata && it.metadata.nombre) || it.title;
     else if (isNight) displayTitle = it.title; // simple, sin sufijo
     else if (isArrival) {
       const dest = (it.metadata?.destino) || (it.dest_tz ? it.dest_tz.split('/').pop().replace(/_/g,' ') : '');
@@ -10459,31 +10504,90 @@ const TripDetail = {
     // -------- Variante COMPACTA: noche de hotel que NO es la primera --------
     // Solo: nombre del hotel + botón "Cómo llegar". Sin pill, sin hora, sin
     // botones de edición. El click sigue abriendo el editor del hotel original.
+    // Puntos de las noches: ●●○ dice de un vistazo cuántas llevas en ese hotel.
+    const nightDots = (n, total) => (total && total <= 8)
+      ? el('div', { class:'sl-dots', 'aria-hidden':'true' },
+          Array.from({ length: total }, (_, i) => el('i', { class: (i < n) ? 'on' : '' })))
+      : null;
+
+    // --- Noche de continuación: pie del día (franja verde a sangre) ---
     if (isNight && !it._isFirstNight) {
-      const ncCls = 'list-item timeline-item virtual night-cont type-hotel' + customCls;
+      const hName = it.place_name || (it.metadata && it.metadata.nombre) || it.title || 'Alojamiento';
+      const nSub = (it._nightN && it._nightTotal)
+        ? `Noche ${it._nightN} de ${it._nightTotal}` : 'Noche';
       const ncNode = el('div', {
-        class: ncCls,
+        class: 'list-item timeline-item virtual night-cont type-hotel li-sleep' + customCls,
         draggable:'false',
         data:{ id:it.id, day: it.day_date || 'sin-fecha' }
       }, [
-        el('div', { class:'li-time li-time-tag' }, [ el('span', { class:'li-time-a', text:'noche' }) ]),
-        el('div', { class:'item-emoji', 'aria-hidden':'true', text: '🛏️' }),
-        el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-          el('div', { class:'li-title', text: it.title }),
+        el('div', { class:'sl-ic', 'aria-hidden':'true', text:'🛏️' }),
+        el('div', { class:'li-main sl-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
+          el('div', { class:'sl-t', text: hName }),
+          el('div', { class:'sl-s' }, [
+            el('span', { text: nSub }),
+            nightDots(it._nightN, it._nightTotal),
+          ].filter(Boolean)),
         ]),
-        el('div', { class:'gap' }),
         dirUrl ? el('a', {
-          class:'night-cont-go', href: dirUrl, target:'_blank', rel:'noopener',
-          title:'Cómo llegar', onclick: (e) => e.stopPropagation()
-        }, [ el('span', { html: svg('map') }), 'Cómo llegar' ]) : null,
+          class:'sl-go', href: dirUrl, target:'_blank', rel:'noopener',
+          title:'Cómo llegar', onclick: (e) => e.stopPropagation(), text:'Cómo llegar',
+        }) : null,
       ].filter(Boolean));
       if (customColor) ncNode.style.setProperty('--card-color', customColor);
       return ncNode;
     }
 
+    // --- Noche de llegada: tarjeta llave (el equivalente verde del billete) ---
+    if (isNight && it._isFirstNight) {
+      const md2 = it.metadata || {};
+      const hName = it.place_name || md2.nombre || it.title || 'Alojamiento';
+      const ci = (it.consultation_planned_t1 || '').slice(0, 5);
+      const co = (it.consultation_planned_t2 || '').slice(0, 5);
+      const campo = (lbl, val) => el('div', { class:'kc-f' }, [
+        el('span', { class:'kc-f-l', text: lbl }),
+        el('span', { class:'kc-f-v', text: val }),
+      ]);
+      const kcNode = el('div', {
+        class: 'list-item timeline-item virtual night-first type-hotel has-keycard' + customCls,
+        draggable:'false',
+        data:{ id:it.id, day: it.day_date || 'sin-fecha' }
+      }, [
+        el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
+          el('div', { class:'li-keycard' }, [
+            el('div', { class:'kc-main' }, [
+              el('div', { class:'kc-top' }, [
+                el('span', { class:'kc-kind', text:'Alojamiento' }),
+                (statusDef) ? el('span', { class:`kc-status s-${status}`, text: statusDef.label }) : null,
+              ].filter(Boolean)),
+              el('div', { class:'kc-n', text: hName }),
+              el('div', { class:'kc-fields' }, [
+                campo('Check-in', ci || '—'),
+                campo('Check-out', co || '—'),
+                md2.habitacion ? campo('Habitación', md2.habitacion) : (md2.localizador ? campo('Localizador', md2.localizador) : null),
+              ].filter(Boolean)),
+            ]),
+            el('div', { class:'kc-stub' }, [
+              el('span', { class:'kc-f-l', text: (it._nightTotal === 1) ? 'Noche' : 'Noches' }),
+              el('b', { text: it._nightTotal ? `${it._nightN || 1}/${it._nightTotal}` : '1' }),
+            ]),
+          ]),
+        ]),
+        el('div', { class:'li-actions', style:{alignItems:'center'} }, [
+          dirUrl ? el('a', { class:'icon-btn', href: dirUrl, target:'_blank', title:'Cómo llegar', html: svg('map'),
+            onclick: (e) => e.stopPropagation() }) : null,
+          canEdit() ? el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
+            title:'Editar el alojamiento' }) : null,
+        ].filter(Boolean)),
+      ].filter(Boolean));
+      if (customColor) kcNode.style.setProperty('--card-color', customColor);
+      return kcNode;
+    }
+
     // Comida: se compone como el encabezado de una carta — momento en
     // versalitas, nombre grande y debajo la hora con los datos.
     const isMeal = (!isVirtual && it.type === 'comida');
+    // Check-out: disco gris con la puerta. Cerrar no es lo mismo que llegar.
+    const isOut = isCheckout;
 
     // Billete: se monta aquí porque necesita el subtítulo ya construido
     // (asientos, localizador, personas…) para la línea de abajo.
@@ -10541,7 +10645,7 @@ const TripDetail = {
       ]);
     })() : null;
 
-    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '') + (ticket ? ' has-ticket' : '');
+    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '') + (ticket ? ' has-ticket' : '') + (isOut ? ' checkout' : '');
 
     const node = el('div', {
       class: cls,
@@ -10553,9 +10657,11 @@ const TripDetail = {
       // arranquen en la misma columna y el ojo baje en línea recta.
       // Comidas: pastilla redonda naranja con los cubiertos, a la izquierda.
       (isMeal) ? el('div', { class:'li-meal', 'aria-hidden':'true' }, el('span', { text: planEmoji(it) })) : null,
+      // Check-out: mismo disco, en gris y con la puerta.
+      (isOut) ? el('div', { class:'li-meal li-out', 'aria-hidden':'true' }, el('span', { text:'🚪' })) : null,
       // Lugares: el orden de la ruta, en un círculo ligero.
       (opts.num && !isVirtual) ? el('div', { class:'li-num' }, el('span', { text: String(opts.num) })) : null,
-      (ticket || isMeal) ? null : (() => {
+      (ticket || isMeal || isOut) ? null : (() => {
         if (timeRangeText) {
           const _p = String(timeRangeText).split(' – ');
           return el('div', { class:'li-time' + (opts.num ? ' li-time-plain' : '') }, [
@@ -10569,10 +10675,10 @@ const TripDetail = {
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
-      (ticket || opts.num || isMeal) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
+      (ticket || opts.num || isMeal || isOut) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-        isMeal ? el('div', { class:'meal-kick' }, [
-          el('span', { class:'mk-t', text: typeLabelFor(it) }),
+        (isMeal || isOut) ? el('div', { class:'meal-kick' + (isOut ? ' mk-out' : '') }, [
+          el('span', { class:'mk-t', text: isOut ? 'Check-out' : typeLabelFor(it) }),
           el('span', { class:'mk-ln' }),
         ]) : null,
         ticket
@@ -10609,7 +10715,7 @@ const TripDetail = {
           const subText = [...new Set(subParts.filter(Boolean))].join(' · ')
             || ((isVirtual || isTransportType || isMeal) ? '' : typeLabelFor(it));
           // En las comidas la hora va aquí, en naranja, delante de los datos.
-          const mealTime = isMeal && timeRangeText ? String(timeRangeText).replace(' – ', ' – ') : '';
+          const mealTime = (isMeal || isOut) && timeRangeText ? String(timeRangeText) : '';
           return el('div', { class:'li-subrow' }, [
             mealTime ? el('span', { class:'ml-h', text: mealTime }) : null,
             (mealTime && subText) ? el('span', { class:'ml-dot' }) : null,
