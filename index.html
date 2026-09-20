@@ -1454,26 +1454,55 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Extremo sin hora todavía: guion, para que los dos lados se alineen. */
 .li-boarding .lb-side i.lb-tbd { color:var(--line); }
 .li-boarding .lb-mid {
-  flex:0 1 auto; min-width:56px; position:relative; display:flex; flex-direction:column;
-  align-items:center; gap:2px; padding:0 2px;
+  flex:0 1 92px; min-width:66px; max-width:118px; display:flex; flex-direction:column;
+  align-items:center; gap:5px; padding:0 2px;
 }
-.li-boarding .lb-mid::before {
-  content:''; position:absolute; left:-4px; right:-4px; top:9px; height:2px;
-  background:repeating-linear-gradient(90deg, color-mix(in srgb, var(--li-move) 40%, transparent) 0 4px, transparent 4px 8px);
+/* Raíl: punto hueco en el origen, punto lleno en el destino, línea de puntos
+   entre ambos y el medio de transporte en una cápsula que la interrumpe. */
+.li-boarding .lb-track {
+  position:relative; width:100%; height:24px; display:flex; align-items:center;
+  justify-content:space-between;
 }
-.li-boarding .lb-em { font-size:15px; line-height:1; position:relative; z-index:1;
-  background:var(--bg-elev); padding:0 4px; }
-.li-boarding .lb-dur { font-size:10.5px; font-weight:800; color:var(--li-move); white-space:nowrap; }
+.li-boarding .lb-track::before {
+  content:''; position:absolute; left:3px; right:3px; top:50%; height:2px; margin-top:-1px;
+  background:repeating-linear-gradient(90deg, color-mix(in srgb, var(--li-move) 45%, transparent) 0 3px, transparent 3px 7px);
+}
+.li-boarding .lb-dot { width:7px; height:7px; border-radius:50%; flex:none; position:relative; z-index:1; }
+.li-boarding .lb-dot-a { background:var(--bg-elev); box-shadow:0 0 0 2px var(--li-move) inset, 0 0 0 3px var(--bg-elev); }
+.li-boarding .lb-dot-b { background:var(--li-move); box-shadow:0 0 0 3px var(--bg-elev); }
+.li-boarding .lb-em {
+  position:absolute; left:50%; top:50%; transform:translate(-50%, -50%);
+  width:26px; height:26px; border-radius:50%; z-index:2;
+  display:flex; align-items:center; justify-content:center; font-size:14px; line-height:1;
+  background:var(--bg-elev); box-shadow:0 0 0 1.5px color-mix(in srgb, var(--li-move) 28%, transparent);
+}
+/* Los vuelos describen un arco, como en los mapas de rutas. */
+.li-boarding.is-flight .lb-em { transform:translate(-50%, -50%) rotate(45deg); }
+.li-boarding.is-flight .lb-track::before {
+  height:10px; top:calc(50% - 7px); background:none;
+  border-top:2px dotted color-mix(in srgb, var(--li-move) 55%, transparent);
+  border-radius:50% 50% 0 0 / 100% 100% 0 0;
+}
+.li-boarding .lb-dur {
+  font-size:10.5px; font-weight:800; color:var(--li-move); white-space:nowrap;
+  background:color-mix(in srgb, var(--li-move) 11%, transparent);
+  padding:2px 9px; border-radius:var(--r-pill); line-height:1.35;
+}
+.li-boarding .lb-next {
+  font-size:8.5px; font-weight:800; color:var(--li-move); margin-left:2px; top:-.5em;
+}
 /* En la fila de embarque el título ocupa todo el ancho (no hay pastilla). */
 .timeline-list .timeline-item.has-boarding .li-title { width:100%; }
 /* Estado y datos extra, alineados a la derecha bajo la hora de llegada. */
 .timeline-list .timeline-item.has-boarding .li-corner { justify-content:flex-end; margin-top:2px; }
 .timeline-list .timeline-item.has-boarding .li-subrow { text-align:right; }
 .timeline-list .timeline-item.has-boarding { padding-left:12px; }
-/* El emoji del centro tapa la línea de puntos: hereda el fondo de la fila. */
-.timeline-list .timeline-item.has-boarding.is-next .lb-em { background:var(--accent-bg); }
+/* La cápsula y los remates de los puntos heredan el fondo real de la fila. */
+.timeline-list .timeline-item.has-boarding.is-next .lb-em,
+.timeline-list .timeline-item.has-boarding.is-next .lb-dot-a { background:var(--accent-bg); }
+.timeline-list .timeline-item.has-boarding.is-next .lb-dot-a { box-shadow:0 0 0 2px var(--li-move) inset, 0 0 0 3px var(--accent-bg); }
+.timeline-list .timeline-item.has-boarding.is-next .lb-dot-b { box-shadow:0 0 0 3px var(--accent-bg); }
 .timeline-list .timeline-item.has-boarding.acts-open .lb-em { background:var(--bg-soft); }
-.day-group .timeline-item.has-boarding .lb-em { background:var(--bg-elev); }
 .day-group .plan-part { margin:14px 0 6px 6px; display:flex; align-items:center; gap:8px; }
 .plan-part .pp-ic { font-size:12px; line-height:1; }
 .plan-part .pp-line { flex:1; height:1px; background:var(--line-soft); }
@@ -9861,6 +9890,58 @@ const TripDetail = {
       displayTitle = fmtList(it.people);
     }
 
+    // --- Traslados con origen y destino: fila tipo tarjeta de embarque ---
+    // "Villa de Leyva  ···🚗 6 h···  Barichara" con la hora debajo de cada
+    // extremo. Sustituye al título y deja la fila sin pastilla ni emoji suelto.
+    const _mdMove = it.metadata || {};
+    const _isMove = ['vuelo', 'transporte', 'coche'].includes(it.type);
+    // Si no hay origen/destino en los datos, se intenta sacar del título
+    // ("Pescadero - Barichara"), que es como se escriben casi siempre.
+    const _ruta = (() => {
+      if (_mdMove.origen && _mdMove.destino) return { o:_mdMove.origen, d:_mdMove.destino };
+      const parts = String(it.title || '').split(/\s+(?:-|–|—|→|->|a)\s+/);
+      if (parts.length === 2) {
+        const o = parts[0].trim(), d = parts[1].trim();
+        if (o && d && o.length <= 34 && d.length <= 34) return { o, d };
+      }
+      return null;
+    })();
+    const boarding = (!isVirtual && _isMove && _ruta) ? (() => {
+      const bt1 = (it.consultation_planned_t1 || it.time || '').slice(0, 5);
+      const bd1 = it.consultation_planned_d1 || it.day_date;
+      const bd2 = it.consultation_planned_d2;
+      const bt2 = (it.consultation_planned_t2 || '').slice(0, 5);
+      const otroDia = !!(bd2 && bd1 && bd2 !== bd1);
+      const mins = (a, b) => {
+        const ma = /^(\d{1,2}):(\d{2})/.exec(a), mb = /^(\d{1,2}):(\d{2})/.exec(b);
+        if (!ma || !mb) return null;
+        let d = (+mb[1] * 60 + +mb[2]) - (+ma[1] * 60 + +ma[2]);
+        if (otroDia && d <= 0) d += 24 * 60;
+        return d > 0 ? d : null;
+      };
+      const dur = (bt1 && bt2) ? mins(bt1, bt2) : null;
+      return el('div', { class:'li-boarding' + (it.type === 'vuelo' ? ' is-flight' : '') }, [
+        el('div', { class:'lb-side' }, [
+          el('b', { text: _ruta.o }),
+          el('i', bt1 ? { text: bt1 } : { class:'lb-tbd', text:'—' }),
+        ]),
+        el('div', { class:'lb-mid' }, [
+          el('span', { class:'lb-track' }, [
+            el('span', { class:'lb-dot lb-dot-a' }),
+            el('span', { class:'lb-em', text: planEmoji(it), 'aria-hidden':'true' }),
+            el('span', { class:'lb-dot lb-dot-b' }),
+          ]),
+          dur ? el('span', { class:'lb-dur', text: fmtDur(dur) }) : null,
+        ].filter(Boolean)),
+        el('div', { class:'lb-side lb-end' }, [
+          el('b', { text: _ruta.d }),
+          bt2
+            ? el('i', {}, [ el('span', { text: bt2 }), otroDia ? el('sup', { class:'lb-next', text:'+1' }) : null ].filter(Boolean))
+            : el('i', { class:'lb-tbd', text:'—' }),
+        ]),
+      ]);
+    })() : null;
+
     // Subtítulo
     const subParts = [];
     if (it.place_name && it.place_name !== it.title) subParts.push(it.place_name);
@@ -9901,8 +9982,11 @@ const TripDetail = {
     if (it.type === 'vuelo') {
       const oriDest = (md.origen && md.destino) ? `${md.origen} - ${md.destino}` :
                       (it.origin_tz && it.dest_tz) ? `${it.origin_tz.split('/').pop().replace(/_/g,' ')} - ${it.dest_tz.split('/').pop().replace(/_/g,' ')}` : null;
-      if (oriDest && !it.title.includes(oriDest)) subParts.push(oriDest);
+      // Si la ruta ya se ve en la tira de embarque, no se repite debajo.
+      if (oriDest && !boarding && !it.title.includes(oriDest)) subParts.push(oriDest);
       if (md.aerolinea && !it.title.includes(md.aerolinea)) subParts.push(md.aerolinea);
+      // Con la tira de embarque el título ya no se ve: el número de vuelo baja aquí.
+      if (boarding && md.numero) subParts.push(md.numero);
       if (md.terminal || md.puerta) {
         const tps = [];
         if (md.terminal) tps.push('T' + md.terminal);
@@ -9919,7 +10003,10 @@ const TripDetail = {
       if (md.modelo && !it.title.includes(md.modelo)) subParts.push(md.modelo);
       if (md.matricula) subParts.push(md.matricula);
     } else if (it.type === 'transporte') {
-      if (md.origen && md.destino && !it.title.includes(`${md.origen} - ${md.destino}`)) subParts.push(`${md.origen} - ${md.destino}`);
+      if (!boarding && md.origen && md.destino && !it.title.includes(`${md.origen} - ${md.destino}`)) subParts.push(`${md.origen} - ${md.destino}`);
+      // Ídem: compañía y línea/número bajo la tira de embarque.
+      if (boarding && md.compania) subParts.push(md.compania);
+      if (boarding && md.numero) subParts.push(md.numero);
       if (md.vagon) subParts.push('Coche ' + md.vagon);
       const seatsStr = Array.isArray(md.asientos)
         ? md.asientos.map(s => [s.nombre, s.asiento].filter(Boolean).join(' ')).filter(Boolean).join(' · ')
@@ -10020,52 +10107,6 @@ const TripDetail = {
       if (customColor) ncNode.style.setProperty('--card-color', customColor);
       return ncNode;
     }
-
-    // --- Traslados con origen y destino: fila tipo tarjeta de embarque ---
-    // "Villa de Leyva  ···🚗 6 h···  Barichara" con la hora debajo de cada
-    // extremo. Sustituye al título y deja la fila sin pastilla ni emoji suelto.
-    const _mdMove = it.metadata || {};
-    const _isMove = ['vuelo', 'transporte', 'coche'].includes(it.type);
-    // Si no hay origen/destino en los datos, se intenta sacar del título
-    // ("Pescadero - Barichara"), que es como se escriben casi siempre.
-    const _ruta = (() => {
-      if (_mdMove.origen && _mdMove.destino) return { o:_mdMove.origen, d:_mdMove.destino };
-      const parts = String(it.title || '').split(/\s+(?:-|–|—|→|->|a)\s+/);
-      if (parts.length === 2) {
-        const o = parts[0].trim(), d = parts[1].trim();
-        if (o && d && o.length <= 34 && d.length <= 34) return { o, d };
-      }
-      return null;
-    })();
-    const boarding = (!isVirtual && _isMove && _ruta) ? (() => {
-      const bt1 = (it.consultation_planned_t1 || it.time || '').slice(0, 5);
-      const bd1 = it.consultation_planned_d1 || it.day_date;
-      const bd2 = it.consultation_planned_d2;
-      const bt2 = (it.consultation_planned_t2 || '').slice(0, 5);
-      const otroDia = !!(bd2 && bd1 && bd2 !== bd1);
-      const mins = (a, b) => {
-        const ma = /^(\d{1,2}):(\d{2})/.exec(a), mb = /^(\d{1,2}):(\d{2})/.exec(b);
-        if (!ma || !mb) return null;
-        let d = (+mb[1] * 60 + +mb[2]) - (+ma[1] * 60 + +ma[2]);
-        if (otroDia && d <= 0) d += 24 * 60;
-        return d > 0 ? d : null;
-      };
-      const dur = (bt1 && bt2) ? mins(bt1, bt2) : null;
-      return el('div', { class:'li-boarding' }, [
-        el('div', { class:'lb-side' }, [
-          el('b', { text: _ruta.o }),
-          el('i', bt1 ? { text: bt1 } : { class:'lb-tbd', text:'—' }),
-        ]),
-        el('div', { class:'lb-mid' }, [
-          el('span', { class:'lb-em', text: planEmoji(it), 'aria-hidden':'true' }),
-          dur ? el('span', { class:'lb-dur', text: fmtDur(dur) }) : null,
-        ].filter(Boolean)),
-        el('div', { class:'lb-side lb-end' }, [
-          el('b', { text: _ruta.d }),
-          el('i', bt2 ? { text: bt2 + (otroDia ? ' +1' : '') } : { class:'lb-tbd', text:'—' }),
-        ]),
-      ]);
-    })() : null;
 
     const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '') + (boarding ? ' has-boarding' : '');
 
