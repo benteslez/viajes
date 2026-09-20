@@ -1385,6 +1385,101 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-group .day-head-main .day-collapse { margin-left:auto; flex:none; }
 /* Si la fila de chips se queda sin nada visible, no ocupa sitio. */
 .day-group .day-meta-row:empty { display:none; }
+
+/* ======================================================================
+   POSTAL DE PLAYA — una playa no es una fila más: se pinta como una
+   postal pequeña (mar arriba, la ola, y la arena abajo con los datos),
+   pero con el alto de una fila normal para no romper el ritmo del día.
+   ====================================================================== */
+.timeline-list .timeline-item.list-item.has-beach {
+  padding:0; gap:0; border:0; margin:8px 0;
+  background:transparent !important; box-shadow:none !important;
+}
+.timeline-list .timeline-item.has-beach .li-main { min-width:0; width:100%; }
+.timeline-list .timeline-item.has-beach .li-title { width:100%; }
+.li-beach {
+  position:relative; width:100%; border-radius:16px; overflow:hidden;
+  box-shadow:0 4px 14px color-mix(in srgb, #0e7490 20%, transparent);
+}
+.bh-mar {
+  position:relative; padding:9px 12px 17px; color:#fff;
+  background:linear-gradient(180deg, #0ea5e9 0%, #38bdf8 100%);
+}
+.bh-sol {
+  position:absolute; right:12px; top:9px; width:16px; height:16px; border-radius:50%;
+  background:radial-gradient(circle, #fef3c7, #fbbf24);
+  box-shadow:0 0 12px rgba(251,191,36,.7);
+}
+.bh-fila { display:flex; align-items:center; gap:10px; min-width:0; }
+.bh-ic {
+  flex:0 0 auto; width:28px; height:28px; border-radius:50%; font-size:15px; line-height:1;
+  border:1.5px solid rgba(255,255,255,.6); background:transparent;
+  display:flex; align-items:center; justify-content:center;
+}
+.bh-n {
+  flex:1; min-width:0; font-size:15px; font-weight:800; letter-spacing:-.02em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  text-shadow:0 1px 6px rgba(2,60,80,.25);
+}
+/* La hora deja sitio al sol, que vive en esa esquina. */
+.bh-h { flex:0 0 auto; text-align:right; margin-right:30px; font-feature-settings:"tnum"; }
+.bh-h b { display:block; font-size:13px; font-weight:800; line-height:1.15; }
+.bh-h i { display:block; font-style:normal; font-size:10.5px; font-weight:700; color:rgba(255,255,255,.75); }
+.bh-ola { position:absolute; left:0; right:0; bottom:-1px; height:16px; display:block; }
+.bh-ola .esp { fill:rgba(255,255,255,.75); }
+.bh-ola .ar  { fill:#fde68a; }
+.bh-arena {
+  display:flex; align-items:center; gap:7px; padding:6px 12px 7px;
+  background:linear-gradient(180deg, #fef3c7, #fde68a);
+  font-size:11.5px; font-weight:700; color:#7c5b13; white-space:nowrap; overflow:hidden;
+}
+.bh-arena > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.bh-arena .bh-sep { opacity:.45; flex:none; }
+.bh-num {
+  flex:none; min-width:16px; height:16px; padding:0 4px; border-radius:999px;
+  background:rgba(124,91,19,.16); color:#7c5b13;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:800; font-feature-settings:"tnum";
+}
+.bh-arena .wx-chip { color:#7c5b13; font-size:11.5px; font-weight:700; flex:none; }
+/* En oscuro la arena baja el brillo (el mar aguanta igual, como el billete). */
+:root[data-tema="oscuro"] .bh-arena { background:linear-gradient(180deg, #e7d3a1, #d9c085); }
+:root[data-tema="oscuro"] .bh-ola .ar { fill:#e7d3a1; }
+/* Playa ya vista: el mar se desleíe y la arena pasa a papel neutro, como el
+   talón arrancado del billete. */
+.timeline-item.visited .bh-mar {
+  background:linear-gradient(180deg,
+    color-mix(in srgb, #0ea5e9 34%, var(--bg-elev)),
+    color-mix(in srgb, #38bdf8 26%, var(--bg-elev)));
+  color:var(--text);
+}
+.timeline-item.visited .li-beach { box-shadow:none; }
+.timeline-item.visited .bh-sol { opacity:.3; }
+.timeline-item.visited .bh-n { text-shadow:none; }
+.timeline-item.visited .bh-h i { color:var(--text-muted); }
+.timeline-item.visited .bh-ic { border-color:color-mix(in srgb, #0e7490 45%, var(--line)); }
+.timeline-item.visited .bh-arena { background:var(--bg-soft); color:var(--text-muted); }
+.timeline-item.visited .bh-ola .ar { fill:var(--bg-soft); }
+.timeline-item.visited .bh-ola .esp { fill:color-mix(in srgb, var(--bg-soft) 60%, transparent); }
+.timeline-item.visited .bh-num { background:var(--line); color:var(--text-muted); }
+/* El aviso de "próximo" entra dentro del mar: sus colores de siempre se
+   perderían sobre el azul. */
+.li-beach .card-next {
+  margin:9px -12px -17px; padding:7px 12px 9px; width:auto; flex-basis:auto;
+  display:flex; align-items:center; gap:9px;
+  border-top:1px dashed rgba(255,255,255,.35); background:rgba(255,255,255,.1);
+}
+.li-beach .card-next .card-next-tag { color:#fff; }
+.li-beach .card-next .ne-count {
+  background:rgba(255,255,255,.18); color:#fff;
+  border-color:rgba(255,255,255,.4);
+}
+.li-beach .card-next .ne-bell { background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.4); color:#fff; }
+.timeline-item.visited .li-beach .card-next { border-top-color:var(--line); }
+.timeline-item.visited .li-beach .card-next .card-next-tag { color:var(--text-muted); }
+.timeline-item.visited .li-beach .card-next .ne-count { background:var(--bg-soft); color:var(--text); border-color:var(--line); }
+.timeline-item.visited .li-beach .card-next .ne-bell { background:var(--bg-elev); border-color:var(--line); color:var(--accent); }
+.timeline-item.visited .bh-arena .wx-chip { color:var(--text-muted); }
 /* ======================================================================
    CARRUSEL DE DÍAS — el planning es un día por pantalla. El scroll vertical
    se queda dentro del día; para cambiar de día se desliza a los lados.
@@ -1680,25 +1775,30 @@ main:has(.plan-pager) { padding-bottom:0; }
 .tk-stub .tk-stub-em { font-size:22px; line-height:1; }
 /* Acciones sobre el papel, en blanco y en el mismo sitio en los dos. El ••• se
    mete en la esquina del talón, por encima de su etiqueta, sin taparla. */
+.timeline-list .timeline-item.has-beach .li-more,
 .timeline-list .timeline-item.has-ticket .li-more,
 .timeline-list .timeline-item.has-keycard .li-more {
   color:rgba(255,255,255,.55); position:absolute; right:5px; top:2px; transform:none;
   width:24px; height:14px; font-size:10px; line-height:1;
 }
+.timeline-list .timeline-item.has-beach .li-actions,
 .timeline-list .timeline-item.has-ticket .li-actions,
 .timeline-list .timeline-item.has-keycard .li-actions {
   position:absolute; right:4px; top:50%; transform:translateY(-50%);
   background:rgba(15,23,42,.55); border-radius:var(--r-pill); padding:2px 4px;
 }
+.timeline-list .timeline-item.has-beach .li-actions .icon-btn,
 .timeline-list .timeline-item.has-ticket .li-actions .icon-btn,
 .timeline-list .timeline-item.has-keycard .li-actions .icon-btn { color:#fff; width:26px; height:26px; }
 .timeline-list .timeline-item.has-ticket.status-cancelado .li-ticket { opacity:.62; }
 /* Al ser el próximo evento, el billete se realza por sí mismo: ni fondo azul
    claro alrededor ni barra lateral. Todo ocurre dentro del billete. */
-.timeline-list .timeline-item.has-ticket.is-next {
+.timeline-list .timeline-item.has-ticket.is-next,
+.timeline-list .timeline-item.has-beach.is-next {
   background:transparent !important; box-shadow:none !important;
 }
-.timeline-list .timeline-item.has-ticket.is-next .li-ticket {
+.timeline-list .timeline-item.has-ticket.is-next .li-ticket,
+.timeline-list .timeline-item.has-beach.is-next .li-beach {
   box-shadow:0 0 0 2px var(--accent), 0 8px 22px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 /* Bloque "Próximo", ya dentro del billete */
@@ -10695,6 +10795,9 @@ const TripDetail = {
             // La sugerencia de ropa ("fresco", "abrigo"…) solo se ve al desplegar el día.
             if (r) span.appendChild(el('span', { class:'wx-ropa', text: ' · ' + r }));
           }
+          // En una playa el tiempo es la mitad del plan: va también en su postal.
+          if (txt) document.querySelectorAll(`.bh-wx[data-day="${CSS.escape(k)}"]`)
+            .forEach(n => { n.textContent = txt; });
         });
       }).catch(() => {});
     });
@@ -10783,7 +10886,7 @@ const TripDetail = {
     ].filter(Boolean));
     // En los traslados, el aviso vive DENTRO del billete: si no, quedaba una
     // segunda caja azul alrededor de la tarjeta.
-    const tkMain = card.querySelector('.li-ticket .tk-main');
+    const tkMain = card.querySelector('.li-ticket .tk-main, .li-beach .bh-mar');
     if (tkMain) tkMain.appendChild(nextBlock); else card.appendChild(nextBlock);
     clearInterval(TripDetail._neTimer);
     // Cuenta atrás en vivo solo si el evento tiene hora; si no (evento de hoy sin hora),
@@ -11474,7 +11577,42 @@ const TripDetail = {
       ]);
     })() : null;
 
-    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '') + (ticket ? ' has-ticket' : '') + (isOut ? ' checkout' : '');
+    // Postal de playa: mar con el nombre y la hora, la ola, y la arena con el
+    // número de la parada, el sitio, lo que dura y el tiempo que hará.
+    const postal = (!isVirtual && it.type === 'playa') ? (() => {
+      const _h = timeRangeText ? String(timeRangeText).split(' – ') : [];
+      const _lugar = (it.place_name && it.place_name !== displayTitle) ? it.place_name : (it.address || '');
+      const _mins = visitMinutes(it);
+      const _datos = [ _lugar, _mins ? fmtDur(_mins) : '' ].filter(Boolean);
+      const arena = [];
+      if (opts.num) arena.push(el('span', { class:'bh-num', text: String(opts.num) }));
+      _datos.forEach((d, i) => {
+        if (i || opts.num) arena.push(el('span', { class:'bh-sep', text:'·' }));
+        arena.push(el('span', { text: d }));
+      });
+      if (it.day_date) arena.push(el('span', { class:'bh-wx wx-chip', data:{ day: it.day_date } }));
+      return el('div', { class:'li-beach' }, [
+        el('div', { class:'bh-mar' }, [
+          el('span', { class:'bh-sol', 'aria-hidden':'true' }),
+          el('div', { class:'bh-fila' }, [
+            _marcable(el('span', { class:'bh-ic', text: planEmoji(it), 'aria-hidden':'true' })),
+            el('span', { class:'bh-n', text: displayTitle }),
+            (it.expense_reminder) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
+            _h.length ? el('span', { class:'bh-h' }, [
+              el('b', { text:_h[0] }),
+              _h[1] ? el('i', { text:_h[1] }) : null,
+            ].filter(Boolean)) : null,
+          ].filter(Boolean)),
+          el('span', { class:'bh-ola', 'aria-hidden':'true', html:
+            '<svg viewBox="0 0 400 13" preserveAspectRatio="none" focusable="false">' +
+            '<path class="esp" d="M0 6 C 40 0, 80 11, 120 6 S 200 0, 240 6 S 320 12, 400 5 L400 13 L0 13 Z"/>' +
+            '<path class="ar" d="M0 9 C 50 4, 90 13, 140 9 S 220 3, 270 9 S 350 13, 400 8 L400 13 L0 13 Z"/></svg>' }),
+        ]),
+        arena.length ? el('div', { class:'bh-arena' }, arena) : null,
+      ].filter(Boolean));
+    })() : null;
+
+    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '') + (ticket ? ' has-ticket' : '') + (postal ? ' has-beach' : '') + (isOut ? ' checkout' : '');
 
 
     const node = el('div', {
@@ -11486,12 +11624,12 @@ const TripDetail = {
       // (sin hora, "—"; en alojamiento, "noche"), para que todas las filas
       // arranquen en la misma columna y el ojo baje en línea recta.
       // Comidas: pastilla redonda naranja con los cubiertos, a la izquierda.
-      (isMeal) ? _marcable(el('div', { class:'li-meal', 'aria-hidden':'true' }, el('span', { text: planEmoji(it) }))) : null,
+      (isMeal && !postal) ? _marcable(el('div', { class:'li-meal', 'aria-hidden':'true' }, el('span', { text: planEmoji(it) }))) : null,
       // Check-out: mismo disco, en gris y con la puerta.
       (isOut) ? el('div', { class:'li-meal li-out', 'aria-hidden':'true' }, el('span', { text:'🚪' })) : null,
       // Lugares: el orden de la ruta, en un círculo ligero.
-      (opts.num && !isVirtual) ? _marcable(el('div', { class:'li-num' }, el('span', { text: String(opts.num) }))) : null,
-      (ticket || isMeal || isOut) ? null : (() => {
+      (opts.num && !isVirtual && !postal) ? _marcable(el('div', { class:'li-num' }, el('span', { text: String(opts.num) }))) : null,
+      (ticket || postal || isMeal || isOut) ? null : (() => {
         if (timeRangeText) {
           const _p = String(timeRangeText).split(' – ');
           const _pill = el('div', { class:'li-time' + (opts.num ? ' li-time-plain' : '') }, [
@@ -11507,14 +11645,14 @@ const TripDetail = {
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
-      (ticket || opts.num || isMeal || isOut) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
+      (ticket || postal || opts.num || isMeal || isOut) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget) }, [
         (isMeal || isOut) ? el('div', { class:'meal-kick' + (isOut ? ' mk-out' : '') }, [
           el('span', { class:'mk-t', text: isOut ? 'Check-out' : typeLabelFor(it) }),
           el('span', { class:'mk-ln' }),
         ]) : null,
-        ticket
-          ? el('div', { class:'li-title', style:{display:'flex', alignItems:'center', gap:'6px'} }, [ ticket ])
+        (ticket || postal)
+          ? el('div', { class:'li-title', style:{display:'flex', alignItems:'center', gap:'6px'} }, [ ticket || postal ])
           : el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
               el('span', { class:'li-title-text', text: displayTitle }),
               (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
@@ -11541,7 +11679,7 @@ const TripDetail = {
             ]),
           ]);
         })() : null,
-        ticket ? null : (() => {
+        (ticket || postal) ? null : (() => {
           const isTransportType = ['vuelo', 'transporte', 'coche'].includes(it.type);
           // Sin repetidos: el lugar y el organizador suelen ser lo mismo.
           const subText = [...new Set(subParts.filter(Boolean))].join(' · ')
@@ -11730,6 +11868,7 @@ const TripDetail = {
             const w = daily[k]; const txt = Weather.chipText(w);
             const span = document.getElementById(`fwx-${k}`);
             if (span && txt) { const r = Weather.ropaHint(w); span.textContent = txt + (r ? ' · ' + r : ''); }
+            if (txt) document.querySelectorAll(`.bh-wx[data-day="${CSS.escape(k)}"]`).forEach(n => { n.textContent = txt; });
           });
         }).catch(() => {});
       });
@@ -12502,7 +12641,7 @@ const TripDetail = {
     const fuente = (() => {
       const row = desde && desde.closest ? (desde.closest('.timeline-item, .list-item, .next-event') || desde) : null;
       if (!row) return null;
-      const pase = row.querySelector('.li-ticket, .li-keycard');
+      const pase = row.querySelector('.li-ticket, .li-keycard, .li-beach');
       const tit  = row.querySelector('.li-title-text, .kc-n, .ne-title, .resv-metric .value, .li-title');
       const nodo = pase || tit;
       if (!nodo) return null;
@@ -12537,7 +12676,7 @@ const TripDetail = {
       if (cerrando) return;
       cerrando = true;
       const sinMovimiento = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const pieza = overlay.querySelector('.dv-pass .li-ticket, .dv-pass .li-keycard') || overlay.querySelector('.dv-title');
+      const pieza = overlay.querySelector('.dv-pass .li-ticket, .dv-pass .li-keycard, .dv-pass .li-beach') || overlay.querySelector('.dv-title');
       const nodo = fuente && fuente.nodo;
       const destino = (nodo && document.contains(nodo)) ? nodo.getBoundingClientRect() : null;
       const alto = window.innerHeight || 0;
@@ -12619,7 +12758,7 @@ const TripDetail = {
       const pase = (() => {
         try {
           const fila0 = this._planningItem(iti, t, {});
-          return fila0.querySelector('.li-ticket, .li-keycard');
+          return fila0.querySelector('.li-ticket, .li-keycard, .li-beach');
         } catch (_) { return null; }
       })();
       if (pase) {
@@ -12857,7 +12996,7 @@ const TripDetail = {
       // El título aterriza en el de la portada, no en el de la barra: si no,
       // se verían dos veces las mismas palabras moviéndose a la vez.
       const destino = fuente.tipo === 'pase'
-        ? overlay.querySelector('.dv-pass .li-ticket, .dv-pass .li-keycard')
+        ? overlay.querySelector('.dv-pass .li-ticket, .dv-pass .li-keycard, .dv-pass .li-beach')
         : (overlay.querySelector('.dv-title') || titulo);
       if (!destino) { overlay.classList.add('dv-listo'); return; }
       const a = fuente.r, b2 = destino.getBoundingClientRect();
