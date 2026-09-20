@@ -1522,6 +1522,28 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   transform:translateY(-50%); background:rgba(15,23,42,.55); border-radius:var(--r-pill); padding:2px 4px; }
 .timeline-list .timeline-item.has-ticket .li-actions .icon-btn { color:#fff; }
 .timeline-list .timeline-item.has-ticket.status-cancelado .li-ticket { opacity:.62; }
+/* Al ser el próximo evento, el billete se realza por sí mismo: ni fondo azul
+   claro alrededor ni barra lateral. Todo ocurre dentro del billete. */
+.timeline-list .timeline-item.has-ticket.is-next {
+  background:transparent !important; box-shadow:none !important;
+}
+.timeline-list .timeline-item.has-ticket.is-next .li-ticket {
+  box-shadow:0 0 0 2px var(--accent), 0 8px 22px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+/* Bloque "Próximo", ya dentro del billete */
+.li-ticket .card-next {
+  margin:11px -13px -12px; padding:8px 13px 9px; width:auto; flex-basis:auto;
+  border-top:1px dashed rgba(255,255,255,.28); background:rgba(255,255,255,.08);
+  display:flex; align-items:center; gap:9px;
+}
+.li-ticket .card-next .card-next-tag { color:rgba(255,255,255,.75); font-size:9.5px; letter-spacing:.14em; }
+.li-ticket .card-next .ne-count {
+  background:rgba(255,255,255,.16); border-color:transparent; color:#fff; font-size:12px; padding:2px 10px;
+}
+.li-ticket .card-next .ne-bell { background:rgba(255,255,255,.16); border-color:transparent; color:#fff; }
+.li-ticket .card-next .ne-bell svg { color:#fff; }
+/* Aviso de gasto pendiente, dentro de la cabecera del billete */
+.tk-warn { flex:none; font-size:12px; line-height:1; }
 
 /* Los tramos y huecos se alinean con la columna del texto */
 .timeline-list .gap-chip { margin-left:62px; }
@@ -10096,11 +10118,15 @@ const TripDetail = {
         try { const p = await Notification.requestPermission(); if (p === 'granted') { Notifications.scheduleAll(); UI.toast('Avisos activados'); Router.render(); } else UI.toast('Permiso de notificaciones denegado'); }
         catch (_) { UI.toast('No se pudieron activar'); }
       } }, el('span', { html: svg('bell') })) : null;
-    card.appendChild(el('div', { class:'card-next' }, [
+    const nextBlock = el('div', { class:'card-next' }, [
       el('span', { class:'card-next-tag', text:'Próximo' }),
       el('span', { class:'ne-count', id:'ne-count', text: nextEventText(nextEv) }),
       bell,
-    ].filter(Boolean)));
+    ].filter(Boolean));
+    // En los traslados, el aviso vive DENTRO del billete: si no, quedaba una
+    // segunda caja azul alrededor de la tarjeta.
+    const tkMain = card.querySelector('.li-ticket .tk-main');
+    if (tkMain) tkMain.appendChild(nextBlock); else card.appendChild(nextBlock);
     clearInterval(TripDetail._neTimer);
     // Cuenta atrás en vivo solo si el evento tiene hora; si no (evento de hoy sin hora),
     // el texto es estático ("hoy").
@@ -10359,6 +10385,7 @@ const TripDetail = {
         el('div', { class:'tk-main' }, [
           el('div', { class:'tk-top' }, [
             el('span', { class:'tk-kind', text: boarding.kind }),
+            (it.expense_reminder && !isVirtual) ? el('span', { class:'tk-warn', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
             (statusDef && !isVirtual) ? el('span', { class:`tk-status s-${status}`, text: statusDef.label }) : null,
           ].filter(Boolean)),
           el('div', { class:'tk-route' + (() => {
@@ -10420,10 +10447,7 @@ const TripDetail = {
       ticket ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
         ticket
-          ? el('div', { class:'li-title', style:{display:'flex', alignItems:'center', gap:'6px'} }, [
-              ticket,
-              (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
-            ].filter(Boolean))
+          ? el('div', { class:'li-title', style:{display:'flex', alignItems:'center', gap:'6px'} }, [ ticket ])
           : el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
               el('span', { class:'li-title-text', text: displayTitle }),
               (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
