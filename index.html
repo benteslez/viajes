@@ -79,7 +79,7 @@
 
 * { box-sizing:border-box; }
 html, body { margin:0; padding:0; }
-html { -webkit-text-size-adjust:100%; }
+html { -webkit-text-size-adjust:100%; overscroll-behavior-x:none; }
 body {
   font-family:var(--font-ui);
   background:var(--bg); color:var(--text);
@@ -87,6 +87,9 @@ body {
   -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   padding-bottom:env(safe-area-inset-bottom);
   overflow-x:hidden;
+  /* Deslizar a los lados pasa de día en el planning: sin esto el navegador se
+     lo queda como gesto de "atrás" y la página se recarga desde arriba. */
+  overscroll-behavior-x:none;
 }
 button, input, select, textarea { font:inherit; color:inherit; }
 a { color:var(--accent); text-decoration:none; }
@@ -1352,14 +1355,20 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* El nombre del alojamiento puede ser larguísimo: se recorta para que los
    chips cortos quepan en la misma línea. */
 .day-group .day-meta-row .day-hotel-chip { max-width:72%; }
+/* Texto suelto, no pastillas: la misma línea que enseña la vista de tarjetas
+   bajo la fecha ("5 paradas · Villa de Leyva - Barichara"). */
+.day-group .day-meta-row { gap:10px; font-size:13px; font-weight:600; color:var(--text-muted); }
 .day-group .day-meta-row > * {
   display:inline-flex; align-items:center; gap:4px; max-width:100%;
-  padding:4px 10px; border-radius:var(--r-pill); font-size:12.5px; font-weight:700;
-  background:var(--bg-elev); border:1px solid var(--line); color:var(--text-muted);
+  padding:0; border:0; background:none; border-radius:0;
+  font-size:13px; font-weight:600; color:var(--text-muted);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.day-group .day-meta-row .day-meta-pill { background:var(--accent-bg); border-color:transparent; color:var(--accent); max-width:70%; }
-.day-group .day-meta-row .day-meta-stops { color:var(--text); }
+.day-group .day-meta-row .day-meta-pill { color:var(--accent); font-weight:700; max-width:70%; }
+.day-group .day-meta-row .day-meta-stops { color:var(--text-muted); }
+/* Fotos, añadir y pantalla completa, al final de la misma fila */
+.day-group .day-meta-row .day-actions { margin-left:auto; display:flex; gap:2px; flex:none; }
+.day-group .day-meta-row .day-actions .icon-btn { width:32px; height:32px; }
 .day-group .day-meta-row .wx-chip:empty { display:none; }
 .day-group .day-meta-row .day-route-summary:empty { display:none; }
 /* El chevron se queda pegado a la derecha de la primera línea. */
@@ -1369,7 +1378,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Al saltar a un día desde la tira, que no quede tapado por ella. */
 .day-group { scroll-margin-top:150px; }
 .day-head-txt .day-date .day-wd::first-letter { text-transform:uppercase; }
-.day-group .day-meta-row { padding:0 15px; margin:10px 0 0; }
+.day-group .day-meta-row { padding:0 15px; margin:6px 0 0; }
 .day-group .day-note-card { margin:10px 15px 0; }
 .day-group .timeline-list { padding:4px 9px 12px; gap:0; }
 /* Dentro de la tarjeta el ancho es oro: se recorta el acolchado lateral de
@@ -2369,7 +2378,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-head-wx { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-left:auto; }
 .day-head-wx .day-title-pill { font-size:12px; padding:3px 10px; max-width:100%; }
 .day-meta-row:empty { display:none; }
-.day-group.collapsed .day-meta-row:not(:has(.day-meta-stops)) { display:none; }
+.day-group.collapsed .day-meta-row:not(:has(.day-meta-stops, .day-actions)) { display:none; }
 .day-collapse { display:inline-flex; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
 .day-collapse svg { width:18px; height:18px; }
 .day-group.collapsed .day-collapse { transform:rotate(-90deg); }
@@ -5361,6 +5370,7 @@ const ICONS = {
   grip:    '<circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
   clock:   '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   bell:    '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+  expand:  '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>',
   copy:    '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
   arrup:   '<polyline points="18 15 12 9 6 15"/>',
@@ -9999,11 +10009,12 @@ const TripDetail = {
       onclick: () => TripDetail.openPlanningCalendar(t) }, [ el('span', { html: svg('cal') }), el('span', { text:'Calendario' }) ]);
     if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ calBtn, flashBtn, collapseAllBtn ]));
 
-    // Tira de días (pegada arriba): un toque abre la tarjeta de ese día,
-    // desplegándose desde el propio cuadradito.
+    // Tira de días (pegada arriba): un toque BAJA a ese día en la misma lista.
+    // Antes abría la vista de tarjetas a pantalla completa y se perdía el hilo
+    // del scroll; la pantalla completa vive ahora en su propio botón.
     const dayStrip = (keys.length > 1) ? TripDetail._dayStrip(t, keys, byDay, {
       active: keys.includes(todayIso()) ? todayIso() : null,
-      onPick: (k, pill) => TripDetail.openPlanningFlashcards(t, k, { fromEl: pill }),
+      onPick: (k) => TripDetail._scrollToDay(k, { root }),
     }) : null;
     if (dayStrip) root.appendChild(dayStrip);
 
@@ -10071,9 +10082,11 @@ const TripDetail = {
           (k === 'sin-fecha')
             ? el('span', { class:'day-date', text:'Sin fecha' })
             : el('span', { class:'day-date' }, [
-                el('span', { class:'day-wd', text: fmtDate(k, { weekday:'long' }) }),
+                // Fecha larga, la misma que en la vista de tarjetas: las dos
+                // pantallas enseñan el día igual.
+                el('span', { class:'day-wd', text: fmtDate(k, { weekday:'long' }) + ',' }),
                 ' ',
-                el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} ${fmtDate(k, { month:'short' }).replace(/\.$/, '')}` }),
+                el('span', { class:'day-dm', text: `${fmtDate(k, { day:'numeric' })} de ${fmtDate(k, { month:'long' })}` }),
               ]),
         ].filter(Boolean)),
         (k === todayStr) ? el('span', { class:'day-today-badge', text:'Hoy' }) : null,
@@ -10102,9 +10115,9 @@ const TripDetail = {
       if (k !== 'sin-fecha' && _stops > 0) metaKids.push(el('span', { class:'day-meta-stops', text: `${_stops} ${_stops === 1 ? 'parada' : 'paradas'}` }));
       const metaRow = el('div', { class:'day-meta-row' }, metaKids);
 
-      const head = el('div', { class:'day-head' }, [
-        headMain,
-        el('div', { class:'day-actions' }, [
+      // Las acciones van en la fila de abajo, no al lado del título: con la fecha
+      // larga ("Lunes, 12 de octubre") no cabían y el título partía en dos líneas.
+      const acciones = el('div', { class:'day-actions' }, [
           btnFotos,
           // Optimizar el orden de las paradas del día por cercanía (si hay ≥3 con coords).
           (canEdit() && k !== 'sin-fecha' && byDay[k].filter(i => i.lat != null && i.lng != null && !i._virtual).length >= 3) ? el('button', {
@@ -10119,8 +10132,17 @@ const TripDetail = {
             html: svg('plus'),
             'aria-label':'Añadir evento a este día',
           }) : null,
-        ].filter(Boolean)),
-      ].filter(Boolean));
+          // Pantalla completa de ESTE día: la vista de tarjetas, donde se pasa
+          // de día deslizando. Es la puerta que antes era el cuadradito de la tira.
+          el('button', {
+            class:'icon-btn day-full-btn', title:'Ver este día a pantalla completa',
+            'aria-label':'Ver este día a pantalla completa',
+            html: svg('expand'),
+            onclick: (e) => TripDetail.openPlanningFlashcards(t, k, { fromEl: e.currentTarget.closest('.day-group') || e.currentTarget }),
+          }),
+        ].filter(Boolean));
+      const head = el('div', { class:'day-head' }, [ headMain ]);
+      metaRow.appendChild(acciones);
       head.appendChild(metaRow);
       g.appendChild(head);
 
@@ -10135,6 +10157,7 @@ const TripDetail = {
     }
 
     setTimeout(() => TripDetail._wirePlanningDnD(root, t), 0);
+    TripDetail._wirePlanningSwipe(root, keys);
 
     // La tira sigue al scroll: el cuadradito del día que se está mirando queda
     // marcado y centrado. Sin observer (o sin soporte) simplemente no pasa nada.
@@ -10145,7 +10168,7 @@ const TripDetail = {
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
         if (!vis) return;
         const k = vis.target.dataset.day;
-        if (k && k !== lastK) { lastK = k; dayStrip._focusDay(k); }   // sin animación
+        if (k && k !== lastK) { lastK = k; TripDetail._diaVisible = k; dayStrip._focusDay(k); }   // sin animación
       }, { rootMargin: '-150px 0px -55% 0px', threshold: 0 });
       root.querySelectorAll('.day-group').forEach(g => obs.observe(g));
       TripDetail._dayStripObs?.disconnect?.();
@@ -10282,6 +10305,85 @@ const TripDetail = {
       }, 1000);
     }
     return true;
+  },
+
+  // Baja (o sube) hasta un día del planning con un desplazamiento corto y de
+  // duración fija: da igual que el salto sea de un día o de diez, siempre tarda
+  // lo mismo. El scroll nativo suave se alarga con la distancia y en un viaje de
+  // tres semanas se hacía eterno.
+  _scrollToDay(k, opts) {
+    opts = opts || {};
+    const esc = (x) => (window.CSS && CSS.escape) ? CSS.escape(x) : x;
+    const raiz = opts.root || document;
+    const g = raiz.querySelector(`.day-group[data-day="${esc(k)}"]`);
+    if (!g) return false;
+    // Si el día estaba plegado o escondido (viaje en curso esconde los pasados),
+    // no tiene sentido llevar ahí al usuario y dejarle mirando una línea.
+    if (g.classList.contains('collapsed')) {
+      g.classList.remove('collapsed');
+      TripDetail._collapsedDays.delete(k);
+    }
+    if (!g.offsetParent && g.closest('.plan-root, #view-root')) {
+      const cont = g.closest('#view-root') || document.body;
+      cont.classList.add('show-past');
+    }
+    const sc = document.scrollingElement || document.documentElement;
+    const tope = Math.max(0, sc.scrollHeight - window.innerHeight);
+    const destino = Math.max(0, Math.min(tope, sc.scrollTop + g.getBoundingClientRect().top - 150));
+    const inicio = sc.scrollTop, delta = destino - inicio;
+    cancelAnimationFrame(TripDetail._scrollRaf || 0);
+    if (Math.abs(delta) < 2) return true;
+    const dur = opts.duracion || 340;
+    const t0 = performance.now();
+    const paso = (ahora) => {
+      const p = Math.min(1, (ahora - t0) / dur);
+      sc.scrollTop = inicio + delta * (1 - Math.pow(1 - p, 3));   // easeOutCubic
+      if (p < 1) TripDetail._scrollRaf = requestAnimationFrame(paso);
+    };
+    TripDetail._scrollRaf = requestAnimationFrame(paso);
+    TripDetail._diaVisible = k;
+    return true;
+  },
+
+  // Deslizar a los lados sobre el planning pasa de día, igual que en la vista de
+  // tarjetas, pero moviendo el scroll en vez de cambiar de pantalla. No se toca
+  // el gesto vertical: solo se mide al soltar, sin preventDefault.
+  _wirePlanningSwipe(root, keys) {
+    const dias = (keys || []).filter(k => k !== 'sin-fecha');
+    if (dias.length < 2) return;
+    let x0 = 0, y0 = 0, t0 = 0, vale = false;
+    root.addEventListener('touchstart', (e) => {
+      vale = false;
+      if (e.touches.length !== 1) return;
+      const tg = e.target;
+      // La tira de días y los campos ya usan el gesto horizontal para lo suyo.
+      if (tg && tg.closest && tg.closest('.day-strip, input, textarea, select, .flashview')) return;
+      const px = e.touches[0].clientX;
+      // Los bordes son del sistema: ahí el deslizamiento horizontal es "atrás"
+      // del navegador y si lo pisamos, la página se va y vuelve al principio.
+      if (px < 32 || px > (window.innerWidth || 0) - 32) return;
+      x0 = px; y0 = e.touches[0].clientY; t0 = Date.now(); vale = true;
+    }, { passive: true });
+    root.addEventListener('touchend', (e) => {
+      if (!vale) return;
+      vale = false;
+      const p = e.changedTouches && e.changedTouches[0];
+      if (!p) return;
+      const dx = p.clientX - x0, dy = p.clientY - y0;
+      if (Date.now() - t0 > 700) return;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+      const actual = TripDetail._diaVisible;
+      let i = dias.indexOf(actual);
+      if (i < 0) {
+        // Sin día marcado aún: el primero que asome por arriba.
+        const g = [...root.querySelectorAll('.day-group')]
+          .find(x => x.getBoundingClientRect().bottom > 160);
+        i = g ? dias.indexOf(g.dataset.day) : 0;
+        if (i < 0) i = 0;
+      }
+      const j = Math.max(0, Math.min(dias.length - 1, i + (dx < 0 ? 1 : -1)));
+      if (j !== i) TripDetail._scrollToDay(dias[j], { root });
+    }, { passive: true });
   },
 
   _planningItem(it, t, opts) {
