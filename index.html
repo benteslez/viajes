@@ -1411,23 +1411,69 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   background:transparent; border-color:transparent; box-shadow:none; border-radius:12px;
 }
 .timeline-list .timeline-item.list-item + .timeline-item.list-item { margin-top:0; }
+/* Separador finísimo entre paradas consecutivas: da estructura sin devolver
+   las cajas. No sale si entre medias hay un tramo, un hueco o una franja. */
+.timeline-list .timeline-item.list-item + .timeline-item.list-item::after {
+  content:''; position:absolute; left:8px; right:8px; top:0; height:1px;
+  background:var(--line-soft); pointer-events:none;
+}
+.timeline-list .timeline-item.type-hotel:last-child::after { display:none; }
 .timeline-list .timeline-item.status-por_iniciar { box-shadow: inset 2.5px 0 0 #f59e0b; }
 .timeline-list .timeline-item.status-en_consulta { box-shadow: inset 2.5px 0 0 #3b82f6; }
 .timeline-list .timeline-item.status-confirmado  { box-shadow: inset 2.5px 0 0 #10b981; }
 .timeline-list .timeline-item.status-cancelado   { box-shadow: inset 2.5px 0 0 #ef4444; }
 .timeline-list .timeline-item.has-custom-color   { box-shadow: inset 3px 0 0 var(--card-color); }
 .timeline-list .timeline-item.is-next { box-shadow: inset 3px 0 0 var(--accent) !important; }
-/* Los transportes cruzan el día: se ven como una banda, no como una parada más.
-   (Gana al fondo neutro que el estado "confirmado" pone en el resto de vistas.) */
+/* Los transportes se distinguen por el COLOR DEL TEXTO, no por un fondo:
+   así la lista respira y el traslado se sigue viendo de lejos. */
+:root { --li-move:#1e40af; }
+:root[data-tema="oscuro"] { --li-move:#93c5fd; }
+@media (prefers-color-scheme: dark) { :root:not([data-tema]) { --li-move:#93c5fd; } }
 .timeline-list .timeline-item.list-item.type-transporte,
 .timeline-list .timeline-item.list-item.type-vuelo,
-.timeline-list .timeline-item.list-item.type-coche {
-  background:color-mix(in srgb, var(--tipo-transporte) 6%, var(--bg-elev));
-  border:0; margin:3px 0;
-}
+.timeline-list .timeline-item.list-item.type-coche { background:transparent; border:0; margin:2px 0; }
+.timeline-list .timeline-item.type-transporte .li-title-text,
+.timeline-list .timeline-item.type-vuelo .li-title-text,
+.timeline-list .timeline-item.type-coche .li-title-text { color:var(--li-move); }
 .timeline-list .timeline-item.list-item.type-transporte.is-next,
 .timeline-list .timeline-item.list-item.type-vuelo.is-next,
 .timeline-list .timeline-item.list-item.type-coche.is-next { background:var(--accent-bg) !important; }
+
+/* Traslado con origen y destino: tira tipo tarjeta de embarque. */
+.li-boarding { display:flex; align-items:center; gap:10px; width:100%; min-width:0; }
+.li-boarding .lb-side { min-width:0; flex:1 1 0; display:flex; flex-direction:column; gap:1px; }
+.li-boarding .lb-side.lb-end { text-align:right; align-items:flex-end; }
+.li-boarding .lb-side b {
+  font-size:15px; font-weight:800; letter-spacing:-.02em; color:var(--li-move);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+}
+.li-boarding .lb-side i {
+  font-style:normal; font-size:12.5px; font-weight:700; color:var(--text-muted);
+  font-feature-settings:"tnum";
+}
+/* Extremo sin hora todavía: guion, para que los dos lados se alineen. */
+.li-boarding .lb-side i.lb-tbd { color:var(--line); }
+.li-boarding .lb-mid {
+  flex:0 1 auto; min-width:56px; position:relative; display:flex; flex-direction:column;
+  align-items:center; gap:2px; padding:0 2px;
+}
+.li-boarding .lb-mid::before {
+  content:''; position:absolute; left:-4px; right:-4px; top:9px; height:2px;
+  background:repeating-linear-gradient(90deg, color-mix(in srgb, var(--li-move) 40%, transparent) 0 4px, transparent 4px 8px);
+}
+.li-boarding .lb-em { font-size:15px; line-height:1; position:relative; z-index:1;
+  background:var(--bg-elev); padding:0 4px; }
+.li-boarding .lb-dur { font-size:10.5px; font-weight:800; color:var(--li-move); white-space:nowrap; }
+/* En la fila de embarque el título ocupa todo el ancho (no hay pastilla). */
+.timeline-list .timeline-item.has-boarding .li-title { width:100%; }
+/* Estado y datos extra, alineados a la derecha bajo la hora de llegada. */
+.timeline-list .timeline-item.has-boarding .li-corner { justify-content:flex-end; margin-top:2px; }
+.timeline-list .timeline-item.has-boarding .li-subrow { text-align:right; }
+.timeline-list .timeline-item.has-boarding { padding-left:12px; }
+/* El emoji del centro tapa la línea de puntos: hereda el fondo de la fila. */
+.timeline-list .timeline-item.has-boarding.is-next .lb-em { background:var(--accent-bg); }
+.timeline-list .timeline-item.has-boarding.acts-open .lb-em { background:var(--bg-soft); }
+.day-group .timeline-item.has-boarding .lb-em { background:var(--bg-elev); }
 .day-group .plan-part { margin:14px 0 6px 6px; display:flex; align-items:center; gap:8px; }
 .plan-part .pp-ic { font-size:12px; line-height:1; }
 .plan-part .pp-line { flex:1; height:1px; background:var(--line-soft); }
@@ -1733,7 +1779,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   font-size:13px; font-weight:600; color:var(--text-muted); }
 .flash-note-title { font-size:12.5px; font-weight:700; color:var(--accent); }
 .flash-body {
-  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y;
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
   display:flex; flex-direction:column; gap:8px; overscroll-behavior-y:contain;
   /* Hueco al final: si no, la última parada queda pegada al borde y debajo
      del botón flotante de añadir. */
@@ -9975,7 +10021,53 @@ const TripDetail = {
       return ncNode;
     }
 
-    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '');
+    // --- Traslados con origen y destino: fila tipo tarjeta de embarque ---
+    // "Villa de Leyva  ···🚗 6 h···  Barichara" con la hora debajo de cada
+    // extremo. Sustituye al título y deja la fila sin pastilla ni emoji suelto.
+    const _mdMove = it.metadata || {};
+    const _isMove = ['vuelo', 'transporte', 'coche'].includes(it.type);
+    // Si no hay origen/destino en los datos, se intenta sacar del título
+    // ("Pescadero - Barichara"), que es como se escriben casi siempre.
+    const _ruta = (() => {
+      if (_mdMove.origen && _mdMove.destino) return { o:_mdMove.origen, d:_mdMove.destino };
+      const parts = String(it.title || '').split(/\s+(?:-|–|—|→|->|a)\s+/);
+      if (parts.length === 2) {
+        const o = parts[0].trim(), d = parts[1].trim();
+        if (o && d && o.length <= 34 && d.length <= 34) return { o, d };
+      }
+      return null;
+    })();
+    const boarding = (!isVirtual && _isMove && _ruta) ? (() => {
+      const bt1 = (it.consultation_planned_t1 || it.time || '').slice(0, 5);
+      const bd1 = it.consultation_planned_d1 || it.day_date;
+      const bd2 = it.consultation_planned_d2;
+      const bt2 = (it.consultation_planned_t2 || '').slice(0, 5);
+      const otroDia = !!(bd2 && bd1 && bd2 !== bd1);
+      const mins = (a, b) => {
+        const ma = /^(\d{1,2}):(\d{2})/.exec(a), mb = /^(\d{1,2}):(\d{2})/.exec(b);
+        if (!ma || !mb) return null;
+        let d = (+mb[1] * 60 + +mb[2]) - (+ma[1] * 60 + +ma[2]);
+        if (otroDia && d <= 0) d += 24 * 60;
+        return d > 0 ? d : null;
+      };
+      const dur = (bt1 && bt2) ? mins(bt1, bt2) : null;
+      return el('div', { class:'li-boarding' }, [
+        el('div', { class:'lb-side' }, [
+          el('b', { text: _ruta.o }),
+          el('i', bt1 ? { text: bt1 } : { class:'lb-tbd', text:'—' }),
+        ]),
+        el('div', { class:'lb-mid' }, [
+          el('span', { class:'lb-em', text: planEmoji(it), 'aria-hidden':'true' }),
+          dur ? el('span', { class:'lb-dur', text: fmtDur(dur) }) : null,
+        ].filter(Boolean)),
+        el('div', { class:'lb-side lb-end' }, [
+          el('b', { text: _ruta.d }),
+          el('i', bt2 ? { text: bt2 + (otroDia ? ' +1' : '') } : { class:'lb-tbd', text:'—' }),
+        ]),
+      ]);
+    })() : null;
+
+    const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '') + (boarding ? ' has-boarding' : '');
 
     const node = el('div', {
       class: cls,
@@ -9985,7 +10077,7 @@ const TripDetail = {
       // Pastilla de hora a la izquierda, del color del tipo. Siempre hay una
       // (sin hora, "—"; en alojamiento, "noche"), para que todas las filas
       // arranquen en la misma columna y el ojo baje en línea recta.
-      (() => {
+      boarding ? null : (() => {
         if (timeRangeText) {
           const _p = String(timeRangeText).split(' – ');
           return el('div', { class:'li-time' }, [
@@ -9999,12 +10091,17 @@ const TripDetail = {
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
-      el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
+      boarding ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
-        el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
-          el('span', { class:'li-title-text', text: displayTitle }),
-          (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
-        ].filter(Boolean)),
+        boarding
+          ? el('div', { class:'li-title', style:{display:'flex', alignItems:'center', gap:'6px'} }, [
+              boarding,
+              (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
+            ].filter(Boolean))
+          : el('div', { class:'li-title', style:{display:'flex', alignItems:'center', flexWrap:'nowrap', gap:'6px'} }, [
+              el('span', { class:'li-title-text', text: displayTitle }),
+              (it.expense_reminder && !isVirtual) ? el('span', { class:'expense-warn-flag', title:'Pendiente de añadir gasto', text:'⚠️' }) : null,
+            ].filter(Boolean)),
         // 2ª fila: hora (a la izquierda) + datos. En transporte/vuelo/coche NO se pone
         // el label genérico ("Transporte"): solo datos reales (compañía, asiento,
         // localizador, ruta…). Si no hay nada, la fila queda vacía pero reserva alto.
