@@ -6030,6 +6030,10 @@ const Router = {
       Router._setDocTitle();
       // Asociar labels en lo renderizado
       autoLinkLabels(root);
+      // La vista de tarjetas es una capa aparte que este render no toca: si está
+      // abierta, se refresca con ella para que cualquier cambio (tipo, hora, borrado…)
+      // se vea al momento, sin cerrarla y volver a entrar.
+      if (typeof TripDetail?._flashRefresh === 'function') { try { TripDetail._flashRefresh(); } catch (_) {} }
       return;
     } catch (err) {
       console.error('Router.render', err);
@@ -10986,7 +10990,19 @@ const TripDetail = {
     // se registra aquí: al guardar o borrar una parada, el editor la avisa y vuelve a
     // leer de la base. Sin esto las tarjetas quedaban con los datos de antes y el
     // siguiente clic reabría el evento viejo, deshaciendo el cambio al guardar.
-    const flashRefresh = () => { renderCards(currentDayKey()); };
+    let refreshing = false;
+    const flashRefresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const day = currentDayKey();
+        const sel = `.flash-card[data-day="${(window.CSS && CSS.escape) ? CSS.escape(day || '') : day}"] .flash-body`;
+        const top = track.querySelector(sel)?.scrollTop || 0;
+        await renderCards(day);
+        // Volver al mismo punto: repintar no debe devolverte al principio del día.
+        if (top) { const b = track.querySelector(sel); if (b) b.scrollTop = top; }
+      } finally { refreshing = false; }
+    };
     TripDetail._flashRefresh = flashRefresh;
 
     const teardown = () => {
@@ -12943,7 +12959,6 @@ const TripDetail = {
         setTimeout(() => window.scrollTo(0, sy), 90);
         // Permite a quien abrió el editor (p. ej. la vista tarjetas) refrescarse.
         if (opts && typeof opts.onSaved === 'function') { try { opts.onSaved(); } catch (_) {} }
-        if (typeof TripDetail._flashRefresh === 'function') { try { TripDetail._flashRefresh(); } catch (_) {} }
       }
     };
 
@@ -12984,7 +12999,6 @@ const TripDetail = {
       if (!ok) return;
       await DB.remove('planning_items', it.id);
       UI.closeSheet(); UI.toast('A papelera'); Router.render();
-      if (typeof TripDetail._flashRefresh === 'function') { try { TripDetail._flashRefresh(); } catch (_) {} }
     }}, 'Borrar') : null;
 
     // Duplicar — disponible al editar un evento existente.
