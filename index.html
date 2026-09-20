@@ -1155,6 +1155,7 @@ h2.section-title {
 .timeline-item.status-cancelado   { box-shadow: inset 3px 0 0 #ef4444, var(--sh-1); opacity:.78; }
 .timeline-item.has-custom-color   { box-shadow: inset 4px 0 0 var(--card-color), var(--sh-1); }
 .timeline-item.is-next { flex-wrap:wrap; background: var(--accent-bg) !important; box-shadow: inset 4px 0 0 var(--accent), var(--sh-1) !important; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.timeline-list .timeline-item.is-next { border-color:transparent; }
 .timeline-item.is-next .item-emoji { background: color-mix(in srgb, var(--accent) 20%, var(--bg-elev)) !important; }
 .card-next { flex-basis:100%; width:100%; display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
 .card-next-tag { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
@@ -1370,7 +1371,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   background:var(--bg-elev); border:1px solid var(--line); color:var(--text-muted);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.day-group .day-meta-row .day-meta-pill { background:var(--accent-bg); border-color:transparent; color:var(--accent); }
+.day-group .day-meta-row .day-meta-pill { background:var(--accent-bg); border-color:transparent; color:var(--accent); max-width:70%; }
 .day-group .day-meta-row .day-meta-stops { color:var(--text); }
 .day-group .day-meta-row .wx-chip:empty { display:none; }
 .day-group .day-meta-row .day-route-summary:empty { display:none; }
@@ -1391,26 +1392,38 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .day-group .timeline-item .li-time { min-width:38px; }
 .day-group.collapsed .day-head { border-bottom:0; }
 .day-group.collapsed .day-meta-row { padding-bottom:12px; }
-/* Dentro de la tarjeta del día, las paradas son filas limpias (no tarjeta
-   dentro de tarjeta). La barra de estado a la izquierda se mantiene. */
-.day-group .timeline-item.list-item {
+/* Bloque de paradas suelto (resumen del día): lleva su propio panel. */
+.timeline-list.tl-panel {
+  background:var(--bg-elev); border:1px solid var(--line-soft); border-radius:18px;
+  padding:6px 9px 10px; box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+.timeline-list.tl-panel > .timeline-item.type-hotel:last-child {
+  margin:8px -9px -10px; padding:11px 15px; border-radius:0 0 17px 17px;
+  background:color-mix(in srgb, var(--tipo-hotel) 7%, var(--bg-elev));
+  border-top:1px solid color-mix(in srgb, var(--tipo-hotel) 16%, transparent);
+}
+
+/* Las paradas NO son tarjetas: son filas dentro del panel del día. Sin borde,
+   sin sombra y sin fondo, para que el día se lea como un bloque y no como
+   ocho cajitas apiladas. El único color es la pastilla de la hora y, a la
+   izquierda, una barra fina con el estado. */
+.timeline-list .timeline-item.list-item {
   background:transparent; border-color:transparent; box-shadow:none; border-radius:12px;
 }
-.day-group .timeline-item.list-item + .timeline-item.list-item { margin-top:1px; }
-.day-group .timeline-item.status-por_iniciar { box-shadow: inset 3px 0 0 #f59e0b; }
-.day-group .timeline-item.status-en_consulta { box-shadow: inset 3px 0 0 #3b82f6; }
-.day-group .timeline-item.status-confirmado  { box-shadow: inset 3px 0 0 #10b981; }
-.day-group .timeline-item.status-cancelado   { box-shadow: inset 3px 0 0 #ef4444; }
-.day-group .timeline-item.has-custom-color   { box-shadow: inset 4px 0 0 var(--card-color); }
-.day-group .timeline-item.is-next { box-shadow: inset 4px 0 0 var(--accent) !important; }
+.timeline-list .timeline-item.list-item + .timeline-item.list-item { margin-top:0; }
+.timeline-list .timeline-item.status-por_iniciar { box-shadow: inset 2.5px 0 0 #f59e0b; }
+.timeline-list .timeline-item.status-en_consulta { box-shadow: inset 2.5px 0 0 #3b82f6; }
+.timeline-list .timeline-item.status-confirmado  { box-shadow: inset 2.5px 0 0 #10b981; }
+.timeline-list .timeline-item.status-cancelado   { box-shadow: inset 2.5px 0 0 #ef4444; }
+.timeline-list .timeline-item.has-custom-color   { box-shadow: inset 3px 0 0 var(--card-color); }
+.timeline-list .timeline-item.is-next { box-shadow: inset 3px 0 0 var(--accent) !important; }
 /* Los transportes cruzan el día: se ven como una banda, no como una parada más.
    (Gana al fondo neutro que el estado "confirmado" pone en el resto de vistas.) */
 .timeline-list .timeline-item.list-item.type-transporte,
 .timeline-list .timeline-item.list-item.type-vuelo,
 .timeline-list .timeline-item.list-item.type-coche {
-  background:color-mix(in srgb, var(--tipo-transporte) 8%, var(--bg-elev));
-  border:1px solid color-mix(in srgb, var(--tipo-transporte) 20%, transparent);
-  margin:5px 0;
+  background:color-mix(in srgb, var(--tipo-transporte) 6%, var(--bg-elev));
+  border:0; margin:3px 0;
 }
 .timeline-list .timeline-item.list-item.type-transporte.is-next,
 .timeline-list .timeline-item.list-item.type-vuelo.is-next,
@@ -1726,9 +1739,20 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
      del botón flotante de añadir. */
   padding-bottom:calc(120px + env(safe-area-inset-bottom));
 }
-/* La tarjeta del día en la vista deslizable usa el mismo lenguaje que la lista. */
-.flash-card .flash-body > .timeline-list { padding:0; }
-.flash-card .timeline-item.list-item { background:var(--bg-elev); border:1px solid var(--line-soft); }
+/* La vista deslizable usa el mismo lenguaje que la lista: UN panel por día
+   con las paradas dentro, no una tarjeta por parada. */
+.flash-card .flash-body > .timeline-list {
+  background:var(--bg-elev); border:1px solid var(--line-soft); border-radius:20px;
+  padding:6px 9px 10px; box-shadow:0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.05);
+  flex:0 0 auto;
+}
+:root[data-tema="oscuro"] .flash-card .flash-body > .timeline-list { box-shadow:0 1px 2px rgba(0,0,0,.3); }
+/* El alojamiento cierra el panel, igual que en la lista */
+.flash-card .timeline-list > .timeline-item.type-hotel:last-child {
+  margin:8px -9px -10px; padding:11px 15px; border-radius:0 0 19px 19px;
+  background:color-mix(in srgb, var(--tipo-hotel) 7%, var(--bg-elev));
+  border-top:1px solid color-mix(in srgb, var(--tipo-hotel) 16%, transparent);
+}
 .flash-body .drag-handle { display:none; }
 .flash-empty { margin:auto; text-align:center; color:var(--text-muted); display:flex; flex-direction:column; align-items:center; gap:10px; }
 .flash-empty-emoji { font-size:40px; opacity:.7; }
@@ -8744,7 +8768,9 @@ const TripDetail = {
       }
 
       if (dayItems.length) {
-        const list = el('div', { class:'list timeline-list' });
+        // `tl-panel`: como las paradas ya no son tarjetas, el bloque del día
+        // necesita su propio panel (en el planning lo pone la tarjeta del día).
+        const list = el('div', { class:'list timeline-list tl-panel' });
         dayItems.forEach(it => {
           const card = TripDetail._planningItem(it, t);
           // Resaltar en azul la tarjeta del PRÓXIMO evento (con cuenta atrás), en vez de una barra aparte.
