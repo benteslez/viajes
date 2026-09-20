@@ -1268,14 +1268,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   letter-spacing:-.02em; line-height:1; display:none; align-items:center; justify-content:center;
 }
 .timeline-list .timeline-item .li-more { display:inline-flex; }
-.timeline-list .timeline-item .li-actions { display:none; }
-.timeline-list .timeline-item.acts-open { background:var(--bg-soft); }
-.timeline-list .timeline-item.acts-open .li-actions { display:flex; }
-.timeline-list .timeline-item.acts-open .li-more { display:none; }
-@media (hover:hover) and (pointer:fine) {
-  .timeline-list .timeline-item:hover .li-actions { display:flex; }
-  .timeline-list .timeline-item:hover .li-more { display:none; }
-}
 /* Los tramos y huecos se alinean con la columna del texto */
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
@@ -1553,7 +1545,6 @@ main:has(.plan-pager) { padding-bottom:0; }
 /* Dentro de la tarjeta el ancho es oro: se recorta el acolchado lateral de
    las filas para que los títulos no se partan en tres líneas. */
 .day-group .timeline-item.list-item { padding:9px 8px; gap:9px; }
-.day-group .timeline-item .li-actions { gap:2px; }
 .day-group .timeline-item .li-time { min-width:38px; }
 .day-group.collapsed .day-head { border-bottom:0; }
 .day-group.collapsed .day-meta-row { padding-bottom:12px; }
@@ -1820,15 +1811,6 @@ main:has(.plan-pager) { padding-bottom:0; }
      veía pero no se podía pulsar, y el toque abría la ficha. */
   z-index:3;
 }
-.timeline-list .timeline-item.has-beach .li-actions,
-.timeline-list .timeline-item.has-ticket .li-actions,
-.timeline-list .timeline-item.has-keycard .li-actions {
-  position:absolute; right:4px; top:50%; transform:translateY(-50%); z-index:3;
-  background:rgba(15,23,42,.55); border-radius:var(--r-pill); padding:2px 4px;
-}
-.timeline-list .timeline-item.has-beach .li-actions .icon-btn,
-.timeline-list .timeline-item.has-ticket .li-actions .icon-btn,
-.timeline-list .timeline-item.has-keycard .li-actions .icon-btn { color:#fff; width:26px; height:26px; }
 .timeline-list .timeline-item.has-ticket.status-cancelado .li-ticket { opacity:.62; }
 /* Al ser el próximo evento, el billete se realza por sí mismo: ni fondo azul
    claro alrededor ni barra lateral. Todo ocurre dentro del billete. */
@@ -1918,7 +1900,6 @@ main:has(.plan-pager) { padding-bottom:0; }
 .timeline-list .timeline-item.has-boarding.is-next .lb-dot-a { background:var(--accent-bg); }
 .timeline-list .timeline-item.has-boarding.is-next .lb-dot-a { box-shadow:0 0 0 2px var(--li-move) inset, 0 0 0 3px var(--accent-bg); }
 .timeline-list .timeline-item.has-boarding.is-next .lb-dot-b { box-shadow:0 0 0 3px var(--accent-bg); }
-.timeline-list .timeline-item.has-boarding.acts-open .lb-em { background:var(--bg-soft); }
 .day-group .plan-part { margin:14px 0 6px 6px; display:flex; align-items:center; gap:8px; }
 .plan-part .pp-ic { font-size:12px; line-height:1; }
 .plan-part .pp-line { flex:1; height:1px; background:var(--line-soft); }
@@ -3170,16 +3151,13 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 .day-head { gap:11px; }
 .day-head .day-date { font-size:21px; font-weight:700; letter-spacing:-.022em; }
 .day-head .day-num { font-weight:700; opacity:.85; }
-/* Botones de acción del día y de las tarjetas: sin borde, gris suave (estilo SF). */
-.day-actions .icon-btn,
-.timeline-item .li-actions .icon-btn {
+/* Botones de acción del día: sin borde, gris suave (estilo SF). */
+.day-actions .icon-btn {
   border:none; background:transparent; color:var(--text-muted);
   box-shadow:none;
 }
 .day-actions .icon-btn:hover,
-.day-actions .icon-btn:active,
-.timeline-item .li-actions .icon-btn:hover,
-.timeline-item .li-actions .icon-btn:active { background:var(--bg-soft); color:var(--text); }
+.day-actions .icon-btn:active { background:var(--bg-soft); color:var(--text); }
 /* Título del evento un punto más marcado, jerarquía más clara. */
 .timeline-item .li-title { font-size:15px; font-weight:600; letter-spacing:-.01em; }
 /* Título en 1 línea (elipsis si es largo); la hora y los datos van en la 2ª fila,
@@ -10787,20 +10765,16 @@ const TripDetail = {
       if (collapse) TripDetail._collapsedDays.add(k); else TripDetail._collapsedDays.delete(k);
     };
 
-    // Botón global: plegar todo / desplegar todo. La etiqueta refleja el estado actual.
-    const realDays = keys.filter(k => k !== 'sin-fecha');
-    const allCollapsedNow = realDays.length > 0 && realDays.every(k => TripDetail._collapsedDays.has(k));
-    const collapseAllBtn = el('button', { class:'btn btn-sm', onclick: () => {
-      const groups = Array.from(root.querySelectorAll('.day-group'));
-      const anyOpen = groups.some(g => !g.classList.contains('collapsed'));
-      groups.forEach(g => toggleDayGroup(g, g.dataset.day, anyOpen));
-      collapseAllBtn.lastChild.textContent = anyOpen ? 'Desplegar todo' : 'Plegar todo';
-    } }, [ el('span', { html: svg('chevron') }), el('span', { text: allCollapsedNow ? 'Desplegar todo' : 'Plegar todo' }) ]);
+    // "Plegar todo" ya no está. Tenía sentido con la lista vertical —plegar
+    // treinta días para hojear el viaje de un vistazo—, pero con un día por
+    // pantalla lo único que conseguía era dejar treinta pantallas vacías que
+    // había que deslizar igual. El chevron de cada día sigue, para plegar el
+    // que estás mirando.
     const calBtn = el('button', { class:'btn btn-sm', title:'Vista de calendario (mes)',
       onclick: () => TripDetail.openPlanningCalendar(t) }, [ el('span', { html: svg('cal') }), el('span', { text:'Calendario' }) ]);
     // Ya no hay botón de pantalla completa: el planning ES la vista de un día
     // por pantalla, así que abrir otra igual encima no tenía sentido.
-    if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ calBtn, collapseAllBtn ]));
+    if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ calBtn ]));
 
     // Qué día se enseña al entrar: el que se estaba viendo si se acaba de cambiar
     // de pestaña, y si no HOY — o el primer día que quede por delante, para que
@@ -11560,7 +11534,6 @@ const TripDetail = {
     if (Array.isArray(it.people) && it.people.length && it.type !== 'personas') {
       subParts.push('Con ' + fmtList(it.people));
     }
-    const gm = gmapsUrl(it.lat, it.lng, it.place_name);
 
     // Mostrar hora SOLO si:
     //  - el tipo no la oculta (hotel la oculta normalmente) Y hay hora
@@ -11669,24 +11642,11 @@ const TripDetail = {
             _marcable(el('span', { class:'kc-ic', text:'🔑', 'aria-hidden':'true' }), { aunqueVirtual:true }),
           ]),
         ]),
-        // Sin este botón las acciones de la llave no se abren al tacto: solo
-        // aparecen con .acts-open o con hover, que en un móvil no existe.
+        // Abre el MISMO menú que dejar la tarjeta pulsada.
         el('button', {
           class:'li-more', type:'button', title:'Acciones', 'aria-label':'Acciones de esta parada',
-          onclick: (e) => {
-            e.stopPropagation();
-            const row = e.currentTarget.closest('.timeline-item');
-            const wasOpen = row.classList.contains('acts-open');
-            document.querySelectorAll('.timeline-item.acts-open').forEach(n => n.classList.remove('acts-open'));
-            if (!wasOpen) row.classList.add('acts-open');
-          },
+          onclick: (e) => { e.stopPropagation(); TripDetail.openPlanningCardMenu(t, it); },
         }, '•••'),
-        el('div', { class:'li-actions', style:{alignItems:'center'} }, [
-          dirUrl ? el('a', { class:'icon-btn', href: dirUrl, target:'_blank', title:'Cómo llegar', html: svg('map'),
-            onclick: (e) => e.stopPropagation() }) : null,
-          canEdit() ? el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
-            title:'Editar el alojamiento' }) : null,
-        ].filter(Boolean)),
       ].filter(Boolean));
       if (customColor) kcNode.style.setProperty('--card-color', customColor);
       return _conMenu(kcNode);
@@ -11913,42 +11873,15 @@ const TripDetail = {
           return cornerKids.length ? el('div', { class:'li-corner' }, cornerKids) : null;
         })(),
       ].filter(Boolean)),
-      // Las acciones viven escondidas: se revelan en la parada que tocas. Así el
-      // título dispone de todo el ancho en vez de partirse en tres líneas.
+      // Un solo botón de acciones, y abre el MISMO menú que dejar la tarjeta
+      // pulsada. Antes esto desplegaba una fila de iconos dentro de la tarjeta
+      // (Visto, Maps, Nota, Editar) que no coincidía con el menú de la
+      // pulsación larga (Editar, Duplicar, Eliminar): según cómo entraras te
+      // faltaba la mitad. Ahora la lista es una sola y está entera.
       el('button', {
         class:'li-more', type:'button', title:'Acciones', 'aria-label':'Acciones de esta parada',
-        onclick: (e) => {
-          e.stopPropagation();
-          const row = e.currentTarget.closest('.timeline-item');
-          const wasOpen = row.classList.contains('acts-open');
-          document.querySelectorAll('.timeline-item.acts-open').forEach(n => n.classList.remove('acts-open'));
-          if (!wasOpen) row.classList.add('acts-open');
-        },
+        onclick: (e) => { e.stopPropagation(); TripDetail.openPlanningCardMenu(t, it); },
       }, '•••'),
-      el('div', { class:'li-actions', style:{alignItems:'center'} }, [
-        // (El color personalizado de la tarjeta ahora se edita dentro del diálogo
-        //  de edición, no como botón siempre visible en la card.)
-        // Toggle "Visto": marca/desmarca el item como visitado. Pinta la card en gris.
-        (canEdit() && !isVirtual) ? el('button', {
-          class: 'icon-btn' + (it.visited ? ' btn-visited-on' : ''),
-          title: it.visited ? 'Marcar como no visto' : 'Marcar como visto',
-          'aria-pressed': it.visited ? 'true' : 'false',
-          html: svg('check'),
-          onclick: (e) => { e.stopPropagation(); TripDetail.toggleVisited(it); }
-        }) : null,
-        gm ? el('a', { class:'icon-btn', href: gm, target:'_blank', title:'Abrir en Google Maps', html: svg('map'),
-          onclick: (e) => e.stopPropagation() }) : null,
-        // Nota rápida: el 90 % de las veces lo único que se quiere tocar de una
-        // parada es su nota, y abrir el editor completo para eso es un rodeo.
-        (canEdit() && !isVirtual) ? el('button', {
-          class: 'icon-btn' + (it.notes && it.notes.trim() ? ' btn-note-on' : ''),
-          title: it.notes && it.notes.trim() ? 'Editar la nota' : 'Añadir una nota',
-          html: svg('note'),
-          onclick: (e) => { e.stopPropagation(); TripDetail.openQuickNote(t, it); }
-        }) : null,
-        canEdit() ? el('button', { class:'icon-btn', onclick: () => TripDetail.openPlanningEditor(t, it), html: svg('edit'),
-          title: isVirtual ? 'Editar el hotel' : 'Editar' }) : null,
-      ].filter(Boolean)),
     ].filter(Boolean));
     if (customColor) node.style.setProperty('--card-color', customColor);
     return _conMenu(node);
@@ -12698,8 +12631,12 @@ const TripDetail = {
 
   // Menú de una parada: sale al dejar pulsada su tarjeta (o con el botón
   // derecho). Lo justo: editar, duplicar y eliminar.
+  // Menú ÚNICO de una parada. Se llega por los dos sitios: dejándola pulsada o
+  // tocando su "•••". Antes cada gesto abría una cosa distinta —el "•••" una
+  // fila de iconos en la tarjeta con Cómo llegar / Visto / Nota / Editar, y la
+  // pulsación larga esta hoja con Editar / Duplicar / Eliminar—, así que según
+  // cómo entraras te faltaba la mitad de las opciones.
   async openPlanningCardMenu(t, it) {
-    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
     // Las filas virtuales (las noches del alojamiento, la llegada de un vuelo,
     // los días de un evento largo) son copias pintadas: se actúa sobre la
     // parada de verdad.
@@ -12710,6 +12647,7 @@ const TripDetail = {
     }
     const td = typeDef(base.type);
     const titulo = (base.title || base.place_name || td.label || 'Parada').trim();
+    const editable = canEdit();
     const fila = (icono, lbl, sub, fn, cls) => el('button', {
       type:'button', class:'res-fila' + (cls ? ' ' + cls : ''),
       onclick: () => { UI.closeSheet(); setTimeout(fn, 200); },
@@ -12721,19 +12659,38 @@ const TripDetail = {
       ]),
       el('span', { class:'res-fila-chev', html: svg('chevron'), 'aria-hidden':'true' }),
     ]);
-    const body = el('div', {}, [
-      el('div', { class:'res-panel menu-parada' }, [
-        fila('edit', 'Editar', it._virtual ? 'Abre el alojamiento entero' : 'Cambiar sus datos, el día o la hora',
-          () => TripDetail.openPlanningEditor(t, base)),
-        fila('copy', 'Duplicar', 'Abre una copia para retocar y guardar',
-          () => TripDetail._duplicarParada(t, base)),
-        fila('trash', 'Eliminar', 'Va a la papelera del viaje',
-          () => TripDetail._borrarParada(t, base), 'peligro'),
-      ]),
-    ]);
+    // "Cómo llegar": lo mismo que enseñaba la fila de iconos. Sin coordenadas ni
+    // dirección ni nombre de sitio no hay nada que abrir, y la fila no aparece.
+    const destino = (base.lat != null && base.lng != null) ? `${base.lat},${base.lng}`
+      : base.address ? encodeURIComponent(base.address)
+      : base.place_name ? encodeURIComponent(base.place_name) : null;
+    const comoLlegar = destino ? `https://www.google.com/maps/dir/?api=1&destination=${destino}` : null;
+    // Marcar como visto no tiene sentido sobre una copia pintada: la noche 2 de
+    // un hotel no se marca por su cuenta.
+    const marcable = editable && !it._virtual;
+
+    const filas = [
+      editable ? fila('edit', 'Editar', it._virtual ? 'Abre el alojamiento entero' : 'Cambiar sus datos, el día o la hora',
+        () => TripDetail.openPlanningEditor(t, base)) : null,
+      (editable && !it._virtual) ? fila('note', base.notes && base.notes.trim() ? 'Editar la nota' : 'Añadir una nota',
+        base.notes && base.notes.trim() ? String(base.notes).trim().slice(0, 60) : 'Un apunte suelto, sin abrir el editor',
+        () => TripDetail.openQuickNote(t, base)) : null,
+      marcable ? fila('check', base.visited ? 'Marcar como no visto' : 'Marcar como visto',
+        base.visited ? 'Vuelve a ponerla en color' : 'La deja en gris, hecha',
+        () => TripDetail.toggleVisited(base)) : null,
+      comoLlegar ? fila('map', 'Cómo llegar', 'Abre la ruta en Google Maps',
+        () => window.open(comoLlegar, '_blank', 'noopener')) : null,
+      editable ? fila('copy', 'Duplicar', 'Abre una copia para retocar y guardar',
+        () => TripDetail._duplicarParada(t, base)) : null,
+      editable ? fila('trash', 'Eliminar', 'Va a la papelera del viaje',
+        () => TripDetail._borrarParada(t, base), 'peligro') : null,
+    ].filter(Boolean);
+
+    if (!filas.length) { UI.toast('Modo lector — no hay acciones para esta parada'); return; }
+
     UI.openSheet({
       title: titulo.length > 42 ? titulo.slice(0, 41) + '…' : titulo,
-      body,
+      body: el('div', {}, [ el('div', { class:'res-panel menu-parada' }, filas) ]),
       footer: [ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar') ],
     });
   },
@@ -14907,12 +14864,6 @@ const TripDetail = {
           m.setAttribute('aria-pressed', valor ? 'true' : 'false');
           m.setAttribute('title', valor ? 'Quitar la marca de visto' : 'Marcar como visto');
         });
-        const btn = card.querySelector('.li-actions button[aria-pressed]');
-        if (btn) {
-          btn.classList.toggle('btn-visited-on', valor);
-          btn.setAttribute('aria-pressed', valor ? 'true' : 'false');
-          btn.setAttribute('title', valor ? 'Marcar como no visto' : 'Marcar como visto');
-        }
       });
       UI.toast(valor ? 'Marcado como visto' : 'Sin marcar');
     } catch (e) {
