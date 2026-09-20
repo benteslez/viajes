@@ -1,0 +1,14 @@
+{
+  "name": "viajes-tests",
+  "private": true,
+  "description": "Suite de regresión de la app (Playwright sobre Chromium).",
+  "scripts": {
+    "test": "node run.js",
+    "build": "node build.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0",
+    "idb": "^8.0.3",
+    "leaflet": "^1.9.4"
+  }
+}
