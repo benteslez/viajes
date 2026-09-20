@@ -9990,7 +9990,11 @@ const TripDetail = {
               } }, [ el('span', { html: svg('check') }), el('span', { text:'Es correcto' }) ]) : null,
             ].filter(Boolean)),
           ]);
-          listRef.parentNode.insertBefore(warnEl, listRef);
+          // La lista puede no estar aún colgada del documento (se construye y se
+          // cuelga después): entonces el aviso entra dentro de ella, que viaja
+          // con la lista. Sin esto, `parentNode` era null y se caía la pantalla.
+          if (listRef && listRef.parentNode) listRef.parentNode.insertBefore(warnEl, listRef);
+          else if (listRef) listRef.insertBefore(warnEl, listRef.firstChild);
         } else if (!shouldWarn && warnEl) {
           warnEl.remove(); warnEl = null;
         } else if (shouldWarn && warnEl) {
@@ -9999,14 +10003,25 @@ const TripDetail = {
       },
       finalize(dayArr, list, waypoints, token) {
         ready = true; dayArrRef = dayArr; listRef = list;
-        // Mete el resumen de ruta en la fila meta del día (misma línea que clima/hotel)
-        // para no crear otra fila. Si no hay (sin-fecha), va al principio de la lista.
-        const _metaRow = list.closest('.day-group')?.querySelector('.day-meta-row');
-        if (_metaRow) _metaRow.appendChild(summaryEl); else list.insertBefore(summaryEl, list.firstChild);
-        self.recompute();
+        // Quien llama construye la lista y la cuelga DESPUÉS, así que aquí puede
+        // estar todavía suelta: ni el resumen encuentra la fila del día ni el
+        // aviso tiene hermano donde insertarse. Se espera un fotograma.
+        const colocar = () => {
+          // Resumen de ruta en la fila meta del día (misma línea que clima y
+          // paradas) para no abrir otra fila; si no la hay, al principio de la lista.
+          const _metaRow = list.closest('.day-group')?.querySelector('.day-meta-row');
+          if (_metaRow) _metaRow.appendChild(summaryEl);
+          else if (!summaryEl.parentNode) list.insertBefore(summaryEl, list.firstChild);
+          self.recompute();
+        };
+        if (list.isConnected) colocar();
+        else requestAnimationFrame(() => { if (list.isConnected) colocar(); });
         if (waypoints.length >= 2 && legs.some(l => !l.online)) {
           legs.forEach(l => { if (!l.online) l.setPending(true); });
           enqueueDayRoute({ pts: waypoints, token, done: () => {
+            // Si la lista ya no está en pantalla (se repintó o se cambió de día),
+            // no hay nada que actualizar.
+            if (!listRef || !listRef.isConnected) return;
             legs.forEach(l => { l.setPending(false); l.applyFromCache(); });
             self.recompute();
           } });
