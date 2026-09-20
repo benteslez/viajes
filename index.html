@@ -2059,7 +2059,10 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
    ====================================================================== */
 .detailview {
   position:fixed; inset:0; z-index:90; background:var(--bg);
-  display:flex; flex-direction:column; animation:flash-in .18s var(--ease);
+  display:flex; flex-direction:column;
+  /* Sin fundido de la capa: si la ficha entra medio transparente se ve la
+     lista por debajo y el vuelo de la pieza deja de leerse. El movimiento lo
+     ponen la pieza compartida y la entrada escalonada del contenido. */
 }
 .dv-top {
   flex-shrink:0; display:flex; align-items:center; gap:12px;
@@ -2074,6 +2077,30 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 .dv-edit { flex:none; gap:6px; }
 .dv-edit svg { width:15px; height:15px; }
+/* --- Entrada: la pieza del evento vuela desde su fila y el resto entra
+       detrás, escalonado. Así se ve de dónde sale la ficha. --- */
+@keyframes dv-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+@keyframes dv-fade { from { opacity:0; } to { opacity:1; } }
+.detailview .dv-body > *, .detailview .dv-top > * { opacity:0; }
+.detailview.dv-listo .dv-body > * { animation:dv-rise .42s cubic-bezier(.22,.61,.36,1) both; }
+.detailview.dv-listo .dv-top > * { animation:dv-fade .3s .08s var(--ease) both; }
+.detailview.dv-listo .dv-body > *:nth-child(2) { animation-delay:.09s; }
+.detailview.dv-listo .dv-body > *:nth-child(3) { animation-delay:.15s; }
+.detailview.dv-listo .dv-body > *:nth-child(4) { animation-delay:.2s; }
+.detailview.dv-listo .dv-body > *:nth-child(5) { animation-delay:.24s; }
+.detailview.dv-listo .dv-body > *:nth-child(n+6) { animation-delay:.27s; }
+/* La portada lleva dentro la pieza que vuela: está en pantalla desde el
+   primer fotograma, sin opacidad de grupo que la apague. */
+.detailview.dv-shared .dv-body > *:first-child { opacity:1; animation:none; }
+.detailview.dv-vuela-barra .dv-name { opacity:1; animation:none; }
+/* Mientras vuela, la pieza pasa por encima de todo: si no, cruza por debajo
+   de los bloques y parece que se mete detrás de una tarjeta. */
+.detailview.dv-volando .dv-body { overflow:hidden; }
+.detailview.dv-volando .dv-body > *:first-child { position:relative; z-index:3; }
+@media (prefers-reduced-motion: reduce) {
+  .detailview .dv-body > *, .detailview .dv-top > * { opacity:1; }
+  .detailview.dv-listo .dv-body > *, .detailview.dv-listo .dv-top > * { animation:none; }
+}
 .dv-body {
   flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
   padding:16px 16px calc(40px + env(safe-area-inset-bottom));
@@ -9139,7 +9166,7 @@ const TripDetail = {
         grid.appendChild(el('div', {
           class:'metric resv-metric' + (status ? ` status-${status}` : ''),
           role:'button', tabindex:'0',
-          onclick: () => TripDetail.openPlanningDetail(t, it),
+          onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget),
         }, [
           el('div', { class:'label' }, [ el('span', { class:'resv-emoji', text: s.emoji }), s.label ]),
           el('div', { class:'value', text: s.value }),
@@ -9231,7 +9258,7 @@ const TripDetail = {
     if (nextEv && !nextShown) {
       const _td = typeDef(nextEv.type);
       const _s = TripDetail._reservationSummary(nextEv) || { emoji: _td.emoji, label: _td.label, value: nextEv.title };
-      root.appendChild(el('div', { class:'next-event', id:'next-event-bar', title:'Abrir esta parada', onclick: () => TripDetail.openPlanningDetail(t, nextEv) }, [
+      root.appendChild(el('div', { class:'next-event', id:'next-event-bar', title:'Abrir esta parada', onclick: (e) => TripDetail.openPlanningDetail(t, nextEv, e.currentTarget) }, [
         el('span', { class:'ne-emoji', 'aria-hidden':'true', text: _s.emoji || '📌' }),
         el('div', { class:'ne-main' }, [ el('span', { class:'ne-tag', text:'Próximo' }), el('span', { class:'ne-title', text: `${_s.label}${_s.value ? ' · ' + _s.value : ''}` }) ]),
         el('span', { class:'ne-count', id:'ne-count', text: nextEventText(nextEv) }),
@@ -10503,7 +10530,7 @@ const TripDetail = {
         data:{ id:it.id, day: it.day_date || 'sin-fecha' }
       }, [
         el('div', { class:'sl-ic', 'aria-hidden':'true', text:'🛏️' }),
-        el('div', { class:'li-main sl-main', onclick: () => TripDetail.openPlanningDetail(t, it) }, [
+        el('div', { class:'li-main sl-main', onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget) }, [
           el('div', { class:'sl-t', text: hName }),
           el('div', { class:'sl-s' }, [
             el('span', { text: nSub }),
@@ -10534,7 +10561,7 @@ const TripDetail = {
         draggable:'false',
         data:{ id:it.id, day: it.day_date || 'sin-fecha' }
       }, [
-        el('div', { class:'li-main', onclick: () => TripDetail.openPlanningDetail(t, it) }, [
+        el('div', { class:'li-main', onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget) }, [
           el('div', { class:'li-keycard' }, [
             el('div', { class:'kc-main' }, [
               el('div', { class:'kc-top' }, [
@@ -10699,7 +10726,7 @@ const TripDetail = {
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
       (ticket || opts.num || isMeal || isOut) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
-      el('div', { class:'li-main', onclick: () => TripDetail.openPlanningDetail(t, it) }, [
+      el('div', { class:'li-main', onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget) }, [
         (isMeal || isOut) ? el('div', { class:'meal-kick' + (isOut ? ' mk-out' : '') }, [
           el('span', { class:'mk-t', text: isOut ? 'Check-out' : typeLabelFor(it) }),
           el('span', { class:'mk-ln' }),
@@ -11248,7 +11275,7 @@ const TripDetail = {
         : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(i.place_name || i.title)}`;
     return el('div', { class:'list-item' + (i.in_consultation ? ' in-consultation' : '') }, [
       el('div', { html: svg('pin') }),
-      el('div', { class:'li-main', onclick: () => TripDetail.openPlanningDetail(t, i) }, [
+      el('div', { class:'li-main', onclick: (e) => TripDetail.openPlanningDetail(t, i, e.currentTarget) }, [
         el('div', { class:'li-title', text: i.title }),
         sub ? el('div', { class:'li-sub', text: sub }) : null,
       ].filter(Boolean)),
@@ -11648,9 +11675,30 @@ const TripDetail = {
   // billete o la llave se reaprovechan tal cual de la fila, así el diseño
   // nunca se desincroniza de la lista.
   // ======================================================================
-  openPlanningDetail(t, it) {
+  openPlanningDetail(t, it, desde) {
     const base = it;
     let actual = it;
+
+    // --- De dónde sale la ficha ---------------------------------------
+    // Se mide la fila pulsada ANTES de abrir nada: la pieza que identifica al
+    // evento (el billete, la llave o el título) viaja desde su sitio en la
+    // lista hasta el suyo en la ficha. Sin ese hilo, la pantalla aparece de
+    // la nada y no se entiende de quién es la información.
+    const fuente = (() => {
+      const row = desde && desde.closest ? (desde.closest('.timeline-item, .list-item, .next-event') || desde) : null;
+      if (!row) return null;
+      const pase = row.querySelector('.li-ticket, .li-keycard');
+      const tit  = row.querySelector('.li-title-text, .kc-n, .ne-title, .resv-metric .value, .li-title');
+      const nodo = pase || tit;
+      if (!nodo) return null;
+      const r = nodo.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      // Si la fila no está a la vista (por ejemplo al abrir desde un atajo), el
+      // vuelo sería un barrido de miles de píxeles: mejor entrar sin él.
+      const alto = window.innerHeight || 0;
+      if (r.bottom < 0 || r.top > alto) return null;
+      return { tipo: pase ? 'pase' : 'titulo', r };
+    })();
 
     const overlay = el('div', { class:'detailview' });
     const cuerpo  = el('div', { class:'dv-body' });
@@ -11870,6 +11918,50 @@ const TripDetail = {
     document.addEventListener('keydown', onKey);
     TripDetail._detailRefresh = refrescar;
     document.body.appendChild(overlay);
+
+    // --- El vuelo de la pieza compartida (FLIP) -------------------------
+    // Se mueve el elemento real, no una copia: se le pone la transformada que
+    // lo devuelve a su sitio de origen y se deja que vuelva a la identidad.
+    const animar = () => {
+      const sinMovimiento = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!fuente || sinMovimiento) { overlay.classList.add('dv-listo'); return; }
+      // El título aterriza en el de la portada, no en el de la barra: si no,
+      // se verían dos veces las mismas palabras moviéndose a la vez.
+      const destino = fuente.tipo === 'pase'
+        ? overlay.querySelector('.dv-pass .li-ticket, .dv-pass .li-keycard')
+        : (overlay.querySelector('.dv-title') || titulo);
+      if (!destino) { overlay.classList.add('dv-listo'); return; }
+      const a = fuente.r, b2 = destino.getBoundingClientRect();
+      if (!b2.width || !b2.height) { overlay.classList.add('dv-listo'); return; }
+      // El título escala en bloque (deformarlo se nota en la letra); el billete
+      // puede escalar por ejes porque va del ancho de la fila al de la ficha.
+      const sx = a.width / b2.width;
+      const sy = fuente.tipo === 'pase' ? (a.height / b2.height) : sx;
+      destino.style.transformOrigin = 'top left';
+      destino.style.transition = 'none';
+      destino.style.transform = `translate(${a.left - b2.left}px, ${a.top - b2.top}px) scale(${sx}, ${sy})`;
+      overlay.classList.add('dv-volando', 'dv-shared');
+      // Si quien aterriza es el título de la barra, tiene que estar visible desde
+      // el primer fotograma: si no, vuela apagándose y se pierde el hilo.
+      if (destino === titulo) overlay.classList.add('dv-vuela-barra');
+      void destino.offsetHeight;                       // fuerza el punto de partida
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        destino.style.transition = 'transform .42s cubic-bezier(.22,.61,.36,1)';
+        destino.style.transform = 'none';
+        overlay.classList.add('dv-listo');
+        const fin = () => {
+          destino.removeEventListener('transitionend', fin);
+          destino.style.transition = ''; destino.style.transform = ''; destino.style.transformOrigin = '';
+          overlay.classList.remove('dv-volando');
+        };
+        destino.addEventListener('transitionend', fin);
+        setTimeout(fin, 600);                          // por si el evento no llega
+      }));
+    };
+    requestAnimationFrame(animar);
+    // Red de seguridad: el contenido arranca invisible para entrar escalonado,
+    // así que pase lo que pase tiene que acabar visible.
+    setTimeout(() => overlay.classList.add('dv-listo'), 400);
   },
 
   async openPlanningEditor(t, existing=null, opts=null) {
@@ -14882,7 +14974,7 @@ const TripDetail = {
         const td = typeDef(it.type);
         const place = it.place_name || it.title || td.label;
         const when = [ it.day_date ? fmtDateShort(it.day_date) : 'Sin fecha', it.time || '' ].filter(Boolean).join(' · ');
-        list.appendChild(el('div', { class:'list-item interactive', onclick: () => TripDetail.openPlanningDetail(t, it) }, [
+        list.appendChild(el('div', { class:'list-item interactive', onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget) }, [
           el('div', { class:'item-emoji', text: planEmoji(it) }),
           el('div', { class:'li-main' }, [
             el('div', { class:'li-title', text: place }),
