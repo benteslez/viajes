@@ -2172,7 +2172,7 @@ main:has(.plan-pager) { padding-bottom:0; }
   .detailview.dv-listo .dv-body > *, .detailview.dv-listo .dv-top > * { animation:none; }
 }
 .dv-body {
-  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch;
   padding:16px 16px calc(40px + env(safe-area-inset-bottom));
   display:flex; flex-direction:column; gap:18px;
 }
@@ -2180,7 +2180,15 @@ main:has(.plan-pager) { padding-bottom:0; }
 .dv-body > * { width:100%; max-width:620px; margin-inline:auto; }
 .dv-body > span:empty { display:none; }
 /* El billete o la llave hacen de portada, tal cual salen en la lista */
+/* La portada hereda de `.timeline-item` solo lo del estado "visto": ni fondo de
+   fila, ni borde, ni el apagado de grupo, que aquí taparían el billete. */
 .dv-pass { display:flex; }
+/* Tres clases: el estado "visto" de la fila también lleva !important y, a igual
+   peso, ganaría por ir después en la hoja. */
+.detailview .dv-pass.timeline-item {
+  background:none !important; border:0 !important; padding:0 !important;
+  opacity:1 !important; box-shadow:none !important; cursor:default;
+}
 .dv-pass .li-ticket, .dv-pass .li-keycard { box-shadow:0 10px 28px color-mix(in srgb, #1e293b 22%, transparent); }
 .dv-pass .tk-stub::before, .dv-pass .tk-stub::after,
 .dv-pass .kc-stub::before, .dv-pass .kc-stub::after { background:var(--bg); }
@@ -5621,6 +5629,43 @@ const ICONS = {
 };
 // SVG decorativo: aria-hidden + focusable=false para que no aparezca en lectores ni
 // en tab-order. Los botones e enlaces que lo contienen ya tienen aria-label/texto.
+// Una capa a pantalla completa (position:fixed) dibuja su caja contra el
+// viewport. Al girar el móvil, iOS puede dejarla con la medida de ANTES y el
+// contenido se sale por un lado. Aquí se mide de verdad y, si no cuadra, se le
+// fija la medida buena a mano; se deja de vigilar sola cuando la capa se va.
+// Devuelve la función para dejar de vigilar antes (al cerrar la capa).
+const vigilarGiro = (capa) => {
+  if (!capa) return () => {};
+  let raf = 0, timer = 0;
+  const parar = () => {
+    cancelAnimationFrame(raf); clearTimeout(timer);
+    window.removeEventListener('resize', alGirar);
+    window.removeEventListener('orientationchange', alGirar);
+    if (window.visualViewport) window.visualViewport.removeEventListener('resize', alGirar);
+  };
+  const cuadrar = () => {
+    if (!capa.isConnected) { parar(); return; }
+    if (capa.style.transform) return;                 // en mitad de un gesto
+    const w = window.innerWidth || 0, h = window.innerHeight || 0;
+    if (!w || !h) return;
+    capa.style.width = ''; capa.style.height = '';
+    const r = capa.getBoundingClientRect();
+    if (Math.abs(r.width - w) > 1 || Math.abs(r.height - h) > 1) {
+      capa.style.width = w + 'px';
+      capa.style.height = h + 'px';
+    }
+  };
+  function alGirar() {
+    cancelAnimationFrame(raf); clearTimeout(timer);
+    raf = requestAnimationFrame(cuadrar);
+    timer = setTimeout(cuadrar, 350);                 // iOS acaba de girar más tarde
+  }
+  window.addEventListener('resize', alGirar);
+  window.addEventListener('orientationchange', alGirar);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', alGirar);
+  return parar;
+};
+
 const svg = (key, props='') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" ${props}>${ICONS[key]||''}</svg>`;
 const bookingIcon = (type) => ({
   vuelo:'plane', hotel:'hotel', tren:'train', ferry:'ferry',
@@ -6646,7 +6691,9 @@ const Trips = {
     const today = todayIso();
     const openTrip = (id) => { close(); Router.go('trip', { tripId: id, tab: 'resumen' }); };
 
-    const close = () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('sheet-open'); overlay.remove(); };
+    // El giro del móvil tampoco puede dejar el calendario con la medida vieja.
+    let dejarElGiro = () => {};
+    const close = () => { document.removeEventListener('keydown', onKey); dejarElGiro(); document.body.classList.remove('sheet-open'); overlay.remove(); };
     const onKey = (e) => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowLeft') step(-1); else if (e.key === 'ArrowRight') step(1); };
 
     const ref = parseDate(today);
@@ -6741,6 +6788,7 @@ const Trips = {
       ]),
     ]);
     document.body.appendChild(overlay);
+    dejarElGiro = vigilarGiro(overlay);
     document.addEventListener('keydown', onKey);
     renderMonth();
   },
@@ -11651,8 +11699,10 @@ const TripDetail = {
     };
     TripDetail._flashRefresh = flashRefresh;
 
+    let dejarElGiro = () => {};        // se engancha al crear la capa, más abajo
     const teardown = () => {
       document.removeEventListener('keydown', onKey);
+      dejarElGiro();
       if (TripDetail._flashRefresh === flashRefresh) TripDetail._flashRefresh = null;
       overlay.remove();
     };
@@ -11686,6 +11736,7 @@ const TripDetail = {
       addBtn,
     ].filter(Boolean));
     document.body.appendChild(overlay);
+    dejarElGiro = vigilarGiro(overlay);
     document.addEventListener('keydown', onKey);
     // Apertura "desde el cuadradito": la vista se DESPLIEGA desde el rectángulo
     // de la pastilla pulsada. Se recorta (clip-path), no se escala: escalar
@@ -11803,7 +11854,9 @@ const TripDetail = {
     const hidden = new Set(Array.isArray(tripSettings(t).cal_hidden) ? tripSettings(t).cal_hidden : []);
     const persistHidden = async () => { try { tripSettingsMut(t).cal_hidden = [...hidden]; await DB.put('trips', t); } catch (_) {} };
 
-    const close = () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('sheet-open'); overlay.remove(); };
+    // El giro del móvil tampoco puede dejar el calendario con la medida vieja.
+    let dejarElGiro = () => {};
+    const close = () => { document.removeEventListener('keydown', onKey); dejarElGiro(); document.body.classList.remove('sheet-open'); overlay.remove(); };
     const onKey = (e) => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowLeft') step(-1); else if (e.key === 'ArrowRight') step(1); };
 
     // Mes inicial: el de hoy si cae en el viaje; si no, el del inicio del viaje.
@@ -11931,6 +11984,7 @@ const TripDetail = {
       ]),
     ]);
     document.body.appendChild(overlay);
+    dejarElGiro = vigilarGiro(overlay);
     document.addEventListener('keydown', onKey);
     renderMonth();
   },
@@ -12401,8 +12455,13 @@ const TripDetail = {
     const overlay = el('div', { class:'detailview' });
     const cuerpo  = el('div', { class:'dv-body' });
 
+    let cerrando = false;
+    // Girar el móvil no puede dejar la ficha con la medida de antes.
+    const dejarElGiro = vigilarGiro(overlay);
+
     const quitar = () => {
       document.removeEventListener('keydown', onKey);
+      dejarElGiro();
       if (TripDetail._detailRefresh === refrescar) TripDetail._detailRefresh = null;
       overlay.remove();
     };
@@ -12411,7 +12470,6 @@ const TripDetail = {
     // La pieza vuelve a su fila. Como la capa se va mientras tanto, el que
     // viaja es un clon suelto en position:fixed: dentro de la capa heredaría
     // su transformada (la del arrastre) y las cuentas dejarían de cuadrar.
-    let cerrando = false;
     const cerrar = () => {
       if (cerrando) return;
       cerrando = true;
@@ -12502,7 +12560,13 @@ const TripDetail = {
         } catch (_) { return null; }
       })();
       if (pase) {
-        cuerpo.appendChild(el('div', { class:'dv-pass' }, [pase]));
+        // La portada es la MISMA pieza que en la lista, así que lleva su mismo
+        // envoltorio: con `timeline-item` y el id, hereda el estado "visto" y
+        // `toggleVisited` la repinta en el sitio al marcarla desde aquí.
+        cuerpo.appendChild(el('div', {
+          class:'dv-pass timeline-item' + (iti.visited ? ' visited' : ''),
+          data:{ id: iti.id },
+        }, [pase]));
       } else {
         cuerpo.appendChild(el('div', { class:`dv-hero type-${iti.type}` }, [
           el('div', { class:'dv-hero-em', 'aria-hidden':'true', text: planEmoji(iti) }),
