@@ -3010,11 +3010,17 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 .timeline-item.visited .meal-kick .mk-t { color:var(--text-muted); }
 .timeline-item.visited .meal-kick .mk-ln { background:var(--line); }
 .timeline-item.visited .ml-h { color:var(--text-muted) !important; }
-/* Billete: el papel se apaga hasta casi fundirse con el fondo, como un billete
-   ya usado. Solo grayscale lo dejaba en un gris oscuro que pesaba más que sin
-   marcar. */
-.timeline-item.visited .li-ticket { filter:grayscale(1); opacity:.42; box-shadow:none; }
-:root[data-tema="oscuro"] .timeline-item.visited .li-ticket { opacity:.38; }
+/* Billete usado: se le arranca el talón. La parte de la derecha —la que en un
+   billete de verdad se queda el revisor— pasa a gris y el resto baja el color
+   sin apagarse del todo: así se sigue leyendo a qué viaje corresponde. */
+.timeline-item.visited .li-ticket { filter:saturate(.5); opacity:.86; box-shadow:none; }
+.timeline-item.visited .tk-stub {
+  background:var(--bg-soft); border-left-color:var(--line);
+}
+.timeline-item.visited .tk-stub .tk-f-l { color:var(--text-muted); }
+.timeline-item.visited .tk-stub b,
+.timeline-item.visited .tk-stub .tk-stub-eur { color:var(--text); }
+.timeline-item.visited .tk-stub .tk-stub-rule { background:var(--line); }
 /* La barra de horario de las actividades pierde el morado con el resto */
 .timeline-item.visited .li-actbar .ab-bar { background:var(--line-soft); }
 .timeline-item.visited .li-actbar .ab-bar i { background:var(--text-muted); }
