@@ -2468,7 +2468,12 @@ main:has(.plan-pager) { padding-bottom:0; }
 }
 .pack-progress { flex:1 1 150px; min-width:140px; display:flex; flex-direction:column; gap:6px; }
 .pack-progress .budget-legend { font-size:12px; }
-.pack-controls { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
+/* Con la pantalla justa (320 px) estos controles no caben en la fila: antes se
+   salían por la derecha porque tenían prohibido encoger. Ahora bajan de línea. */
+.pack-controls {
+  display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap;
+  gap:8px; margin-left:auto; min-width:0;
+}
 .pack-collapse-all svg { transition:transform .2s var(--ease); }
 .pack-collapse-all.all-collapsed svg { transform:rotate(-90deg); }
 .pack-templates { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
@@ -2791,9 +2796,19 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 .metric {
   background:var(--bg-elev); border:1px solid var(--line);
   border-radius:var(--r-md); padding:14px;
+  min-width:0;                 /* si no, el importe impone el ancho de la celda */
 }
+/* Las celdas de una rejilla no encogen por debajo de su contenido salvo que se
+   les diga: con "12.345,67 €" la rejilla se salía por la derecha a 320 px. */
+.metric-grid > * { min-width:0; }
 .metric .label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
-.metric .value { font-feature-settings:"tnum","ss01"; font-weight:700; font-size:22px; margin-top:4px; letter-spacing:-.02em; }
+.metric .value {
+  font-feature-settings:"tnum","ss01"; font-weight:700; margin-top:4px; letter-spacing:-.02em;
+  /* Cuerpo fluido: en pantallas estrechas un importe largo bajaba a la fuerza o
+     se salía; así encoge lo justo y recupera los 22px en cuanto hay sitio. */
+  font-size:clamp(16px, calc((100vw - 80px) * .069), 22px);
+  min-width:0; overflow-wrap:anywhere;
+}
 .metric .sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
 /* Métricas clicables — botón con el mismo aspecto que la tarjeta métrica. */
 .metric-btn {
@@ -15488,7 +15503,8 @@ const TripDetail = {
       el('p', { class:'muted', style:{marginTop:0}, text:'Pega aquí el cuerpo de un email de confirmación (vuelo, hotel, alquiler). Detectaremos fechas, importes y localizadores y pre-llenaremos la reserva.' }),
       el('div', { class:'form-row' }, [
         el('label', { text:'Texto del email' }),
-        el('textarea', { id:'ib-text', style:{minHeight:'180px', fontSize:'12.5px', lineHeight:'1.45'}, placeholder:'From: confirmaciones@iberia.com\nLocalizador: ABC123\nVuelo IB6253 · 1 de marzo de 2027 · 08:00 → 14:30\nImporte: 420,00 €\n…' }),
+        // 16px: por debajo, iOS hace zoom al enfocar el campo y ya no se vuelve.
+        el('textarea', { id:'ib-text', style:{minHeight:'180px', fontSize:'16px', lineHeight:'1.4'}, placeholder:'From: confirmaciones@iberia.com\nLocalizador: ABC123\nVuelo IB6253 · 1 de marzo de 2027 · 08:00 → 14:30\nImporte: 420,00 €\n…' }),
       ]),
       el('div', { class:'form-row' }, [
         el('label', { text:'Tipo de reserva' }),
@@ -17347,7 +17363,7 @@ const PerfilView = {
     plannerInput.style.borderRadius = 'var(--r-md)';
     plannerInput.style.background = 'var(--bg-input)';
     plannerInput.style.color = 'var(--text)';
-    plannerInput.style.fontSize = '15px';
+    plannerInput.style.fontSize = '16px';   // menos, y iOS hace zoom al enfocar
     root.appendChild(plannerInput);
     root.appendChild(el('div', { style:{display:'flex', gap:'8px', flexWrap:'wrap'} }, [
       el('button', { class:'btn btn-sm', onclick: () => {
