@@ -2108,7 +2108,11 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* La ficha sigue al dedo al tirar hacia abajo: al despegarse de arriba se
    redondea por las esquinas, como una hoja que se levanta. */
 .detailview { will-change:transform; }
-.detailview.dv-tirando { border-radius:22px 22px 0 0; overflow:hidden; box-shadow:0 -8px 30px rgba(15,23,42,.14); }
+.detailview.dv-tirando { border-radius:22px 22px 0 0; box-shadow:0 -8px 30px rgba(15,23,42,.14); }
+/* El redondeo se lleva también a la barra de arriba en lugar de recortar la capa
+   entera: `overflow:hidden` sobre una capa a pantalla completa obliga a
+   recalcular el diseño en cada fotograma del arrastre. */
+.detailview.dv-tirando .dv-top { border-radius:22px 22px 0 0; }
 /* Mientras vuela, la pieza pasa por encima de todo: si no, cruza por debajo
    de los bloques y parece que se mete detrás de una tarjeta. */
 .detailview.dv-volando .dv-body { overflow:hidden; }
@@ -10361,8 +10365,9 @@ const TripDetail = {
   // Hasta dónde llega lo que se queda pegado arriba (barra + tira de días), más
   // un respiro. Con un número fijo el día aterrizaba DEBAJO de la tira: la
   // cabecera quedaba medio tapada y la pastilla de la fecha pegada al borde.
+  _AIRE_DIA: 24,          // respiro entre la tira de días y la tarjeta del día
   _topeSuperior() {
-    const AIRE = 16;
+    const AIRE = TripDetail._AIRE_DIA;
     const s = document.querySelector('.day-strip');
     if (s) {
       const cs = getComputedStyle(s);
@@ -10403,10 +10408,22 @@ const TripDetail = {
     if (Math.abs(delta) < 2) return true;
     const dur = opts.duracion || 340;
     const t0 = performance.now();
+    // Al terminar se mide de verdad: con todo ya quieto, la tira está pegada en
+    // su sitio definitivo. Si el día se ha quedado por debajo de su borde (pasa
+    // cuando la barra de arriba cambia de alto con el área segura del móvil), se
+    // corrige lo que falte. Calcular y confiar no basta: hay que comprobarlo.
+    const ajustar = () => {
+      const tira = document.querySelector('.day-strip');
+      const limite = tira ? tira.getBoundingClientRect().bottom + TripDetail._AIRE_DIA
+                          : TripDetail._topeSuperior();
+      const falta = limite - g.getBoundingClientRect().top;
+      if (falta > 1) sc.scrollTop = Math.max(0, sc.scrollTop - falta);
+    };
     const paso = (ahora) => {
       const p = Math.min(1, (ahora - t0) / dur);
       sc.scrollTop = inicio + delta * (1 - Math.pow(1 - p, 3));   // easeOutCubic
       if (p < 1) TripDetail._scrollRaf = requestAnimationFrame(paso);
+      else requestAnimationFrame(ajustar);
     };
     TripDetail._scrollRaf = requestAnimationFrame(paso);
     TripDetail._diaVisible = k;
@@ -12148,11 +12165,32 @@ const TripDetail = {
     // y al soltar pasado el umbral se cierra con el vuelo de vuelta.
     (() => {
       const UMBRAL = 92;
-      let y0 = 0, x0 = 0, dy = 0, t0 = 0, tirando = false, posible = false;
-      const poner = (v, suave) => {
-        overlay.style.transition = suave ? 'transform .26s cubic-bezier(.22,.61,.36,1)' : 'none';
-        overlay.style.transform = v ? `translateY(${v}px) scale(${1 - Math.min(v, 420) / 4200})` : '';
-        overlay.classList.toggle('dv-tirando', !!v);
+      let y0 = 0, x0 = 0, dy = 0, t0 = 0, tirando = false, posible = false, raf = 0;
+      // Durante el arrastre solo se escribe `transform`, y una vez por fotograma.
+      // Antes se tocaba también la transición y una clase con overflow y sombra en
+      // cada touchmove: eso recalcula el diseño de una capa a pantalla completa
+      // decenas de veces por segundo y el movimiento sale a tirones.
+      const pintar = () => {
+        raf = 0;
+        overlay.style.transform = `translate3d(0, ${dy}px, 0) scale(${1 - Math.min(dy, 420) / 4200})`;
+      };
+      const empezar = () => {
+        overlay.style.transition = 'none';
+        overlay.style.willChange = 'transform';
+        overlay.classList.add('dv-tirando');
+      };
+      const terminar = () => {
+        overlay.style.transition = 'transform .26s cubic-bezier(.22,.61,.36,1)';
+        overlay.style.transform = '';
+        const limpiar = () => {
+          overlay.removeEventListener('transitionend', limpiar);
+          if (cerrando) return;
+          overlay.classList.remove('dv-tirando');
+          overlay.style.willChange = '';
+          overlay.style.transition = '';
+        };
+        overlay.addEventListener('transitionend', limpiar);
+        setTimeout(limpiar, 340);
       };
       overlay.addEventListener('touchstart', (e) => {
         tirando = false; posible = false;
@@ -12169,17 +12207,19 @@ const TripDetail = {
           if (d < 10 || dx > Math.abs(d)) { if (d < -4 || dx > 14) posible = false; return; }
           if (cuerpo.scrollTop > 0) { posible = false; return; }
           tirando = true;
+          empezar();
         }
         dy = Math.max(0, d);
         e.preventDefault();                  // mientras se tira, no hay scroll
-        poner(dy, false);
+        if (!raf) raf = requestAnimationFrame(pintar);
       }, { passive: false });
       const soltar = () => {
         if (!tirando) { posible = false; return; }
         tirando = false; posible = false;
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
         const rapido = (Date.now() - t0) < 260 && dy > 55;   // gesto corto y decidido
         if (dy > UMBRAL || rapido) cerrar();
-        else poner(0, true);
+        else terminar();
       };
       overlay.addEventListener('touchend', soltar, { passive: true });
       overlay.addEventListener('touchcancel', soltar, { passive: true });
