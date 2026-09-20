@@ -729,7 +729,10 @@ h2.section-title {
 }
 .form-row textarea { min-height:80px; resize:vertical; }
 .form-row.num input { font-feature-settings:"tnum","ss01"; }
-.form-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+/* Dos columnas mientras quepan (150 px por campo); si no, cada uno en su línea.
+   Antes eran dos fijas y en pantallas estrechas los campos se estrujaban. */
+.form-grid-2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+.form-grid-2 > .span-2 { grid-column:1 / -1; }
 /* Las celdas del grid pueden encoger por debajo del contenido (si no, los inputs
    fuerzan el ancho y la rejilla se sale por los lados). */
 .form-grid-2 > * { min-width:0; }
@@ -4219,7 +4222,7 @@ const PLANNING_METADATA = {
       teleferico: ['modo','origen','destino','compania','url'],
     },
     fields: [
-      { id:'modo',       label:'Tipo de transporte', type:'select', options:[
+      { id:'modo',       label:'Tipo de transporte', type:'select', ancho:'todo', options:[
         { value:'', label:'Sin especificar' },
         { value:'coche', label:'Coche' },
         { value:'tren',  label:'Tren' },
@@ -13629,8 +13632,12 @@ const TripDetail = {
             listId ? el('datalist', { id: listId }, byMode.suggest.map(o => el('option', { value:o }))) : null,
           ].filter(Boolean));
         }
-        if (f.full) single.appendChild(node);
-        else grid.appendChild(node);
+        if (f.full) { single.appendChild(node); return; }
+        // `ancho:'todo'` ocupa la fila entera SIN salirse del orden (a diferencia
+        // de `full`, que manda el campo al final). Así los que van en pareja
+        // —origen y destino— caen juntos en la misma línea.
+        if (f.ancho === 'todo') node.classList.add('span-2');
+        grid.appendChild(node);
       });
       if (grid.children.length) metadataBlock.appendChild(grid);
       if (single.children.length) metadataBlock.appendChild(single);
