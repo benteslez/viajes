@@ -1386,6 +1386,22 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Si la fila de chips se queda sin nada visible, no ocupa sitio. */
 .day-group .day-meta-row:empty { display:none; }
 
+
+/* Menú de la parada (pulsación larga sobre su tarjeta) */
+.menu-parada { margin:0; }
+.menu-parada .res-fila { padding:15px; }
+.res-fila.peligro .res-fila-lbl { color:var(--danger); }
+.res-fila.peligro .res-ic {
+  color:var(--danger); border-color:color-mix(in srgb, var(--danger) 40%, var(--line));
+}
+/* Mientras se mantiene pulsada, la tarjeta se hunde un poco: así se entiende
+   que el gesto va a algún sitio. Y ni lupa ni "copiar" de iOS por el camino. */
+.timeline-list .timeline-item { -webkit-touch-callout:none; }
+.timeline-list .timeline-item.li-pulsando {
+  transform:scale(.985); transition:transform .18s var(--ease);
+  user-select:none; -webkit-user-select:none;
+}
+
 /* ======================================================================
    POSTAL DE PLAYA — una playa no es una fila más: se pinta como una
    postal pequeña (mar arriba, la ola, y la arena abajo con los datos),
@@ -1464,7 +1480,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-item.visited .bh-num { background:var(--line); color:var(--text-muted); }
 /* El ••• va a la esquina de la arena: arriba se comía el sol. */
 .timeline-list .timeline-item.has-beach .li-more {
-  position:absolute; right:7px; bottom:4px; top:auto; transform:none;
+  position:absolute; right:7px; bottom:4px; top:auto; transform:none; z-index:3;
   width:24px; height:14px; font-size:10px; line-height:1;
   color:rgba(255,255,255,.6);
 }
@@ -1790,11 +1806,14 @@ main:has(.plan-pager) { padding-bottom:0; }
 .timeline-list .timeline-item.has-keycard .li-more {
   color:rgba(255,255,255,.55); position:absolute; right:5px; top:2px; transform:none;
   width:24px; height:14px; font-size:10px; line-height:1;
+  /* El talón se pinta por encima (lleva su propio contexto): sin esto el ••• se
+     veía pero no se podía pulsar, y el toque abría la ficha. */
+  z-index:3;
 }
 .timeline-list .timeline-item.has-beach .li-actions,
 .timeline-list .timeline-item.has-ticket .li-actions,
 .timeline-list .timeline-item.has-keycard .li-actions {
-  position:absolute; right:4px; top:50%; transform:translateY(-50%);
+  position:absolute; right:4px; top:50%; transform:translateY(-50%); z-index:3;
   background:rgba(15,23,42,.55); border-radius:var(--r-pill); padding:2px 4px;
 }
 .timeline-list .timeline-item.has-beach .li-actions .icon-btn,
@@ -11186,6 +11205,17 @@ const TripDetail = {
     // la pastilla de la hora, el disco de la comida o el aro del billete. Es el
     // gesto que se hace sobre la marcha, andando; el menú de acciones era un
     // rodeo. Los virtuales (noches, check-out) no se marcan: no son paradas.
+    // Dejar pulsada la tarjeta (o botón derecho) abre su menú: editar,
+    // duplicar o eliminar. Se engancha a las tres formas de fila que hay.
+    const _conMenu = (nodo) => {
+      if (!nodo || !canEdit()) return nodo;
+      TripDetail._attachLongPress(nodo, () => TripDetail.openPlanningCardMenu(t, it), {
+        // Los botones de la fila tienen lo suyo; ahí la pulsación larga no pinta.
+        ignorar: 'button, a, input, select, textarea',
+      });
+      return nodo;
+    };
+
     const _marcable = (nodo, opts2) => {
       // La llave del alojamiento es un item virtual (la primera noche), pero
       // dormir ahí sí es algo que se hace: lleva marcador como el billete.
@@ -11451,7 +11481,7 @@ const TripDetail = {
         }) : null,
       ].filter(Boolean));
       if (customColor) ncNode.style.setProperty('--card-color', customColor);
-      return ncNode;
+      return _conMenu(ncNode);
     }
 
     // --- Noche de llegada: tarjeta llave (el equivalente verde del billete) ---
@@ -11512,7 +11542,7 @@ const TripDetail = {
         ].filter(Boolean)),
       ].filter(Boolean));
       if (customColor) kcNode.style.setProperty('--card-color', customColor);
-      return kcNode;
+      return _conMenu(kcNode);
     }
 
     // Comida: se compone como el encabezado de una carta — momento en
@@ -11774,7 +11804,7 @@ const TripDetail = {
       ].filter(Boolean)),
     ].filter(Boolean));
     if (customColor) node.style.setProperty('--card-color', customColor);
-    return node;
+    return _conMenu(node);
   },
 
   // Vista "tarjetas": pantalla completa, un día por tarjeta, deslizable de lado a lado.
@@ -12472,20 +12502,113 @@ const TripDetail = {
   // Comparte el mismo registro day_notes que la nota libre.
   // Pulsación larga (≈500 ms) o clic derecho sobre `node` → ejecuta onLong, y suprime
   // el click posterior para que no se dispare la acción normal (p. ej. plegar el día).
-  _attachLongPress(node, onLong) {
+  _attachLongPress(node, onLong, opts) {
+    opts = opts || {};
     let timer = null, fired = false, sx = 0, sy = 0;
-    const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const clear = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      node.classList.remove('li-pulsando');
+    };
+    const suyo = (e) => !(opts.ignorar && e.target && e.target.closest && e.target.closest(opts.ignorar));
     node.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (!suyo(e)) return;
       fired = false; sx = e.clientX; sy = e.clientY; clear();
-      timer = setTimeout(() => { fired = true; clear(); onLong(); }, 500);
+      node.classList.add('li-pulsando');
+      timer = setTimeout(() => {
+        fired = true; clear();
+        // Un toque en el dedo para que se note que ha salido el menú.
+        try { if (navigator.vibrate) navigator.vibrate(12); } catch (_) {}
+        // El dedo sigue puesto: al levantarlo, el clic caería sobre lo que
+        // acabe de aparecer debajo (la primera opción del menú, por ejemplo).
+        // Ese clic se traga.
+        TripDetail._tragarProximoClick();
+        onLong();
+      }, 500);
     });
     node.addEventListener('pointermove', (e) => { if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) clear(); });
     node.addEventListener('pointerup', clear);
     node.addEventListener('pointercancel', clear);
     node.addEventListener('pointerleave', clear);
+    node.addEventListener('scroll', clear, true);
+    // Arrastrar para reordenar es otro gesto: el menú no debe colarse.
+    node.addEventListener('dragstart', clear);
     node.addEventListener('click', (e) => { if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; } }, true);
-    node.addEventListener('contextmenu', (e) => { e.preventDefault(); onLong(); });
+    node.addEventListener('contextmenu', (e) => { if (!suyo(e)) return; e.preventDefault(); onLong(); });
+  },
+
+  // Se come el siguiente clic (600 ms como mucho): el que suelta el dedo tras
+  // una pulsación larga, que si no aterriza en lo que se acaba de abrir.
+  _tragarProximoClick() {
+    const quitar = () => {
+      document.removeEventListener('click', tragar, true);
+      clearTimeout(tm);
+    };
+    const tragar = (e) => { e.preventDefault(); e.stopPropagation(); quitar(); };
+    const tm = setTimeout(quitar, 600);
+    document.addEventListener('click', tragar, true);
+  },
+
+  // Menú de una parada: sale al dejar pulsada su tarjeta (o con el botón
+  // derecho). Lo justo: editar, duplicar y eliminar.
+  async openPlanningCardMenu(t, it) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    // Las filas virtuales (las noches del alojamiento, la llegada de un vuelo,
+    // los días de un evento largo) son copias pintadas: se actúa sobre la
+    // parada de verdad.
+    let base = it;
+    if (it._virtual) {
+      try { base = await DB.get('planning_items', it.id); } catch (_) { base = null; }
+      if (!base || base.deleted_at) { UI.toast('Esa parada ya no está'); return; }
+    }
+    const td = typeDef(base.type);
+    const titulo = (base.title || base.place_name || td.label || 'Parada').trim();
+    const fila = (icono, lbl, sub, fn, cls) => el('button', {
+      type:'button', class:'res-fila' + (cls ? ' ' + cls : ''),
+      onclick: () => { UI.closeSheet(); setTimeout(fn, 200); },
+    }, [
+      el('span', { class:'res-ic', html: svg(icono), 'aria-hidden':'true' }),
+      el('span', { class:'res-fila-txt' }, [
+        el('span', { class:'res-fila-lbl', text: lbl }),
+        el('span', { class:'res-fila-sub', text: sub }),
+      ]),
+      el('span', { class:'res-fila-chev', html: svg('chevron'), 'aria-hidden':'true' }),
+    ]);
+    const body = el('div', {}, [
+      el('div', { class:'res-panel menu-parada' }, [
+        fila('edit', 'Editar', it._virtual ? 'Abre el alojamiento entero' : 'Cambiar sus datos, el día o la hora',
+          () => TripDetail.openPlanningEditor(t, base)),
+        fila('copy', 'Duplicar', 'Abre una copia para retocar y guardar',
+          () => TripDetail._duplicarParada(t, base)),
+        fila('trash', 'Eliminar', 'Va a la papelera del viaje',
+          () => TripDetail._borrarParada(t, base), 'peligro'),
+      ]),
+    ]);
+    UI.openSheet({
+      title: titulo.length > 42 ? titulo.slice(0, 41) + '…' : titulo,
+      body,
+      footer: [ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar') ],
+    });
+  },
+
+  // Copia exacta con id nuevo. Se abre el editor en vez de guardar a lo bruto:
+  // duplicar casi siempre es para cambiar algo (el día, la hora) y así nada se
+  // escribe hasta que se pulsa Guardar.
+  _duplicarParada(t, it) {
+    const copia = JSON.parse(JSON.stringify(it));
+    copia.id = uuid();
+    copia.visited = false; copia.visited_at = null;
+    delete copia.created_at; delete copia.updated_at; delete copia.deleted_at;
+    Object.keys(copia).forEach(k => { if (k.charAt(0) === '_') delete copia[k]; });
+    TripDetail.openPlanningEditor(t, copia);
+  },
+
+  async _borrarParada(t, it) {
+    const ok = await UI.confirm('¿Borrar esta parada? Irá a la papelera; podrás recuperarla desde "Editar viaje".');
+    if (!ok) return;
+    try { await DB.remove('planning_items', it.id); } catch (_) { UI.toast('No se pudo borrar'); return; }
+    UI.toast('A papelera');
+    Router.render();
   },
 
   // Editor unificado del día: título + color + nota libre (todo en day_notes).
