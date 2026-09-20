@@ -1495,42 +1495,92 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .ab-lbl .ab-mid { color:color-mix(in srgb, var(--tipo-actividad) 75%, var(--text-muted)); font-weight:800; }
 
 /* ======================================================================
-   BILLETE — los traslados no son una parada más: son un ticket. Cuerpo en
-   color, troquel con muescas a los lados y campos con etiqueta pequeña.
+   BILLETE Y LLAVE — la misma pieza de papel
+   ----------------------------------------------------------------------
+   Un traslado y la primera noche comparten esqueleto: misma caja, mismo
+   acolchado, mismo talón troquelado y misma tipografía de etiquetas. Solo
+   cambian el color y lo que va dentro, así que estas reglas valen para los
+   dos y cada bloque de abajo añade lo suyo.
+   La fila que los contiene se resetea con cuatro clases: las reglas por
+   tipo (.type-vuelo, .type-hotel…) le devolverían borde y márgenes.
    ====================================================================== */
-.timeline-list .timeline-item.has-ticket {
-  padding:0; gap:0; background:transparent !important; box-shadow:none !important; margin:8px 0;
+.timeline-list .timeline-item.list-item.has-ticket,
+.timeline-list .timeline-item.list-item.has-keycard {
+  padding:0; gap:0; border:0; margin:8px 0;
+  background:transparent !important; box-shadow:none !important;
 }
-.timeline-list .timeline-item.has-ticket::after { display:none; }   /* sin separador */
-.timeline-list .timeline-item.has-ticket .li-main { min-width:0; }
+/* Entre filas normales el margen superior se colapsa (mandan los separadores),
+   pero estas dos flotan con sombra: siempre respiran igual por arriba. */
+.timeline-list .timeline-item.list-item + .timeline-item.list-item.has-ticket,
+.timeline-list .timeline-item.list-item + .timeline-item.list-item.has-keycard { margin-top:8px; }
+.timeline-list .timeline-item.has-ticket::after,
+.timeline-list .timeline-item.has-keycard::after { display:none; }   /* sin separador */
+.timeline-list .timeline-item.has-ticket .li-main,
+.timeline-list .timeline-item.has-keycard .li-main { min-width:0; width:100%; }
 .timeline-list .timeline-item.has-ticket .li-title { width:100%; }
-.li-ticket {
+.li-ticket, .li-keycard {
   position:relative; display:flex; width:100%; min-width:0; border-radius:16px; overflow:hidden;
-  color:#fff; background:linear-gradient(135deg, #1e3a8a 0%, #312e81 55%, #4338ca 100%);
-  box-shadow:0 6px 18px color-mix(in srgb, #312e81 28%, transparent);
+  color:#fff;
 }
 /* Textura tenue en diagonal, como el mapa de fondo de un billete */
-.li-ticket::before {
+.li-ticket::before, .li-keycard::before {
   content:''; position:absolute; inset:0; pointer-events:none; opacity:.5;
   background:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 1px, transparent 1px 13px);
 }
-.tk-main { flex:1; min-width:0; padding:11px 13px 12px; position:relative; z-index:1; --tk-w:560px; }
-/* En pantallas anchas el billete no se estira de borde a borde: la información
-   vive en una columna centrada del ancho de una tarjeta real. */
-.tk-top, .tk-route, .tk-fields { max-width:var(--tk-w); margin-inline:auto; }
-.tk-top { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
-.tk-kind {
+.tk-main, .kc-main { flex:1; min-width:0; padding:11px 13px 12px; position:relative; z-index:1; }
+.tk-top, .kc-top { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+.tk-kind, .kc-kind {
   font-size:9.5px; font-weight:800; letter-spacing:.16em; text-transform:uppercase;
   color:rgba(255,255,255,.72); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.tk-status {
+.tk-status, .kc-status {
   margin-left:auto; flex:none; font-size:9px; font-weight:800; letter-spacing:.08em;
   text-transform:uppercase; padding:3px 8px; border-radius:var(--r-pill);
   background:rgba(255,255,255,.16); color:#fff;
 }
-.tk-status.s-confirmado { background:#10b981; }
-.tk-status.s-cancelado  { background:#ef4444; }
-.tk-status.s-por_iniciar{ background:#f59e0b; color:#3b2400; }
+.tk-status.s-confirmado,  .kc-status.s-confirmado  { background:#10b981; }
+.tk-status.s-cancelado,   .kc-status.s-cancelado   { background:#ef4444; }
+.tk-status.s-por_iniciar, .kc-status.s-por_iniciar { background:#f59e0b; color:#3b2400; }
+/* Fila de campos bajo el titular, con la misma métrica en los dos */
+.tk-fields, .kc-fields {
+  display:flex; align-items:flex-start; justify-content:center; gap:14px; margin-top:10px; min-width:0;
+}
+.tk-fields .tk-f, .kc-fields .kc-f { flex:0 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tk-f-l, .kc-f-l {
+  font-size:8px; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,255,255,.55);
+}
+.tk-f-v, .kc-f-v { font-size:13px; font-weight:800; font-feature-settings:"tnum"; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+/* Talón troquelado: línea de puntos vertical con una muesca arriba y otra abajo */
+.tk-stub, .kc-stub {
+  flex:0 0 84px; position:relative; z-index:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:2px; padding:15px 7px 8px; text-align:center;
+  border-left:2px dashed rgba(255,255,255,.35); background:rgba(255,255,255,.07);
+}
+.tk-stub b, .kc-stub b { font-size:13px; font-weight:800; line-height:1.15; max-width:100%;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tk-stub::before, .tk-stub::after, .kc-stub::before, .kc-stub::after {
+  content:''; position:absolute; left:-9px; width:16px; height:16px; border-radius:50%;
+  background:var(--bg-elev);
+}
+.tk-stub::before, .kc-stub::before { top:-9px; }
+.tk-stub::after,  .kc-stub::after  { bottom:-9px; }
+/* Van dentro de un panel blanco: las muescas heredan su fondo. */
+.flash-card .tk-stub::before, .flash-card .tk-stub::after,
+.flash-card .kc-stub::before, .flash-card .kc-stub::after,
+.timeline-list.tl-panel .tk-stub::before, .timeline-list.tl-panel .tk-stub::after,
+.timeline-list.tl-panel .kc-stub::before, .timeline-list.tl-panel .kc-stub::after { background:var(--bg-elev); }
+
+/* --- Solo el billete: color, columna centrada y tramo origen/destino --- */
+.li-ticket {
+  background:linear-gradient(135deg, #1e3a8a 0%, #312e81 55%, #4338ca 100%);
+  box-shadow:0 6px 18px color-mix(in srgb, #312e81 28%, transparent);
+}
+.tk-main { --tk-w:560px; }
+/* En pantallas anchas el billete no se estira de borde a borde: la información
+   vive en una columna centrada del ancho de una tarjeta real. */
+.tk-top, .tk-seg, .tk-fields { max-width:var(--tk-w); margin-inline:auto; }
 /* Tramo: origen y destino en dos columnas iguales con el icono justo en medio.
    Las columnas se miden por su contenido (width:max-content) y son gemelas
    (1fr 1fr), así que el icono cae siempre en el centro del grupo. La hora se
@@ -1540,7 +1590,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   display:grid; grid-template-columns:1fr auto 1fr; align-items:start;
   gap:calc(var(--tk-city-fs) * .6);
   width:max-content; max-width:100%; margin-inline:auto;
-  --tk-city-fs:clamp(15.5px, calc((100vw - 178px) * .0896), 19px); --tk-city-ls:-.03em;
+  --tk-city-fs:clamp(15.5px, calc((100vw - 162px) * .0833), 19px); --tk-city-ls:-.03em;
   --tk-ic-size:calc(var(--tk-city-fs) * 1.85);
   --tk-ic-fs:calc(var(--tk-city-fs) * .62);
 }
@@ -1548,9 +1598,9 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
    del móvil (~220px a 390px de pantalla, y crece ~1:1 con el ancho hasta toparse
    con el máximo de 560px). En pantallas anchas ya no hace falta encoger, así que
    cada escalón sube hasta los 19px de diseño. */
-.tk-seg.tk-long  { --tk-city-ls:-.025em; --tk-city-fs:clamp(13px, calc((100vw - 178px) * .0755), 19px); }
-.tk-seg.tk-xlong { --tk-city-ls:-.02em;  --tk-city-fs:clamp(11px, calc((100vw - 178px) * .0637), 19px); }
-.tk-seg.tk-xxlong{ --tk-city-ls:-.01em;  --tk-city-fs:clamp(10px, calc((100vw - 178px) * .058),  19px); }
+.tk-seg.tk-long  { --tk-city-ls:-.025em; --tk-city-fs:clamp(13px, calc((100vw - 162px) * .0724), 19px); }
+.tk-seg.tk-xlong { --tk-city-ls:-.02em;  --tk-city-fs:clamp(11px, calc((100vw - 162px) * .0614), 19px); }
+.tk-seg.tk-xxlong{ --tk-city-ls:-.01em;  --tk-city-fs:clamp(10px, calc((100vw - 162px) * .0561), 19px); }
 .tk-side { min-width:0; display:flex; flex-direction:column; gap:1px; }
 .tk-side-a { align-items:flex-end;   text-align:right; }
 .tk-side-b { align-items:flex-start; text-align:left; }
@@ -1572,46 +1622,28 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 .tk-flight .tk-ic { transform:rotate(45deg); }
 /* Segunda línea: compañía, número y asientos, ya bajo el tramo */
-.tk-fields { display:flex; align-items:flex-start; justify-content:center; gap:14px; margin-top:10px; min-width:0; }
-.tk-fields .tk-f { flex:0 1 auto; min-width:0; }
 .tk-f-s .tk-f-v { letter-spacing:.02em; }
-.tk-f { min-width:0; display:flex; flex-direction:column; gap:1px; }
-.tk-f-l {
-  font-size:8px; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
-  color:rgba(255,255,255,.55);
-}
-.tk-f-v { font-size:13px; font-weight:800; font-feature-settings:"tnum"; white-space:nowrap;
-  overflow:hidden; text-overflow:ellipsis; }
 .tk-f-x { min-width:0; flex:1 1 auto; }
 .tk-f-x .tk-f-v { font-weight:600; color:rgba(255,255,255,.85); }
 .tk-next { font-size:8px; font-weight:800; margin-left:2px; top:-.6em; color:rgba(255,255,255,.75); }
-/* Troquel: línea de puntos vertical con una muesca arriba y otra abajo */
-.tk-stub {
-  flex:0 0 84px; position:relative; z-index:1; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:2px; padding:8px 7px; text-align:center;
-  border-left:2px dashed rgba(255,255,255,.35); background:rgba(255,255,255,.07);
-}
-.tk-stub b { font-size:13px; font-weight:800; line-height:1.15; max-width:100%;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* Separación entre duración e importe, dentro del propio talón */
 .tk-stub-rule { width:26px; height:1px; margin:7px 0 5px; background:rgba(255,255,255,.3); }
 .tk-stub-eur { font-size:12px; letter-spacing:-.01em; font-feature-settings:"tnum"; }
 .tk-stub .tk-stub-em { font-size:22px; line-height:1; }
-.tk-stub::before, .tk-stub::after {
-  content:''; position:absolute; left:-9px; width:16px; height:16px; border-radius:50%;
-  background:var(--bg-elev);
+/* Acciones sobre el papel, en blanco y en el mismo sitio en los dos. El ••• se
+   mete en la esquina del talón, por encima de su etiqueta, sin taparla. */
+.timeline-list .timeline-item.has-ticket .li-more,
+.timeline-list .timeline-item.has-keycard .li-more {
+  color:rgba(255,255,255,.55); position:absolute; right:5px; top:2px; transform:none;
+  width:24px; height:14px; font-size:10px; line-height:1;
 }
-.tk-stub::before { top:-9px; }
-.tk-stub::after  { bottom:-9px; }
-/* El billete va dentro de un panel blanco: las muescas heredan su fondo. */
-.flash-card .tk-stub::before, .flash-card .tk-stub::after,
-.timeline-list.tl-panel .tk-stub::before, .timeline-list.tl-panel .tk-stub::after { background:var(--bg-elev); }
-/* Acciones sobre el billete, en blanco */
-.timeline-list .timeline-item.has-ticket .li-more { color:rgba(255,255,255,.6); position:absolute;
-  right:7px; top:7px; transform:none; width:28px; height:18px; font-size:11px; }
-.timeline-list .timeline-item.has-ticket .li-actions { position:absolute; right:4px; top:50%;
-  transform:translateY(-50%); background:rgba(15,23,42,.55); border-radius:var(--r-pill); padding:2px 4px; }
-.timeline-list .timeline-item.has-ticket .li-actions .icon-btn { color:#fff; }
+.timeline-list .timeline-item.has-ticket .li-actions,
+.timeline-list .timeline-item.has-keycard .li-actions {
+  position:absolute; right:4px; top:50%; transform:translateY(-50%);
+  background:rgba(15,23,42,.55); border-radius:var(--r-pill); padding:2px 4px;
+}
+.timeline-list .timeline-item.has-ticket .li-actions .icon-btn,
+.timeline-list .timeline-item.has-keycard .li-actions .icon-btn { color:#fff; width:26px; height:26px; }
 .timeline-list .timeline-item.has-ticket.status-cancelado .li-ticket { opacity:.62; }
 /* Al ser el próximo evento, el billete se realza por sí mismo: ni fondo azul
    claro alrededor ni barra lateral. Todo ocurre dentro del billete. */
@@ -1635,170 +1667,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .li-ticket .card-next .ne-bell svg { color:#fff; }
 /* Aviso de gasto pendiente, dentro de la cabecera del billete */
 .tk-warn { flex:none; font-size:12px; line-height:1; }
-
-/* Los tramos y huecos se alinean con la columna del texto */
-.timeline-list .gap-chip { margin-left:62px; }
-/* La noche de continuación sigue el mismo patrón de fila */
-
-/* ======================================================================
-   TIRA DE DÍAS — cuadraditos con la fecha, arrastrables en horizontal.
-   Un toque abre la tarjeta de ese día (desplegándose desde el cuadradito).
-   ====================================================================== */
-.day-strip {
-  position:sticky; top:56px; z-index:20;   /* la altura real la fija el JS */
-  margin:0 -16px 14px; padding:8px 16px 10px;
-  background:var(--bg);
-  border-bottom:1px solid var(--line-soft);
-}
-.day-strip-inner {
-  display:flex; gap:8px; overflow-x:auto;
-  scrollbar-width:none; -ms-overflow-style:none; padding:2px 0 2px;
-  overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;
-}
-.day-strip-inner::-webkit-scrollbar { display:none; }
-.day-strip-inner.dragging { scroll-behavior:auto; cursor:grabbing; }
-.day-strip-inner.dragging .day-pill { pointer-events:none; }
-.day-pill {
-  flex:0 0 auto; width:54px; padding:6px 4px 5px; cursor:pointer;
-  display:flex; flex-direction:column; align-items:center; gap:0;
-  border:1px solid var(--line); border-radius:14px; background:var(--bg-elev);
-  color:var(--text); font-family:inherit; font-feature-settings:"tnum","ss01";
-  transition:transform .12s var(--ease), border-color .15s var(--ease), background .15s var(--ease);
-}
-.day-pill:active { transform:scale(.94); }
-.day-pill i { font-style:normal; font-size:9.5px; font-weight:800; letter-spacing:.1em;
-  text-transform:uppercase; color:var(--text-muted); }
-.day-pill b { font-size:19px; font-weight:800; line-height:1.05; letter-spacing:-.02em; }
-.day-pill .wd { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:lowercase; }
-.day-pill .n { margin-top:3px; font-size:9px; font-weight:800; line-height:1;
-  min-width:15px; padding:2px 4px; border-radius:999px;
-  background:color-mix(in srgb, var(--accent) 12%, var(--bg-soft)); color:var(--accent); }
-.day-pill .n.vacia { background:transparent; color:var(--line); }
-.day-pill.past { opacity:.5; }
-.day-pill.today { border-color:var(--accent); }
-.day-pill.today i, .day-pill.today b { color:var(--accent); }
-.day-pill.active { background:var(--text); border-color:var(--text); color:var(--text-inv); opacity:1; }
-.day-pill.active i, .day-pill.active .wd { color:color-mix(in srgb, var(--text-inv) 70%, transparent); }
-.day-pill.active b { color:var(--text-inv); }
-.day-pill.active .n { background:color-mix(in srgb, var(--text-inv) 20%, transparent); color:var(--text-inv); }
-
-/* ======================================================================
-   TARJETA DE DÍA — cada día es una tarjeta elevada con cabecera propia.
-   Separa un día de otro de un vistazo y agrupa su "camino".
-   ====================================================================== */
-.day-group {
-  background:var(--bg-elev); border:1px solid var(--line-soft); border-radius:22px;
-  margin:0 0 18px; padding:0; overflow:hidden;
-  box-shadow:0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.05);
-}
-:root[data-tema="oscuro"] .day-group { box-shadow:0 1px 2px rgba(0,0,0,.3); }
-.day-group .day-head {
-  padding:14px 15px 13px; margin:0;
-  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, var(--bg-elev)) 0%,
-                                      color-mix(in srgb, var(--accent-2, var(--accent)) 6%, var(--bg-elev)) 60%,
-                                      var(--bg-elev) 100%);
-  border-bottom:1px solid var(--line-soft);
-}
-.day-group.day-today .day-head { background:linear-gradient(135deg,
-  color-mix(in srgb, var(--accent) 16%, var(--bg-elev)), var(--bg-elev)); }
-/* Cuadradito de fecha a la izquierda del título (mismo lenguaje que la tira). */
-.day-badge {
-  flex:0 0 auto; width:46px; height:46px; border-radius:15px;
-  background:var(--text); color:var(--text-inv);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  line-height:1; font-feature-settings:"tnum";
-}
-.day-badge i { font-style:normal; font-size:8.5px; font-weight:800; letter-spacing:.11em;
-  text-transform:uppercase; opacity:.72; margin-bottom:2px; }
-.day-badge b { font-size:17px; font-weight:800; }
-.day-group.day-today .day-badge { background:var(--accent); }
-.day-head-txt { min-width:0; flex:1; }
-.day-head-txt .day-num { font-size:11px; font-weight:800; letter-spacing:.1em;
-  text-transform:uppercase; color:var(--text-muted); display:block; }
-.day-head-txt .day-date { font-size:17.5px; font-weight:800; letter-spacing:-.025em; display:block; }
-/* Bajo el título, UNA sola fila de chips: etiqueta del día, clima, paradas,
-   resumen de ruta y alojamiento. Antes iban en dos sitios distintos y la
-   etiqueta se montaba encima de la fecha. */
-.day-group .day-head { flex-wrap:wrap; }
-.day-group .day-meta-row {
-  flex-basis:100%; width:100%; margin:10px 0 0; padding:0; gap:6px; font-size:12px;
-}
-/* El nombre del alojamiento puede ser larguísimo: se recorta para que los
-   chips cortos quepan en la misma línea. */
-.day-group .day-meta-row .day-hotel-chip { max-width:72%; }
-.day-group .day-meta-row > * {
-  display:inline-flex; align-items:center; gap:4px; max-width:100%;
-  padding:4px 10px; border-radius:var(--r-pill); font-size:12.5px; font-weight:700;
-  background:var(--bg-elev); border:1px solid var(--line); color:var(--text-muted);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
-.day-group .day-meta-row .day-meta-pill { background:var(--accent-bg); border-color:transparent; color:var(--accent); max-width:70%; }
-.day-group .day-meta-row .day-meta-stops { color:var(--text); }
-.day-group .day-meta-row .wx-chip:empty { display:none; }
-.day-group .day-meta-row .day-route-summary:empty { display:none; }
-/* El chevron se queda pegado a la derecha de la primera línea. */
-.day-group .day-head-main .day-collapse { margin-left:auto; flex:none; }
-/* Si la fila de chips se queda sin nada visible, no ocupa sitio. */
-.day-group .day-meta-row:empty { display:none; }
-/* Al saltar a un día desde la tira, que no quede tapado por ella. */
-.day-group { scroll-margin-top:150px; }
-.day-head-txt .day-date .day-wd::first-letter { text-transform:uppercase; }
-.day-group .day-meta-row { padding:0 15px; margin:10px 0 0; }
-.day-group .day-note-card { margin:10px 15px 0; }
-.day-group .timeline-list { padding:4px 9px 12px; gap:0; }
-/* Dentro de la tarjeta el ancho es oro: se recorta el acolchado lateral de
-   las filas para que los títulos no se partan en tres líneas. */
-.day-group .timeline-item.list-item { padding:9px 8px; gap:9px; }
-.day-group .timeline-item .li-actions { gap:2px; }
-.day-group .timeline-item .li-time { min-width:38px; }
-.day-group.collapsed .day-head { border-bottom:0; }
-.day-group.collapsed .day-meta-row { padding-bottom:12px; }
-/* Bloque de paradas suelto (resumen del día): lleva su propio panel. */
-.timeline-list.tl-panel {
-  background:var(--bg-elev); border:1px solid var(--line-soft); border-radius:18px;
-  padding:6px 9px 10px; box-shadow:0 1px 2px rgba(15,23,42,.04);
-}
-.timeline-list.tl-panel > .timeline-item.type-hotel:last-child {
-  margin:8px -9px -10px; padding:11px 15px; border-radius:0 0 17px 17px;
-  background:color-mix(in srgb, var(--tipo-hotel) 7%, var(--bg-elev));
-  border-top:1px solid color-mix(in srgb, var(--tipo-hotel) 16%, transparent);
-}
-
-/* Las paradas NO son tarjetas: son filas dentro del panel del día. Sin borde,
-   sin sombra y sin fondo, para que el día se lea como un bloque y no como
-   ocho cajitas apiladas. El único color es la pastilla de la hora y, a la
-   izquierda, una barra fina con el estado. */
-.timeline-list .timeline-item.list-item {
-  background:transparent; border-color:transparent; box-shadow:none; border-radius:12px;
-}
-.timeline-list .timeline-item.list-item + .timeline-item.list-item { margin-top:0; }
-/* Separador finísimo entre paradas consecutivas: da estructura sin devolver
-   las cajas. No sale si entre medias hay un tramo, un hueco o una franja. */
-.timeline-list .timeline-item.list-item + .timeline-item.list-item::after {
-  content:''; position:absolute; left:8px; right:8px; top:0; height:1px;
-  background:var(--line-soft); pointer-events:none;
-}
-.timeline-list .timeline-item.type-hotel:last-child::after { display:none; }
-.timeline-list .timeline-item.status-por_iniciar { box-shadow: inset 2.5px 0 0 #f59e0b; }
-.timeline-list .timeline-item.status-en_consulta { box-shadow: inset 2.5px 0 0 #3b82f6; }
-.timeline-list .timeline-item.status-confirmado  { box-shadow: inset 2.5px 0 0 #10b981; }
-.timeline-list .timeline-item.status-cancelado   { box-shadow: inset 2.5px 0 0 #ef4444; }
-.timeline-list .timeline-item.has-custom-color   { box-shadow: inset 3px 0 0 var(--card-color); }
-.timeline-list .timeline-item.is-next { box-shadow: inset 3px 0 0 var(--accent) !important; }
-/* Los transportes se distinguen por el COLOR DEL TEXTO, no por un fondo:
-   así la lista respira y el traslado se sigue viendo de lejos. */
-:root { --li-move:#1e40af; }
-:root[data-tema="oscuro"] { --li-move:#93c5fd; }
-@media (prefers-color-scheme: dark) { :root:not([data-tema]) { --li-move:#93c5fd; } }
-.timeline-list .timeline-item.list-item.type-transporte,
-.timeline-list .timeline-item.list-item.type-vuelo,
-.timeline-list .timeline-item.list-item.type-coche { background:transparent; border:0; margin:2px 0; }
-.timeline-list .timeline-item.type-transporte .li-title-text,
-.timeline-list .timeline-item.type-vuelo .li-title-text,
-.timeline-list .timeline-item.type-coche .li-title-text { color:var(--li-move); }
-.timeline-list .timeline-item.list-item.type-transporte.is-next,
-.timeline-list .timeline-item.list-item.type-vuelo.is-next,
-.timeline-list .timeline-item.list-item.type-coche.is-next { background:var(--accent-bg) !important; }
 
 /* Traslado con origen y destino: tira tipo tarjeta de embarque. */
 .li-boarding { display:flex; align-items:center; gap:10px; width:100%; min-width:0; }
@@ -1911,48 +1779,19 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   background:var(--bg-elev); border-radius:var(--r-pill); padding:3px 10px; white-space:nowrap;
 }
 
-/* · Llegada: tarjeta llave · */
-.timeline-list .timeline-item.has-keycard {
-  padding:0; gap:0; background:transparent !important; box-shadow:none !important; margin:8px 0;
-}
-.timeline-list .timeline-item.has-keycard::after { display:none; }
-.timeline-list .timeline-item.has-keycard .li-main { min-width:0; width:100%; }
+/* · Llegada: tarjeta llave. Solo lo que la diferencia del billete: el verde y
+     el nombre del hotel centrado donde el billete pone el tramo. · */
 .li-keycard {
-  position:relative; display:flex; width:100%; min-width:0; border-radius:16px; overflow:hidden;
-  color:#fff; background:linear-gradient(135deg, #065f46 0%, #15803d 62%, #22c55e 100%);
-  box-shadow:0 6px 18px color-mix(in srgb, #065f46 26%, transparent);
+  background:linear-gradient(135deg, #065f46 0%, #15803d 62%, #22c55e 100%);
+  box-shadow:0 6px 18px color-mix(in srgb, #065f46 28%, transparent);
 }
-.li-keycard::before {
-  content:''; position:absolute; inset:0; pointer-events:none; opacity:.5;
-  background:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 1px, transparent 1px 13px);
+/* Mismo cuerpo que las ciudades del billete y mismo comportamiento fluido:
+   crece con el ancho hasta los 19px de diseño. */
+.kc-n {
+  font-size:clamp(14px, calc((100vw - 162px) * .0658), 19px);
+  font-weight:800; letter-spacing:-.03em; line-height:1.15; text-align:center;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.kc-main { flex:1; min-width:0; padding:11px 13px 12px; position:relative; z-index:1; }
-.kc-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-.kc-kind { font-size:9.5px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.72); }
-.kc-status { margin-left:auto; flex:none; font-size:9px; font-weight:800; letter-spacing:.06em;
-  text-transform:uppercase; padding:3px 8px; border-radius:var(--r-pill); background:rgba(255,255,255,.18); color:#fff; }
-.kc-status.s-por_iniciar { background:#f59e0b; color:#3b2400; }
-.kc-status.s-cancelado { background:#ef4444; }
-.kc-n { font-size:18px; font-weight:800; letter-spacing:-.03em; line-height:1.2;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.kc-fields { display:flex; align-items:flex-start; gap:13px; margin-top:9px; min-width:0; }
-.kc-f { min-width:0; display:flex; flex-direction:column; gap:1px; }
-.kc-f:last-child { flex:1 1 0; }
-.kc-f-l { font-size:8px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.55); }
-.kc-f-v { font-size:13px; font-weight:800; font-feature-settings:"tnum";
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.kc-stub {
-  flex:0 0 74px; position:relative; z-index:1; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:2px; padding:8px 6px; text-align:center;
-  border-left:2px dashed rgba(255,255,255,.35); background:rgba(255,255,255,.08);
-}
-.kc-stub b { font-size:15px; font-weight:800; }
-.kc-stub::before, .kc-stub::after { content:''; position:absolute; left:-9px; width:16px; height:16px;
-  border-radius:50%; background:var(--bg-elev); }
-.kc-stub::before { top:-9px; } .kc-stub::after { bottom:-9px; }
-.timeline-list .timeline-item.has-keycard .li-actions { position:absolute; right:84px; top:8px;
-  background:rgba(6,78,59,.5); border-radius:var(--r-pill); padding:1px 3px; }
-.timeline-list .timeline-item.has-keycard .li-actions .icon-btn { color:#fff; width:26px; height:26px; }
 
 /* · Salida: el mismo disco que las comidas, pero solo el ARO en verde sobre
      fondo blanco, con la puerta dentro. Salir pesa menos que llegar. · */
@@ -10618,6 +10457,18 @@ const TripDetail = {
             ]),
           ]),
         ]),
+        // Sin este botón las acciones de la llave no se abren al tacto: solo
+        // aparecen con .acts-open o con hover, que en un móvil no existe.
+        el('button', {
+          class:'li-more', type:'button', title:'Acciones', 'aria-label':'Acciones de esta parada',
+          onclick: (e) => {
+            e.stopPropagation();
+            const row = e.currentTarget.closest('.timeline-item');
+            const wasOpen = row.classList.contains('acts-open');
+            document.querySelectorAll('.timeline-item.acts-open').forEach(n => n.classList.remove('acts-open'));
+            if (!wasOpen) row.classList.add('acts-open');
+          },
+        }, '•••'),
         el('div', { class:'li-actions', style:{alignItems:'center'} }, [
           dirUrl ? el('a', { class:'icon-btn', href: dirUrl, target:'_blank', title:'Cómo llegar', html: svg('map'),
             onclick: (e) => e.stopPropagation() }) : null,
