@@ -10814,7 +10814,13 @@ const TripDetail = {
     };
     // Cada día, su página del carrusel. No hay scroll que pase de un día a otro:
     // se desliza a los lados, como se hacía en la pantalla completa.
+    //
+    // La CABECERA de cada día se monta ya (es barata y es lo que buscan el clima
+    // y la tira), pero la lista de paradas se deja pendiente hasta que el día
+    // esté a la vista o al lado. Montarlo todo de golpe eran ~9.000 nodos y
+    // medio segundo de espera antes de ver el primer día.
     const pager = el('div', { class:'plan-pager' });
+    const pintores = new Map();
     for (const k of keys) {
       const collapsed = TripDetail._collapsedDays.has(k);
       const isPast = esPasado(k);
@@ -10913,12 +10919,17 @@ const TripDetail = {
         g.appendChild(el('div', { class:'day-note-card', text: noteMap[k].text }));
       }
 
-      const dayArr = byDay[k];
-      const list = TripDetail._dayListEl(t, k, dayArr, { nextEv, todayStr, nightMap, morningHotel, renderToken });
-      g.appendChild(list);
+      pintores.set(k, () => TripDetail._dayListEl(t, k, byDay[k],
+        { nextEv, todayStr, nightMap, morningHotel, renderToken }));
       pager.appendChild(el('div', { class:'plan-page' + (isPast ? ' day-past' : ''), data:{ day:k } }, [ g ]));
     }
     root.appendChild(pager);
+    TripDetail._pintores = pintores;
+    TripDetail._wxCache = {};
+    // El enganche de arrastre del render anterior apunta a un cierre muerto: si
+    // un día se montara con él, sus paradas quedarían marcadas como enganchadas
+    // y el enganche bueno (que llega en el setTimeout de abajo) las saltaría.
+    TripDetail._dndNuevos = null;
 
     setTimeout(() => TripDetail._wirePlanningDnD(root, t), 0);
     TripDetail._wirePlanningPager(root, pager, dayStrip, diaInicial);
@@ -10951,8 +10962,13 @@ const TripDetail = {
             if (r) span.appendChild(el('span', { class:'wx-ropa', text: ' · ' + r }));
           }
           // En una playa el tiempo es la mitad del plan: va también en su postal.
-          if (txt) document.querySelectorAll(`.bh-wx[data-day="${CSS.escape(k)}"]`)
-            .forEach(n => { n.textContent = txt; });
+          // Se guarda además en caché: la postal de un día que todavía no se ha
+          // montado no existe aún, y al montarlo hay que ponérselo.
+          if (txt) {
+            if (TripDetail._wxCache) TripDetail._wxCache[k] = txt;
+            document.querySelectorAll(`.bh-wx[data-day="${CSS.escape(k)}"]`)
+              .forEach(n => { n.textContent = txt; });
+          }
         });
       }).catch(() => {});
     });
@@ -11120,6 +11136,45 @@ const TripDetail = {
     return true;
   },
 
+  // Monta la lista de paradas de un día si estaba pendiente. Devuelve true si ha
+  // tenido que montarla, porque entonces el alto del carrusel cambia.
+  _pintarDia(k) {
+    const pintores = TripDetail._pintores;
+    if (!pintores || !pintores.has(k)) return false;
+    const pager = TripDetail._pager;
+    if (!pager || !pager.isConnected) return false;
+    const esc = (x) => (window.CSS && CSS.escape) ? CSS.escape(x) : x;
+    const pag = pager.querySelector(`.plan-page[data-day="${esc(k)}"]`);
+    const g = pag && pag.querySelector('.day-group');
+    if (!g) return false;
+    const pintar = pintores.get(k);
+    pintores.delete(k);              // primero: si falla, no se reintenta en bucle
+    let lista;
+    try { lista = pintar(); } catch (e) { console.warn('pintarDia', k, e); return false; }
+    g.appendChild(lista);
+    // Lo que se monta tarde tiene que poder arrastrarse igual y llevar su clima:
+    // el reparto del tiempo ya pasó por aquí cuando esta lista no existía.
+    TripDetail._dndNuevos?.(pag);
+    const wx = TripDetail._wxCache && TripDetail._wxCache[k];
+    if (wx) pag.querySelectorAll('.bh-wx').forEach(n => { n.textContent = wx; });
+    return true;
+  },
+
+  // El día que se ve y los dos de al lado: así al llegar deslizando ya está
+  // montado y no se ve aparecer nada.
+  _pintarCerca(k) {
+    const pager = TripDetail._pager;
+    if (!pager || !TripDetail._pintores || !TripDetail._pintores.size) return false;
+    const ps = [...pager.querySelectorAll('.plan-page')];
+    const i = ps.findIndex(p => p.dataset.day === k);
+    if (i < 0) return false;
+    let algo = false;
+    for (const j of [i, i - 1, i + 1]) {
+      if (ps[j] && TripDetail._pintarDia(ps[j].dataset.day)) algo = true;
+    }
+    return algo;
+  },
+
   // Páginas del carrusel que se pueden ver (por si alguna quedara oculta: el
   // índice de scroll tiene que contar solo las que de verdad ocupan sitio).
   _paginasVisibles(pager) {
@@ -11135,7 +11190,9 @@ const TripDetail = {
     const esc = (x) => (window.CSS && CSS.escape) ? CSS.escape(x) : x;
     const pag = pager.querySelector(`.plan-page[data-day="${esc(k)}"]`);
     if (!pag) return false;
-    // Llevar ahí al usuario y dejarle mirando un día plegado no sirve de nada.
+    // Llevar ahí al usuario y dejarle mirando un día plegado —o sin montar— no
+    // sirve de nada: se pinta antes de medir para que el alto salga ya bueno.
+    TripDetail._pintarCerca(k);
     const g = pag.querySelector('.day-group');
     if (g && g.classList.contains('collapsed')) {
       g.classList.remove('collapsed');
@@ -11219,6 +11276,8 @@ const TripDetail = {
       if (k && k !== TripDetail._diaVisible) {
         TripDetail._diaVisible = k;
         if (dayStrip) dayStrip._focusDay(k, { smooth:true });
+        // El siguiente ya se monta mientras se mira este.
+        if (TripDetail._pintarCerca(k)) medir();
       }
     };
     // Se ha asentado: el alto pasa a ser el del día que toca y, si el día ha
@@ -11238,6 +11297,7 @@ const TripDetail = {
         pager.scrollTo({ left: destino, behavior: suave ? 'smooth' : 'auto' });
         return;                       // al llegar habrá otro scroll y otra pasada
       }
+      TripDetail._pintarCerca(ps[i].dataset.day);
       medir(null, true);
       if (TripDetail._diaVisible !== asentado) {
         asentado = TripDetail._diaVisible;
@@ -11306,7 +11366,7 @@ const TripDetail = {
     const ps = paginas();
     let i = ps.findIndex(p => p.dataset.day === diaInicial);
     if (i < 0) i = 0;
-    if (ps[i]) { TripDetail._diaVisible = asentado = ps[i].dataset.day; }
+    if (ps[i]) { TripDetail._diaVisible = asentado = ps[i].dataset.day; TripDetail._pintarCerca(asentado); }
     pager.scrollLeft = i * ancho();
     medir();
     if (dayStrip && TripDetail._diaVisible) dayStrip._focusDay(TripDetail._diaVisible);
@@ -12440,7 +12500,13 @@ const TripDetail = {
       root.querySelectorAll('.day-target').forEach(n => n.classList.remove('day-target'));
     };
 
-    root.querySelectorAll('.timeline-item:not(.virtual)').forEach(item => {
+    // Se engancha por elemento y no de una pasada: las páginas del carrusel se
+    // montan según se llega a ellas, y sus paradas tienen que entrar en ESTE
+    // mismo cierre. Volver a llamar a _wirePlanningDnD crearía un `dragged`
+    // aparte y cada soltar dispararía el movimiento dos veces.
+    const engancharParada = (item) => {
+      if (item._dndListo) return;
+      item._dndListo = true;
       item.addEventListener('dragstart', (e) => {
         dragged = item;
         item.classList.add('dragging');
@@ -12486,7 +12552,13 @@ const TripDetail = {
         await TripDetail._reorderPlanning(t, dragged.dataset.id, item.dataset.id, before, targetDay);
         if (targetDay !== draggedDay) UI.toast(`Movido al ${targetDay === 'sin-fecha' ? 'día sin fecha' : fmtDateShort(targetDay)}`);
       });
-    });
+    };
+    root.querySelectorAll('.timeline-item:not(.virtual)').forEach(engancharParada);
+    // Las páginas que se monten más tarde se enganchan aquí.
+    TripDetail._dndNuevos = (nodo) => {
+      if (!nodo) return;
+      nodo.querySelectorAll('.timeline-item:not(.virtual)').forEach(engancharParada);
+    };
 
     // Soltar sobre una pastilla de la tira: mueve la parada a ese día. Con un día
     // por pantalla el día de al lado no está a la vista, y la tira es el único
