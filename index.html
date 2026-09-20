@@ -2969,6 +2969,46 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
   background: color-mix(in srgb, var(--card-color) 18%, var(--bg-elev)) !important;
 }
 
+/* ======================================================================
+   MARCAR "YA VISTO" desde la propia pieza de la fila
+   ----------------------------------------------------------------------
+   El número de la ruta pasa a ser un tic verde; la hora, el disco de la
+   comida y el billete pierden su color y se apagan con el texto. La idea es
+   que de un vistazo se vea qué queda por hacer del día.
+   ====================================================================== */
+.li-mark { cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.li-mark:active { transform:scale(.92); }
+.li-mark { transition:transform .12s var(--ease), background-color .18s var(--ease),
+                      border-color .18s var(--ease), color .18s var(--ease), filter .18s var(--ease); }
+/* Número de ruta → tic verde sobre fondo limpio */
+.timeline-list .timeline-item.visited .li-num {
+  opacity:1; border-color:#10b981; background:transparent; color:#10b981;
+}
+.timeline-item.visited .li-num span { display:none; }
+.timeline-item.visited .li-num::after {
+  content:'✓'; font-size:15px; font-weight:800; line-height:1; transform:translateY(.5px);
+}
+/* Hora: se le va el color del tipo */
+.timeline-list .timeline-item.visited .li-time { background:var(--bg-soft); }
+.timeline-list .timeline-item.visited .li-time .li-time-a,
+.timeline-list .timeline-item.visited .li-time .li-time-b { color:var(--text-muted); }
+/* Disco de la comida: gris, sin brillo */
+.timeline-item.visited .li-meal {
+  background:var(--bg-soft); box-shadow:none; filter:grayscale(1); opacity:.75;
+}
+.timeline-item.visited .meal-kick .mk-t { color:var(--text-muted); }
+.timeline-item.visited .meal-kick .mk-ln { background:var(--line); }
+.timeline-item.visited .ml-h { color:var(--text-muted) !important; }
+/* Billete: el papel se apaga hasta casi fundirse con el fondo, como un billete
+   ya usado. Solo grayscale lo dejaba en un gris oscuro que pesaba más que sin
+   marcar. */
+.timeline-item.visited .li-ticket { filter:grayscale(1); opacity:.42; box-shadow:none; }
+:root[data-tema="oscuro"] .timeline-item.visited .li-ticket { opacity:.38; }
+/* La barra de horario de las actividades pierde el morado con el resto */
+.timeline-item.visited .li-actbar .ab-bar { background:var(--line-soft); }
+.timeline-item.visited .li-actbar .ab-bar i { background:var(--text-muted); }
+.timeline-item.visited .li-actbar .ab-lbl .ab-mid { color:var(--text-muted); }
+
 /* Estado "Visto" — la tarjeta entera queda en gris apagada.
    Gana en especificidad a status-* y border-* gracias a !important. */
 .timeline-item.visited,
@@ -2978,7 +3018,9 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
   opacity: .78;
 }
 .timeline-item.visited .li-title,
-.timeline-item.visited .li-sub {
+.timeline-item.visited .li-title-text,
+.timeline-item.visited .li-sub,
+.timeline-item.visited .li-subrow {
   color: var(--text-muted) !important;
 }
 .timeline-item.visited .item-emoji {
@@ -10395,6 +10437,23 @@ const TripDetail = {
     const isCheckout = it._virtual === 'checkout';
     const isNight = it._virtual === 'night';
     const isArrival = it._virtual === 'arrival';
+    // Marcar "ya visto" desde la propia pieza de la fila: el número de la ruta,
+    // la pastilla de la hora, el disco de la comida o el aro del billete. Es el
+    // gesto que se hace sobre la marcha, andando; el menú de acciones era un
+    // rodeo. Los virtuales (noches, check-out) no se marcan: no son paradas.
+    const _marcable = (nodo) => {
+      if (!nodo || isVirtual || !canEdit()) return nodo;
+      nodo.classList.add('li-mark');
+      nodo.removeAttribute('aria-hidden');
+      nodo.setAttribute('role', 'button');
+      nodo.setAttribute('tabindex', '0');
+      nodo.setAttribute('aria-pressed', it.visited ? 'true' : 'false');
+      nodo.setAttribute('title', it.visited ? 'Quitar la marca de visto' : 'Marcar como visto');
+      const pulsar = (e) => { e.stopPropagation(); e.preventDefault(); TripDetail.toggleVisited(it); };
+      nodo.addEventListener('click', pulsar);
+      nodo.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') pulsar(e); });
+      return nodo;
+    };
 
     // Título según virtual
     let displayTitle = it.title;
@@ -10755,7 +10814,7 @@ const TripDetail = {
             return n > 24 ? ' tk-xxlong' : n > 20 ? ' tk-xlong' : n > 14 ? ' tk-long' : '';
           })() }, [
             lado('tk-side-a', boarding.o, 'Salida', boarding.t1, null),
-            el('span', { class:'tk-ic', text: planEmoji(it), 'aria-hidden':'true' }),
+            _marcable(el('span', { class:'tk-ic', text: planEmoji(it), 'aria-hidden':'true' })),
             lado('tk-side-b', boarding.d, 'Llegada', boarding.t2,
                  boarding.otroDia ? el('sup', { class:'tk-next', text:'+1' }) : null),
           ]),
@@ -10799,6 +10858,7 @@ const TripDetail = {
 
     const cls = 'list-item timeline-item' + (status ? ` status-${status}` : '') + ` type-${it.type}` + visitedCls + customCls + (isVirtual ? ' virtual' : '') + (ticket ? ' has-ticket' : '') + (isOut ? ' checkout' : '');
 
+
     const node = el('div', {
       class: cls,
       draggable: isVirtual ? 'false' : 'true',
@@ -10808,18 +10868,20 @@ const TripDetail = {
       // (sin hora, "—"; en alojamiento, "noche"), para que todas las filas
       // arranquen en la misma columna y el ojo baje en línea recta.
       // Comidas: pastilla redonda naranja con los cubiertos, a la izquierda.
-      (isMeal) ? el('div', { class:'li-meal', 'aria-hidden':'true' }, el('span', { text: planEmoji(it) })) : null,
+      (isMeal) ? _marcable(el('div', { class:'li-meal', 'aria-hidden':'true' }, el('span', { text: planEmoji(it) }))) : null,
       // Check-out: mismo disco, en gris y con la puerta.
       (isOut) ? el('div', { class:'li-meal li-out', 'aria-hidden':'true' }, el('span', { text:'🚪' })) : null,
       // Lugares: el orden de la ruta, en un círculo ligero.
-      (opts.num && !isVirtual) ? el('div', { class:'li-num' }, el('span', { text: String(opts.num) })) : null,
+      (opts.num && !isVirtual) ? _marcable(el('div', { class:'li-num' }, el('span', { text: String(opts.num) }))) : null,
       (ticket || isMeal || isOut) ? null : (() => {
         if (timeRangeText) {
           const _p = String(timeRangeText).split(' – ');
-          return el('div', { class:'li-time' + (opts.num ? ' li-time-plain' : '') }, [
+          const _pill = el('div', { class:'li-time' + (opts.num ? ' li-time-plain' : '') }, [
             el('span', { class:'li-time-a', text: _p[0] }),
             _p[1] ? el('span', { class:'li-time-b', text: _p[1] }) : null,
           ].filter(Boolean));
+          // Con número de ruta el marcador es el número; la hora se queda como texto.
+          return opts.num ? _pill : _marcable(_pill);
         }
         if (it.type === 'hotel') return el('div', { class:'li-time li-time-tag' }, [ el('span', { class:'li-time-a', text:'noche' }) ]);
         return el('div', { class:'li-time li-time-none' + (opts.num ? ' li-time-plain' : '') }, [ el('span', { class:'li-time-a', text:'—' }) ]);
