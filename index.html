@@ -1514,7 +1514,10 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   content:''; position:absolute; inset:0; pointer-events:none; opacity:.5;
   background:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 1px, transparent 1px 13px);
 }
-.tk-main { flex:1; min-width:0; padding:11px 13px 12px; position:relative; z-index:1; }
+.tk-main { flex:1; min-width:0; padding:11px 13px 12px; position:relative; z-index:1; --tk-w:560px; }
+/* En pantallas anchas el billete no se estira de borde a borde: la información
+   vive en una columna centrada del ancho de una tarjeta real. */
+.tk-top, .tk-route, .tk-fields { max-width:var(--tk-w); margin-inline:auto; }
 .tk-top { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
 .tk-kind {
   font-size:9.5px; font-weight:800; letter-spacing:.16em; text-transform:uppercase;
@@ -1528,20 +1531,31 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .tk-status.s-confirmado { background:#10b981; }
 .tk-status.s-cancelado  { background:#ef4444; }
 .tk-status.s-por_iniciar{ background:#f59e0b; color:#3b2400; }
-.tk-route { display:flex; align-items:center; gap:9px; min-width:0; }
+.tk-route { display:flex; align-items:center; justify-content:center; gap:16px; min-width:0; }
+.tk-route.tk-long  { gap:13px; }
+.tk-route.tk-xlong { gap:11px; }
+.tk-route.tk-xxlong{ gap:9px; }
 .tk-route.tk-long .tk-city { font-size:16px; letter-spacing:-.025em; }
 .tk-route.tk-xlong .tk-city { font-size:14px; letter-spacing:-.02em; }
+.tk-route.tk-xxlong .tk-city { font-size:12.5px; letter-spacing:-.01em; }
+/* Pantallas de 320px: la columna del billete baja de ~150px y los nombres
+   necesitan un escalón más de reducción. */
+@media (max-width:360px) {
+  .tk-route .tk-city { font-size:15.5px; }
+  .tk-route.tk-long .tk-city { font-size:14px; }
+  .tk-route.tk-xlong .tk-city { font-size:12.5px; }
+  .tk-route.tk-xxlong .tk-city { font-size:11.5px; }
+}
 .tk-city {
   font-size:19px; font-weight:800; letter-spacing:-.03em; line-height:1.15; min-width:0;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1 1 0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; text-align:center;
 }
-.tk-city-b { text-align:right; }
 .tk-ic { flex:none; font-size:15px; line-height:1; }
 .tk-flight .tk-ic { transform:rotate(45deg); }
-.tk-fields { display:flex; align-items:flex-start; gap:11px; margin-top:9px; min-width:0; }
+.tk-fields { display:flex; align-items:flex-start; justify-content:center; gap:11px; margin-top:9px; min-width:0; }
 /* Las horas nunca se recortan; lo que cede es el número y los asientos. */
 .tk-fields .tk-f { flex:0 0 auto; }
-.tk-fields .tk-f-x, .tk-fields .tk-f-s { flex:1 1 0; min-width:0; }
+.tk-fields .tk-f-x, .tk-fields .tk-f-s { flex:0 1 auto; min-width:0; }
 .tk-f-s .tk-f-v { letter-spacing:.02em; }
 .tk-f { min-width:0; display:flex; flex-direction:column; gap:1px; }
 .tk-f-l {
@@ -1587,7 +1601,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 /* Bloque "Próximo", ya dentro del billete */
 .li-ticket .card-next {
-  margin:11px -13px -12px; padding:8px 13px 9px; width:auto; flex-basis:auto;
+  margin:11px -13px -12px; padding:8px max(13px, calc((100% - var(--tk-w)) / 2)) 9px; width:auto; flex-basis:auto;
   border-top:1px dashed rgba(255,255,255,.28); background:rgba(255,255,255,.08);
   display:flex; align-items:center; gap:9px;
 }
@@ -10609,8 +10623,10 @@ const TripDetail = {
             (statusDef && !isVirtual) ? el('span', { class:`tk-status s-${status}`, text: statusDef.label }) : null,
           ].filter(Boolean)),
           el('div', { class:'tk-route' + (() => {
-            const n = Math.max(boarding.o.length, boarding.d.length);
-            return n > 13 ? ' tk-xlong' : n > 9 ? ' tk-long' : '';
+            // Los dos nombres comparten una sola línea centrada: lo que decide el
+            // cuerpo de letra es el total de caracteres, no el nombre más largo.
+            const n = boarding.o.length + boarding.d.length;
+            return n > 24 ? ' tk-xxlong' : n > 15 ? ' tk-xlong' : n > 10 ? ' tk-long' : '';
           })() }, [
             el('span', { class:'tk-city', text: boarding.o }),
             el('span', { class:'tk-ic', text: planEmoji(it), 'aria-hidden':'true' }),
