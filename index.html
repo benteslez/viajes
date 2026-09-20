@@ -3191,9 +3191,11 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 .timeline-item.visited .li-ticket .card-next .ne-count {
   background:var(--bg-soft); color:var(--text);
 }
-/* La barra de horario de las actividades pierde el morado con el resto */
-.timeline-item.visited .li-actbar .ab-bar { background:var(--line-soft); }
-.timeline-item.visited .li-actbar .ab-bar i { background:var(--text-muted); }
+/* La barra de horario de las actividades pierde el morado con el resto.
+   (Las clases son .ab-track/.ab-fill: con los nombres viejos, la barra se
+   quedaba encendida en una parada ya vista.) */
+.timeline-item.visited .li-actbar .ab-track { background:var(--bg-soft); }
+.timeline-item.visited .li-actbar .ab-fill { background:var(--line); }
 .timeline-item.visited .li-actbar .ab-lbl .ab-mid { color:var(--text-muted); }
 
 /* Estado "Visto" — la tarjeta entera queda en gris apagada.
@@ -3378,6 +3380,13 @@ body.dragging-planning .day-group {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   outline: 2px dashed var(--accent) !important;
 }
+/* Con un día por pantalla, el día de destino se elige en la tira: su pastilla
+   se enciende igual que se encendía la tarjeta del día. */
+.day-pill.day-target {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elev));
+  outline: 2px dashed var(--accent); outline-offset: 1px;
+}
+body.dragging-planning .day-strip { position:relative; z-index:30; }
 body.dragging-planning .day-head { color: var(--accent); }
 
 /* Timeline vertical en planning */
@@ -12081,6 +12090,33 @@ const TripDetail = {
         document.body.classList.remove('dragging-planning');
         await TripDetail._reorderPlanning(t, dragged.dataset.id, item.dataset.id, before, targetDay);
         if (targetDay !== draggedDay) UI.toast(`Movido al ${targetDay === 'sin-fecha' ? 'día sin fecha' : fmtDateShort(targetDay)}`);
+      });
+    });
+
+    // Soltar sobre una pastilla de la tira: mueve la parada a ese día. Con un día
+    // por pantalla el día de al lado no está a la vista, y la tira es el único
+    // sitio donde se ve el viaje entero.
+    root.querySelectorAll('.day-strip .day-pill').forEach(pill => {
+      pill.addEventListener('dragover', (e) => {
+        if (!dragged) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        root.querySelectorAll('.day-target').forEach(n => { if (n !== pill) n.classList.remove('day-target'); });
+        pill.classList.add('day-target');
+      });
+      // Al pasar de un hijo a otro de la pastilla también salta `dragleave`: sin
+      // mirar a dónde va el cursor, el resaltado parpadearía.
+      pill.addEventListener('dragleave', (e) => { if (!pill.contains(e.relatedTarget)) pill.classList.remove('day-target'); });
+      pill.addEventListener('drop', async (e) => {
+        if (!dragged) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const day = pill.dataset.day;
+        const draggedDay = dragged.dataset.day;
+        clearTargets();
+        document.body.classList.remove('dragging-planning');
+        await TripDetail._reorderPlanning(t, dragged.dataset.id, null, false, day);
+        if (day !== draggedDay) UI.toast(`Movido al ${day === 'sin-fecha' ? 'día sin fecha' : fmtDateShort(day)}`);
       });
     });
 
