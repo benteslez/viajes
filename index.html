@@ -578,6 +578,12 @@ h2.section-title {
 :root[data-tema="oscuro"] .trip-card.conf-aplazado .trip-card-reason-label { color:#d8b4fe; }
 :root[data-tema="oscuro"] .trip-card.conf-cancelado .trip-card-reason-label { color:#fca5a5; }
 :root[data-tema="oscuro"] .trip-card.conf-sin_fecha .trip-card-reason-label { color:#f5b8fb; }
+/* "Sin definir": las fechas son un tanteo. Franja neutra, sin tinte de estado. */
+.trip-card-reason.reason-probable {
+  background:var(--bg-soft);
+  border-top-color:var(--line-soft);
+}
+.trip-card-reason.reason-probable .trip-card-reason-label { color:var(--text-muted); }
 
 /* Dots de los chips de filtro Aplazados / Cancelados */
 .dot-aplazado { background:#a855f7; }
@@ -1564,6 +1570,8 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .tk-f-l, .kc-f-l {
   font-size:8px; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
   color:rgba(255,255,255,.55);
+  /* Partidas en dos líneas descuadran toda la fila: antes que eso, se recortan. */
+  max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .tk-f-v, .kc-f-v { font-size:13px; font-weight:800; font-feature-settings:"tnum"; white-space:nowrap;
   overflow:hidden; text-overflow:ellipsis; }
@@ -1800,23 +1808,22 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   background:linear-gradient(135deg, #065f46 0%, #15803d 62%, #22c55e 100%);
   box-shadow:0 6px 18px color-mix(in srgb, #065f46 28%, transparent);
 }
-/* Nombre con su aro delante, como el tramo del billete lleva el suyo */
-.kc-linea {
-  display:flex; align-items:center; justify-content:center; gap:9px; min-width:0;
-  /* El aro se come ~1,9em de la línea, así que el nombre baja un escalón para
-     no recortarse antes de tiempo. */
-  --kc-fs:clamp(12.5px, calc((100vw - 200px) * .0605), 18px);
-}
+/* La llave vive en la esquina inferior izquierda del papel, fuera del flujo:
+   así el nombre del alojamiento conserva todo el ancho y su cuerpo de letra. */
 .kc-ic {
-  flex:none; width:calc(var(--kc-fs) * 1.85); height:calc(var(--kc-fs) * 1.85);
-  border-radius:50%; border:1.5px solid rgba(255,255,255,.6); background:transparent;
+  position:absolute; left:9px; bottom:8px; z-index:2;
+  width:22px; height:22px; border-radius:50%;
+  border:1.5px solid rgba(255,255,255,.55); background:transparent;
   display:flex; align-items:center; justify-content:center;
-  font-size:calc(var(--kc-fs) * .62); line-height:1;
+  font-size:11px; line-height:1;
 }
+/* Con tres campos la fila llega hasta la esquina y se metía debajo de la llave:
+   se le reserva sitio a los dos lados para que siga centrada. */
+.kc-fields:has(.kc-f:nth-child(3)) { padding-left:26px; gap:12px; }
 /* Mismo cuerpo que las ciudades del billete y mismo comportamiento fluido:
    crece con el ancho hasta los 19px de diseño. */
 .kc-n {
-  font-size:var(--kc-fs, clamp(14px, calc((100vw - 162px) * .0658), 19px));
+  font-size:clamp(14px, calc((100vw - 162px) * .0658), 19px);
   font-weight:800; letter-spacing:-.03em; line-height:1.15; text-align:center;
   min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
@@ -6660,9 +6667,10 @@ const Trips = {
     }
     cover.appendChild(el('div', { class:'trip-card-status' }, [ el('span', { class:`dot dot-${status}` }), statusLabel(status) ]));
     cover.appendChild(el('div', { class:'trip-card-name', text: t.name }));
-    // Sin fecha concreta: la portada no muestra un rango definitivo, solo la etiqueta.
+    // "Sin fecha" es un plan sin calendario: no hay rango que enseñar, solo la etiqueta.
+    // Las "fechas probables" son cosa de "Sin definir", que sí tiene fechas (un tanteo).
     const metaChildren = (t.confirmation === 'sin_fecha')
-      ? [ el('span', { text:'Fechas probables' }) ]
+      ? [ el('span', { text:'Plan sin fecha concreta' }) ]
       : [ fmtTripDateRange(t.start_date, t.end_date), el('span', { class:'sep', text:'•' }), statusDays(t) ];
     cover.appendChild(el('div', { class:'trip-card-meta' }, metaChildren));
 
@@ -6691,13 +6699,13 @@ const Trips = {
       ]));
     }
 
-    // Franja inferior extra: fechas probables (sin_fecha) o motivo (cancelado/aplazado).
+    // Franja inferior extra: fechas probables (sin definir) o motivo (cancelado/aplazado).
     let reasonEl = null;
-    if (t.confirmation === 'sin_fecha') {
-      const range = (t.start_date || t.end_date) ? fmtTripDateRange(t.start_date, t.end_date) : 'por definir';
-      reasonEl = el('div', { class:'trip-card-reason' }, [
+    if (!t.confirmation && (t.start_date || t.end_date)) {
+      // El rango ya está arriba: aquí solo se avisa de que es un tanteo.
+      reasonEl = el('div', { class:'trip-card-reason reason-probable' }, [
         el('span', { class:'trip-card-reason-label', text:'Fechas probables:' }),
-        el('span', { class:'trip-card-reason-text', text: range }),
+        el('span', { class:'trip-card-reason-text', text:'todavía sin confirmar' }),
       ]);
     } else if (CONF_NEEDS_REASON.includes(t.confirmation) && (t.confirmation_reason || '').trim()) {
       const cLabel = TRIP_CONFIRMATIONS.find(c => c.id === t.confirmation)?.label || '';
@@ -6852,6 +6860,51 @@ const Trips = {
       in_preparation: !existing, default_currency:'EUR',
       is_shared:false, is_multi_destino:false, notes:'', confirmation:null,
     };
+
+    // --- Fechas según la confirmación -----------------------------------
+    // "Sin fecha" es justo eso: el viaje no tiene fechas, así que los campos
+    // desaparecen. Lo que hubiera escrito se guarda aquí por si se cambia de
+    // idea, que perder dos fechas por tocar un botón es feo.
+    // "Sin definir" sí las tiene, pero son un tanteo: se llaman probables.
+    const _fechasGuardadas = { ini: t.start_date || '', fin: t.end_date || '' };
+    const aplicarModoFechas = (conf) => {
+      const sinFecha = (conf === 'sin_fecha');
+      const probable = !conf;
+      const grid = document.getElementById('f-dates-grid');
+      const ini  = document.getElementById('f-start');
+      const fin  = document.getElementById('f-end');
+      const hint = document.getElementById('f-dates-hint');
+      const sl   = document.getElementById('f-start-label');
+      const fl   = document.getElementById('f-end-label');
+      if (!grid) return;
+      const estaban = grid.style.display !== 'none';
+      if (sinFecha) {
+        if (estaban) {                                   // recordar antes de vaciar
+          _fechasGuardadas.ini = ini ? ini.value : _fechasGuardadas.ini;
+          _fechasGuardadas.fin = fin ? fin.value : _fechasGuardadas.fin;
+        }
+        if (ini) ini.value = '';
+        if (fin) fin.value = '';
+        grid.style.display = 'none';
+      } else {
+        if (!estaban) {                                  // devolver lo que hubiera
+          if (ini && !ini.value) ini.value = _fechasGuardadas.ini;
+          if (fin && !fin.value) fin.value = _fechasGuardadas.fin;
+        }
+        grid.style.display = '';
+      }
+      if (sl) sl.textContent = probable ? 'Inicio probable' : 'Inicio';
+      if (fl) fl.textContent = probable ? 'Fin probable' : 'Fin';
+      if (hint) {
+        hint.textContent = sinFecha
+          ? 'Sin fecha: el viaje se guarda sin fechas. Si vuelves a elegir otra opción, recuperas las que hubieras puesto.'
+          : probable
+            ? 'Sin definir: las fechas son un tanteo y se enseñan como "Fechas probables" en la tarjeta.'
+            : '';
+        hint.style.display = hint.textContent ? 'block' : 'none';
+      }
+    };
+
     const body = el('div', {}, [
       el('div', { class:'form-row' }, [
         el('label', { text:'Nombre del viaje' }),
@@ -6868,20 +6921,19 @@ const Trips = {
           el('div', { class:'field-hint', text:'Para rutas multi-país sepáralos con comas.' }),
         ]),
       ]),
-      el('div', { class:'form-grid-2' }, [
+      el('div', { class:'form-grid-2', id:'f-dates-grid' }, [
         el('div', { class:'form-row' }, [
-          el('label', { id:'f-start-label', text: t.confirmation === 'sin_fecha' ? 'Inicio probable' : 'Inicio' }),
+          el('label', { id:'f-start-label', text:'Inicio' }),
           el('input', { id:'f-start', type:'date', value: t.start_date || '' }),
         ]),
         el('div', { class:'form-row' }, [
-          el('label', { id:'f-end-label', text: t.confirmation === 'sin_fecha' ? 'Fin probable' : 'Fin' }),
+          el('label', { id:'f-end-label', text:'Fin' }),
           el('input', { id:'f-end', type:'date', value: t.end_date || '' }),
         ]),
       ]),
       el('div', {
         id:'f-dates-hint', class:'field-hint',
-        style:{ display: t.confirmation === 'sin_fecha' ? 'block' : 'none', marginTop:'-8px', marginBottom:'4px' },
-        text:'Viaje sin fecha concreta: estas fechas son orientativas y se mostrarán como "Fechas probables" en la tarjeta.',
+        style:{ display:'none', marginTop:'-8px', marginBottom:'4px' },
       }),
       el('div', { class:'form-row' }, [
         el('label', { text:'Confirmación' }),
@@ -6904,14 +6956,7 @@ const Trips = {
                 const lab = document.getElementById('f-conf-reason-label');
                 if (lab && needs) lab.textContent = c.id === 'cancelado' ? 'Motivo de la cancelación' : 'Motivo del aplazamiento';
               }
-              // Sin fecha: las fechas pasan a ser "probables".
-              const sinFecha = (c.id === 'sin_fecha');
-              const sl = document.getElementById('f-start-label');
-              const fl = document.getElementById('f-end-label');
-              const dh = document.getElementById('f-dates-hint');
-              if (sl) sl.textContent = sinFecha ? 'Inicio probable' : 'Inicio';
-              if (fl) fl.textContent = sinFecha ? 'Fin probable' : 'Fin';
-              if (dh) dh.style.display = sinFecha ? 'block' : 'none';
+              aplicarModoFechas(c.id);
             },
           }, [
             el('span', { class:'dot' }),
@@ -7060,6 +7105,8 @@ const Trips = {
         t.is_multi_destino = !!$('#f-multi')?.checked;
         t.in_preparation = !!$('#f-prep')?.checked;
         t.confirmation = ($('#f-confirmation')?.value || '') || null;
+        // "Sin fecha" no guarda fechas aunque quedaran escritas en el formulario.
+        if (t.confirmation === 'sin_fecha') { t.start_date = null; t.end_date = null; }
         // Motivo solo para cancelado/aplazado; en el resto se limpia.
         t.confirmation_reason = CONF_NEEDS_REASON.includes(t.confirmation)
           ? (($('#f-conf-reason')?.value || '').trim() || null)
@@ -7100,6 +7147,8 @@ const Trips = {
 
     const cancel = el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar');
     UI.openSheet({ title: existing ? 'Editar viaje' : 'Nuevo viaje', body, footer:[delBtn, cancel, save].filter(Boolean) });
+    // El formulario ya está en el DOM: dejar las fechas como pida la confirmación guardada.
+    aplicarModoFechas(t.confirmation || '');
   },
 
   // === Papelera ===
@@ -10865,10 +10914,7 @@ const TripDetail = {
                 el('span', { class:'kc-kind', text:'Alojamiento' }),
                 (statusDef) ? el('span', { class:`kc-status s-${status}`, text: statusDef.label }) : null,
               ].filter(Boolean)),
-              el('div', { class:'kc-linea' }, [
-                _marcable(el('span', { class:'kc-ic', text:'🏨', 'aria-hidden':'true' }), { aunqueVirtual:true }),
-                el('span', { class:'kc-n', text: hName }),
-              ]),
+              el('div', { class:'kc-n', text: hName }),
               el('div', { class:'kc-fields' }, [
                 campo('Check-in', ci || '—'),
                 campo('Check-out', co || '—'),
@@ -10879,6 +10925,9 @@ const TripDetail = {
               el('span', { class:'kc-f-l', text: (it._nightTotal === 1) ? 'Noche' : 'Noches' }),
               el('b', { text: it._nightTotal ? `${it._nightN || 1}/${it._nightTotal}` : '1' }),
             ]),
+            // La llave, en la esquina de abajo: marca la estancia como vista sin
+            // robarle sitio al nombre del alojamiento.
+            _marcable(el('span', { class:'kc-ic', text:'🔑', 'aria-hidden':'true' }), { aunqueVirtual:true }),
           ]),
         ]),
         // Sin este botón las acciones de la llave no se abren al tacto: solo
