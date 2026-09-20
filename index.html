@@ -1462,6 +1462,17 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-item.visited .bh-ola .ar { fill:var(--bg-soft); }
 .timeline-item.visited .bh-ola .esp { fill:color-mix(in srgb, var(--bg-soft) 60%, transparent); }
 .timeline-item.visited .bh-num { background:var(--line); color:var(--text-muted); }
+/* El ••• va a la esquina de la arena: arriba se comía el sol. */
+.timeline-list .timeline-item.has-beach .li-more {
+  position:absolute; right:7px; bottom:4px; top:auto; transform:none;
+  width:24px; height:14px; font-size:10px; line-height:1;
+  color:rgba(255,255,255,.6);
+}
+.timeline-list .timeline-item.has-beach:has(.bh-arena) .li-more { color:rgba(124,91,19,.5); }
+.timeline-list .timeline-item.has-beach.visited:has(.bh-arena) .li-more { color:var(--text-muted); }
+/* La arena reserva sitio para que el ••• no se pose sobre el último dato. */
+.has-beach .bh-arena { padding-right:30px; }
+
 /* El aviso de "próximo" entra dentro del mar: sus colores de siempre se
    perderían sobre el azul. */
 .li-beach .card-next {
@@ -1775,7 +1786,6 @@ main:has(.plan-pager) { padding-bottom:0; }
 .tk-stub .tk-stub-em { font-size:22px; line-height:1; }
 /* Acciones sobre el papel, en blanco y en el mismo sitio en los dos. El ••• se
    mete en la esquina del talón, por encima de su etiqueta, sin taparla. */
-.timeline-list .timeline-item.has-beach .li-more,
 .timeline-list .timeline-item.has-ticket .li-more,
 .timeline-list .timeline-item.has-keycard .li-more {
   color:rgba(255,255,255,.55); position:absolute; right:5px; top:2px; transform:none;
