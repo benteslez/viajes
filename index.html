@@ -12900,10 +12900,98 @@ const TripDetail = {
     let currentStatus = it.status || itemStatus(it);
 
     let searchTimer = null;
+    // Coloca un punto en la parada (venga del buscador o de un enlace pegado).
+    const usarPunto = ({ lat, lng, nombre, direccion, url }) => {
+      it.lat = lat; it.lng = lng;
+      if (nombre) it.place_name = nombre;
+      if (direccion) it.address = direccion;
+      // Si el enlace es del mapa, se guarda tal cual: es el sitio exacto que
+      // eligió el usuario, mejor que uno reconstruido con las coordenadas.
+      it.gmaps_url = (url && /^https?:/i.test(url)) ? url : gmapsUrl(lat, lng, it.place_name);
+      const fTitle = $('#f-title'); if (fTitle && !fTitle.value.trim() && it.place_name) fTitle.value = it.place_name;
+      const fPlace = $('#f-place'); if (fPlace && it.place_name) fPlace.value = it.place_name;
+      const fAddr  = $('#f-address'); if (fAddr && it.address) fAddr.value = it.address;
+      const fSearch = $('#f-search'); if (fSearch) fSearch.value = '';
+      refreshSelectedPlace();
+    };
+
+    // Un enlace pegado en "Lugar" o "Dirección" no es ni un lugar ni una
+    // dirección: se manda al buscador, que es quien sabe sacarle el punto.
+    const tragarEnlace = (e) => setTimeout(() => {
+      const v = String(e.target.value || '').trim();
+      if (!/^(https?:\/\/|geo:)/i.test(v)) return;
+      const enlace = parseMapsLink(v);
+      if (!enlace || (enlace.lat == null && !enlace.corto)) return;
+      e.target.value = '';
+      const fs = $('#f-search'); if (fs) fs.value = v;
+      doSearch(v);
+    }, 0);
+
     const doSearch = async (q) => {
       const box = $('#plan-search-results');
       box.innerHTML = '';
       if (!q || q.length < 3) return;
+
+      // ¿Es un enlace de mapa (o unas coordenadas)? Entonces no hay nada que
+      // buscar: el punto ya viene dado y se coge tal cual.
+      const enlace = parseMapsLink(q);
+      if (enlace && (enlace.lat != null || enlace.url)) {
+        if (enlace.lat != null) {
+          usarPunto(enlace);
+          box.innerHTML = '<div class="search-result muted">Punto tomado del enlace.</div>';
+          // La dirección no viene en el enlace: se pregunta por el punto.
+          if (!enlace.direccion) {
+            const rev = await reverseGeocode(enlace.lat, enlace.lng);
+            if (rev) {
+              const fAddr = $('#f-address');
+              if (fAddr && !fAddr.value.trim()) { it.address = rev.address; fAddr.value = rev.address; }
+              if (!it.place_name && rev.name) {
+                it.place_name = rev.name;
+                const fPlace = $('#f-place'); if (fPlace && !fPlace.value.trim()) fPlace.value = rev.name;
+              }
+              refreshSelectedPlace();
+            }
+          }
+          setTimeout(() => { if (box.textContent === 'Punto tomado del enlace.') box.innerHTML = ''; }, 2500);
+          return;
+        }
+        // Enlace corto: el punto no va dentro, hay que seguir la redirección.
+        box.innerHTML = '<div class="search-result muted">Abriendo el enlace…</div>';
+        const largo = await expandirEnlaceMapa(enlace.url);
+        const punto = largo ? parseMapsLink(largo) : null;
+        if (punto && punto.lat != null) {
+          usarPunto({ ...punto, nombre: punto.nombre || enlace.nombre, direccion: punto.direccion || enlace.direccion, url: enlace.url });
+          box.innerHTML = '<div class="search-result muted">Punto tomado del enlace.</div>';
+          setTimeout(() => { if (box.textContent === 'Punto tomado del enlace.') box.innerHTML = ''; }, 2500);
+          return;
+        }
+        // No se ha podido leer (Google no lo permite desde el navegador):
+        // se busca por el nombre que venga en el texto y se ofrece abrirlo.
+        box.innerHTML = '';
+        box.appendChild(el('div', { class:'search-result muted' }, [
+          el('div', { text:'Ese enlace es de los cortos y el navegador no puede seguirlo. Dos salidas:' }),
+          el('div', { style:{marginTop:'6px'}, text:'· En Google Maps, mantén pulsado el sitio: abajo salen sus coordenadas ("6.6357, -73.2264"). Cópialas y pégalas aquí.' }),
+          el('div', { style:{marginTop:'4px'}, text:'· O ábrelo en el navegador y pega la dirección larga que quede en la barra.' }),
+          el('a', { class:'btn btn-sm', style:{marginTop:'8px'}, href: enlace.url, target:'_blank', rel:'noopener',
+            onclick: (e) => e.stopPropagation() }, [ el('span', { html: svg('external') }), 'Abrir el enlace' ]),
+        ]));
+        if (enlace.nombre) {
+          const q2 = [enlace.nombre, enlace.direccion].filter(Boolean).join(', ');
+          const res = await placeSearch(q2, (it.lat != null) ? { lat: it.lat, lng: it.lng } : null).catch(() => []);
+          if (res.length) {
+            box.appendChild(el('div', { class:'search-result muted', text:`Mientras tanto, esto es lo que hay con "${enlace.nombre}":` }));
+            res.slice(0, 4).forEach(r => box.appendChild(el('div', { class:'search-result', onclick: () => {
+              usarPunto({ lat:r.lat, lng:r.lng, nombre:r.name || r.address, direccion:r.address, url:'' });
+              box.innerHTML = '';
+            } }, [
+              el('div', { class:'sr-name', text: r.name || r.address }),
+              (r.address && r.address !== r.name) ? el('div', { class:'sr-addr', text: r.address }) : null,
+            ].filter(Boolean))));
+          }
+        }
+        return;
+      }
+
       if (!navigator.onLine) {
         box.innerHTML = '<div class="search-result muted">Sin conexión: introduce manualmente.</div>';
         return;
@@ -13257,20 +13345,22 @@ const TripDetail = {
 
     const placeBlock = el('div', { id:'place-block' }, [
       el('div', { class:'form-row' }, [
-        el('label', { text:'Buscar lugar (online)' }),
-        el('input', { id:'f-search', type:'text', placeholder:'Ej. Museo del Prado Madrid',
-          oninput: (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => doSearch(e.target.value), 800); } }),
+        el('label', { text:'Buscar lugar o pegar enlace del mapa' }),
+        el('input', { id:'f-search', type:'text', placeholder:'Ej. Museo del Prado Madrid · o pega un enlace de Google Maps',
+          oninput: (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => doSearch(e.target.value), 800); },
+          // Al pegar no se espera: el enlace se resuelve al momento.
+          onpaste: (e) => { clearTimeout(searchTimer); setTimeout(() => doSearch(e.target.value), 0); } }),
         el('div', { id:'plan-search-results', class:'search-results', style:{display:'block'} }),
         selectedPlaceBlock,
-        el('div', { class:'field-hint', text:'Si no encuentras, escribe los campos manualmente abajo.' }),
+        el('div', { class:'field-hint', text:'Si el buscador no lo encuentra, pega aquí el enlace del sitio en Google Maps (o en Apple Maps, o unas coordenadas "4.598, -74.076"): se coge el punto del enlace. Y si no, escribe los campos a mano abajo.' }),
       ]),
       el('div', { class:'form-row' }, [
         el('label', { text:'Lugar' }),
-        el('input', { id:'f-place', type:'text', value: it.place_name || '' }),
+        el('input', { id:'f-place', type:'text', value: it.place_name || '', onpaste: (e) => tragarEnlace(e) }),
       ]),
       el('div', { class:'form-row' }, [
         el('label', { text:'Dirección' }),
-        el('input', { id:'f-address', type:'text', value: it.address || '' }),
+        el('input', { id:'f-address', type:'text', value: it.address || '', onpaste: (e) => tragarEnlace(e) }),
       ]),
       el('div', { class:'form-row' }, [
         el('label', { text:'Zona / población (para agrupar gastos)' }),
@@ -13993,7 +14083,13 @@ const TripDetail = {
       }
       it.notes = $('#f-notes').value;
       it.people = currentPeople.filter(Boolean);
-      if (it.lat != null) it.gmaps_url = gmapsUrl(it.lat, it.lng);
+      // El enlace del mapa: si lo pegó el usuario, se respeta (lleva a la ficha
+      // del sitio, no a un punto suelto); si es uno nuestro, se rehace con las
+      // coordenadas de ahora, que pueden haber cambiado.
+      const _enlacePropio = /\/maps\/search\/\?api=1&query=/.test(it.gmaps_url || '');
+      if (it.lat != null && (_enlacePropio || !/^https?:/i.test(it.gmaps_url || ''))) {
+        it.gmaps_url = gmapsUrl(it.lat, it.lng);
+      }
 
       // Metadata específica del tipo
       const metaDef = PLANNING_METADATA[it.type];
@@ -20538,6 +20634,97 @@ function saveGeoCache() {
   }, 500);
 }
 let _geoLast = 0;
+// ---- Enlaces de mapa: sacar el punto de un enlace pegado --------------
+// El buscador por nombre falla con lo raro: un hotel en un pueblo, una finca
+// sin portal, un sitio que en OSM no existe. Pegar el enlace del mapa lo
+// arregla de raíz, porque el punto ya viene dentro del enlace.
+// Devuelve { lat, lng, nombre, direccion, url, corto } o null si no hay nada.
+const _mapNum = (x) => { const n = parseFloat(x); return Number.isFinite(n) ? n : null; };
+const _mapCoordOk = (la, ln) => la != null && ln != null &&
+  Math.abs(la) <= 90 && Math.abs(ln) <= 180 && !(la === 0 && ln === 0);
+
+function parseMapsLink(texto) {
+  const t = String(texto || '').trim();
+  if (!t) return null;
+  const url = (t.match(/https?:\/\/\S+/) || [])[0] || '';
+  const corto = /(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs)/i.test(url);
+  let lat = null, lng = null, nombre = '', direccion = '', m;
+
+  // 1) El pin de verdad del sitio, dentro del "data" de Google: !3d<lat>!4d<lng>.
+  //    Es el bueno: el @ de la URL es donde estaba la cámara, no el sitio.
+  if ((m = t.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/))) { lat = _mapNum(m[1]); lng = _mapNum(m[2]); }
+  // 2) Centro del mapa: /@lat,lng,17z
+  if (!_mapCoordOk(lat, lng) && (m = t.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/))) { lat = _mapNum(m[1]); lng = _mapNum(m[2]); }
+  // 3) Parámetros de toda la vida (Google, Apple, Bing, apps varias)
+  if (!_mapCoordOk(lat, lng) &&
+      (m = t.match(/[?&](?:q|query|destination|center|ll|sll|daddr|saddr|mlat|point)=(?:loc:)?(-?\d+\.\d+)(?:,|%2C|\+|\s)+(-?\d+\.\d+)/i))) {
+    lat = _mapNum(m[1]); lng = _mapNum(m[2]);
+  }
+  // 4) geo:lat,lng (Android) y el hash de OpenStreetMap
+  if (!_mapCoordOk(lat, lng) && (m = t.match(/geo:(-?\d+\.\d+),(-?\d+\.\d+)/i))) { lat = _mapNum(m[1]); lng = _mapNum(m[2]); }
+  if (!_mapCoordOk(lat, lng) && (m = t.match(/#map=\d+\/(-?\d+\.\d+)\/(-?\d+\.\d+)/))) { lat = _mapNum(m[1]); lng = _mapNum(m[2]); }
+  // 5) Coordenadas pegadas a pelo: "4.598, -74.076"
+  if (!_mapCoordOk(lat, lng) && !url &&
+      (m = t.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/))) {
+    lat = _mapNum(m[1]); lng = _mapNum(m[2]);
+  }
+
+  // Nombre y dirección, si el enlace o el texto compartido los traen.
+  if ((m = t.match(/\/maps\/place\/([^/@?#]+)/))) {
+    nombre = decodeURIComponent(m[1].replace(/\+/g, ' ')).trim();
+  }
+  if (!nombre && (m = t.match(/[?&]q=([^&#\s]+)/)) && !/^-?\d+(\.\d+)?(,|%2C)/.test(m[1])) {
+    nombre = decodeURIComponent(m[1].replace(/\+/g, ' ')).trim();
+  }
+  if ((m = t.match(/[?&]address=([^&#\s]+)/))) direccion = decodeURIComponent(m[1].replace(/\+/g, ' ')).trim();
+  // Lo que comparte la app de Google es "Nombre\nDirección\nenlace corto".
+  if (url) {
+    const lineas = t.split(/[\n\r]+/).map(x => x.trim()).filter(x => x && !/^https?:/i.test(x));
+    if (lineas.length) {
+      if (!nombre) nombre = lineas[0];
+      if (!direccion && lineas.length > 1) direccion = lineas.slice(1).join(', ');
+    }
+  }
+  if (!_mapCoordOk(lat, lng)) {
+    if (!url && !nombre) return null;            // ni punto, ni enlace, ni nombre
+    return { lat:null, lng:null, nombre, direccion, url, corto };
+  }
+  return { lat, lng, nombre, direccion, url, corto };
+}
+
+// Los enlaces cortos (maps.app.goo.gl) no llevan el punto dentro: hay que seguir
+// la redirección. Google no da permiso al navegador para leerla, así que esto
+// suele fallar; se intenta igual porque cuando funciona ahorra el paseo.
+async function expandirEnlaceMapa(url) {
+  if (!url || !navigator.onLine) return null;
+  try {
+    const r = await fetch(url, { redirect:'follow' });
+    const fin = r && r.url;
+    if (fin && !/goo\.gl|g\.co/i.test(fin)) return fin;
+  } catch (_) {}
+  return null;
+}
+
+// Del punto a la dirección (Nominatim al revés), para rellenar el campo cuando
+// el enlace solo trae coordenadas.
+async function reverseGeocode(lat, lng) {
+  if (!navigator.onLine || lat == null || lng == null) return null;
+  const key = 'rev:' + (+lat).toFixed(5) + ',' + (+lng).toFixed(5);
+  if (key in _geoCache) return _geoCache[key];
+  const wait = 1100 - (Date.now() - _geoLast);   // 1 req/seg (política de Nominatim)
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _geoLast = Date.now();
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&lat=${lat}&lon=${lng}`,
+      { headers: { 'Accept-Language':'es', 'User-Agent': CFG.appName } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const out = (d && d.display_name) ? { address: d.display_name, name: (d.name || '').trim() || null } : null;
+    _geoCache[key] = out; saveGeoCache();
+    return out;
+  } catch (_) { return null; }
+}
+
 async function geocodeText(text) {
   const key = String(text || '').trim().toLowerCase();
   if (!key) return null;
