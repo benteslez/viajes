@@ -5150,9 +5150,16 @@ const DB = {
   },
 
   // export / import JSON
+  //
+  // `media` NO entra. Sus filas llevan un Blob y `JSON.stringify` convierte un
+  // Blob en `{}` sin avisar: la copia salía sin las fotos y, peor, al
+  // restaurarla ese `{}` pisaba el Blob bueno que seguía en el dispositivo y la
+  // foto se perdía para siempre. Las fotos salen por su propio botón, en ZIP.
+  _STORES_EXPORT() { return this.STORES.filter(t => t !== 'media'); },
+
   async exportProfile(profile) {
-    const out = { _meta: { profile, exported_at: nowIso(), version: 1 } };
-    for (const t of this.STORES) {
+    const out = { _meta: { profile, exported_at: nowIso(), version: 1, sin_fotos: true } };
+    for (const t of this._STORES_EXPORT()) {
       const rows = await this.db.getAll(t);
       // filtrar por perfil: directamente para tablas con profile, indirectamente por trips
       if (['trips','packing_templates','travel_docs','visited_countries'].includes(t)) {
@@ -5172,8 +5179,12 @@ const DB = {
   // a la sincronización automática.
   async importProfile(data) {
     if (!data || !data._meta) throw new Error('Archivo de import inválido');
-    const tx = this.db.transaction(this.STORES, 'readwrite');
-    for (const t of this.STORES) {
+    // `media` se salta SIEMPRE, también en archivos viejos que sí lo traen: sus
+    // filas llevan `blob: {}` (ver exportProfile) y escribirlas destruiría las
+    // fotos que el dispositivo todavía tiene bien.
+    const stores = this._STORES_EXPORT();
+    const tx = this.db.transaction(stores, 'readwrite');
+    for (const t of stores) {
       if (Array.isArray(data[t])) {
         for (const row of data[t]) await tx.objectStore(t).put(row);
       }
@@ -5183,7 +5194,7 @@ const DB = {
     // `trips` primero: en Supabase las hijas tienen clave ajena contra ella y
     // la cola se vacía en orden de entrada. `media` no se encola: es local y
     // no existe en el servidor.
-    const orden = ['trips', ...this.STORES.filter(t => t !== 'trips' && t !== 'media')];
+    const orden = ['trips', ...this._STORES_EXPORT().filter(t => t !== 'trips')];
     let n = 0;
     for (const t of orden) {
       if (!Array.isArray(data[t])) continue;
@@ -5633,7 +5644,11 @@ const MediaCache = {
     if (this._byId.has(id)) return this._byId.get(id).url;
     const rec = await DB.getMedia(id);
     if (!rec) return null;
-    const url = URL.createObjectURL(rec.blob);
+    // Una fila con el blob roto (p. ej. restaurada de una copia antigua, donde
+    // el Blob se había serializado a `{}`) hacía que createObjectURL lanzara y
+    // dejaba una promesa rechazada sin capturar en quien pedía la foto.
+    let url = null;
+    try { url = URL.createObjectURL(rec.blob); } catch (_) { return null; }
     this._byId.set(id, { url, blob: rec.blob });
     return url;
   },
@@ -5708,7 +5723,123 @@ const DayPhotos = {
     MediaCache.olvidar(id);
     try { await DB.db.delete('media', id); } catch (_) {}
   },
+
+  // Todas las fotos de un viaje, ordenadas por día y por posición dentro del día.
+  async todasDelViaje(tripId) {
+    return (await this.delViaje(tripId))
+      .filter(m => m && m.blob && m.day_date)
+      .sort((a, b) => String(a.day_date).localeCompare(String(b.day_date))
+        || (a.order_index || 0) - (b.order_index || 0)
+        || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  },
 };
+
+/* ============================================================
+   ZIP (método "store", sin comprimir)
+   ============================================================
+   Las fotos del día viven solo en IndexedDB: no se sincronizan y tampoco caben
+   en el JSON de la copia de seguridad (un Blob no sobrevive a JSON.stringify).
+   Este ZIP es la única vía para sacarlas del dispositivo.
+
+   Sin comprimir a propósito: un JPEG ya está comprimido, deflate no le quitaría
+   nada y así no hace falta ninguna librería — son 60 líneas de cabeceras.
+   ============================================================ */
+const CRC32_TABLA = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC32_TABLA[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Fecha/hora en el formato MS-DOS que pide el ZIP (dos enteros de 16 bits).
+function fechaDos(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  const ok = !isNaN(d.getTime());
+  const y = Math.max(1980, ok ? d.getFullYear() : 1980);
+  return {
+    fecha: ((y - 1980) << 9) | (((ok ? d.getMonth() : 0) + 1) << 5) | (ok ? d.getDate() : 1),
+    hora: ok ? ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) : 0,
+  };
+}
+
+// archivos: [{ nombre, blob, fecha }] → Blob del .zip
+async function zipStore(archivos) {
+  const enc = new TextEncoder();
+  const cuerpo = [];     // trozos del fichero, en orden
+  const central = [];    // cabeceras del directorio central
+  let offset = 0;        // posición de la cabecera local de cada entrada
+  for (const f of archivos) {
+    const datos = new Uint8Array(await f.blob.arrayBuffer());
+    const nombre = enc.encode(f.nombre);
+    const crc = crc32(datos);
+    const { fecha, hora } = fechaDos(f.fecha);
+
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);       // versión necesaria
+    local.setUint16(6, 0x0800, true);   // bit 11: el nombre va en UTF-8
+    local.setUint16(8, 0, true);        // método 0 = store
+    local.setUint16(10, hora, true);
+    local.setUint16(12, fecha, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, datos.length, true);
+    local.setUint32(22, datos.length, true);
+    local.setUint16(26, nombre.length, true);
+    local.setUint16(28, 0, true);       // sin campo extra
+    cuerpo.push(new Uint8Array(local.buffer), nombre, datos);
+
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true);
+    cd.setUint16(4, 20, true);          // versión que lo creó
+    cd.setUint16(6, 20, true);          // versión necesaria
+    cd.setUint16(8, 0x0800, true);
+    cd.setUint16(10, 0, true);
+    cd.setUint16(12, hora, true);
+    cd.setUint16(14, fecha, true);
+    cd.setUint32(16, crc, true);
+    cd.setUint32(20, datos.length, true);
+    cd.setUint32(24, datos.length, true);
+    cd.setUint16(28, nombre.length, true);
+    cd.setUint16(30, 0, true);          // extra
+    cd.setUint16(32, 0, true);          // comentario
+    cd.setUint16(34, 0, true);          // disco
+    cd.setUint16(36, 0, true);          // atributos internos
+    cd.setUint32(38, 0, true);          // atributos externos
+    cd.setUint32(42, offset, true);
+    central.push(new Uint8Array(cd.buffer), nombre);
+
+    offset += 30 + nombre.length + datos.length;
+  }
+  const tamCentral = central.reduce((n, x) => n + x.length, 0);
+  const fin = new DataView(new ArrayBuffer(22));
+  fin.setUint32(0, 0x06054b50, true);
+  fin.setUint16(4, 0, true);            // nº de disco
+  fin.setUint16(6, 0, true);            // disco donde empieza el directorio
+  fin.setUint16(8, archivos.length, true);
+  fin.setUint16(10, archivos.length, true);
+  fin.setUint32(12, tamCentral, true);
+  fin.setUint32(16, offset, true);
+  fin.setUint16(20, 0, true);           // sin comentario
+  return new Blob([...cuerpo, ...central, new Uint8Array(fin.buffer)], { type:'application/zip' });
+}
+
+// Nombre válido dentro del ZIP: sin separadores ni caracteres que se atraganten
+// en Windows, y sin dejarlo vacío.
+function nombreSeguro(txt, porDefecto) {
+  const limpio = String(txt || '').normalize('NFC')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ').trim().slice(0, 60);
+  return limpio || (porDefecto || 'sin-nombre');
+}
 
 /* ============================================================
    STATE
@@ -8009,6 +8140,12 @@ const TripDetail = {
         onclick: () => { UI.closeSheet(); TripDetail._duplicateTrip(t); }
       });
     }
+    // Las fotos del día solo están aquí: ni se sincronizan ni entran en la copia
+    // de seguridad en JSON. Este es el único sitio desde el que salen.
+    items.push({
+      icon: svg('imagen'), label: 'Descargar las fotos (ZIP)',
+      onclick: () => { UI.closeSheet(); Exporter.fotosZip(t); }
+    });
     const list = el('div', { class:'action-menu' });
     items.forEach(item => {
       list.appendChild(el('button', { class:'action-menu-item', onclick: item.onclick }, [
@@ -17840,6 +17977,10 @@ const PerfilView = {
       // que ya pasa solo es lo que hacía dudar de si había que pulsarlo.
     ].filter(Boolean));
     root.appendChild(dataBtns);
+    // Decirlo aquí y no en un sitio donde nadie mire: la copia lleva los viajes
+    // enteros pero NO las fotos, que salen en ZIP desde el menú de cada viaje.
+    root.appendChild(el('p', { class:'field-hint', style:{ marginTop:'10px' },
+      text:'La copia en JSON lleva todos los datos de los viajes, pero no las fotos: esas se descargan aparte, desde «Descargar las fotos» en el menú de cada viaje.' }));
 
     if (AdminView.disponible()) {
       root.appendChild(el('h2', { class:'section-title', text:'Administración' }));
@@ -20721,9 +20862,39 @@ ${viewerScript}
   async json(profile) {
     const data = await DB.exportProfile(profile);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+    this._descargar(blob, `viajes_${profile}_${todayIso()}.json`);
+  },
+
+  // Las fotos del día no caben en el JSON (un Blob se serializa a `{}`) ni se
+  // sincronizan con nadie: este ZIP es la única forma de sacarlas del móvil.
+  // Dentro van por carpetas de día: "Colombia/2026-10-10/1.jpg".
+  async fotosZip(t) {
+    const fotos = await DayPhotos.todasDelViaje(t.id);
+    if (!fotos.length) { UI.toast('Este viaje no tiene fotos'); return; }
+    UI.toast(fotos.length === 1 ? 'Preparando 1 foto…' : `Preparando ${fotos.length} fotos…`);
+    const carpeta = nombreSeguro(t.name, 'viaje');
+    const porDia = {};
+    const archivos = [];
+    for (const f of fotos) {
+      const dia = nombreSeguro(f.day_date, 'sin-fecha');
+      porDia[dia] = (porDia[dia] || 0) + 1;
+      const ext = (f.mime === 'image/png') ? 'png' : 'jpg';
+      archivos.push({ nombre: `${carpeta}/${dia}/${porDia[dia]}.${ext}`, blob: f.blob, fecha: f.created_at });
+    }
+    try {
+      const zip = await zipStore(archivos);
+      this._descargar(zip, `fotos_${nombreSeguro(t.name, 'viaje')}_${todayIso()}.zip`);
+      UI.toast(`${fotos.length} fotos descargadas`);
+    } catch (e) {
+      console.warn('fotosZip', e);
+      UI.toast('No se pudieron empaquetar las fotos');
+    }
+  },
+
+  _descargar(blob, nombre) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `viajes_${profile}_${todayIso()}.json`;
+    a.download = nombre;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   },
@@ -21468,6 +21639,18 @@ async function boot() {
   //    Así, aunque la BD falle, el usuario ve los botones y no queda colgado.
   try { ProfilePicker.mount(); }
   catch (e) { console.error('ProfilePicker.mount', e); showFatalError('Error pintando perfiles'); }
+
+  // 2.5) Pedir almacenamiento PERSISTENTE antes de escribir nada.
+  //      Todo vive en IndexedDB —y las fotos del día NO se sincronizan con
+  //      nadie—, así que un desalojo del navegador por falta de sitio o por
+  //      inactividad se lleva datos que no están en ningún otro lado. El
+  //      navegador puede decir que no (o no tener la API): no pasa nada, es una
+  //      salvaguarda, no un requisito.
+  try {
+    if (navigator.storage?.persist && !(await navigator.storage.persisted())) {
+      await navigator.storage.persist();
+    }
+  } catch (_) {}
 
   // 3) Abrir IndexedDB. Si falla, lo decimos en el pill pero seguimos.
   let dbOk = false;
