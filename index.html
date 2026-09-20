@@ -10885,6 +10885,9 @@ const TripDetail = {
       pager.scrollTo({ left: izq, behavior: suave ? 'smooth' : 'auto' });
     }
     TripDetail._subirTira({ pager });
+    // Con el día ya puesto, el alto pasa a ser el suyo exacto (al ir de un día
+    // largo a uno corto, durante el salto solo se permite crecer).
+    setTimeout(() => { if (TripDetail._medirPager) TripDetail._medirPager(null, true); }, 420);
     return true;
   },
 
@@ -10902,19 +10905,25 @@ const TripDetail = {
     // más alto de los dos que se ven, para que ninguno se corte a medio gesto.
     // El mínimo es lo que queda de pantalla bajo la tira: sin ese recorrido no
     // habría forma de subirla arriba del todo.
-    const medir = (extra) => {
+    const medir = (extra, exacto) => {
       const ps = paginas();
       if (!ps.length) return;
       const f = pager.scrollLeft / ancho();
       const i = Math.max(0, Math.min(ps.length - 1, Math.floor(f + .02)));
       const j = Math.max(0, Math.min(ps.length - 1, Math.ceil(f - .02)));
       const min = Math.max(240, (window.innerHeight || 0) - TripDetail._topeSuperior());
-      pager.style.minHeight = min + 'px';
-      pager.style.height = Math.max(min, altoDe(ps[i]), altoDe(ps[j]), altoDe(extra)) + 'px';
+      const alto = Math.max(min, altoDe(ps[i]), altoDe(ps[j]), altoDe(extra));
+      const actual = parseFloat(pager.style.height) || 0;
+      // Encoger a media pasada mueve el suelo bajo el dedo y el navegador suelta
+      // el anclaje: el día se quedaba a medio deslizar. Mientras dura el gesto
+      // solo se crece; el alto exacto se pone al asentarse.
+      if (!exacto && actual && alto < actual - 1) return;
+      if (Math.abs(alto - actual) > 1) pager.style.height = alto + 'px';
+      if (pager.style.minHeight !== min + 'px') pager.style.minHeight = min + 'px';
     };
     TripDetail._medirPager = medir;
 
-    let raf = 0, fin = 0, asentado = diaInicial;
+    let raf = 0, fin = 0, asentado = diaInicial, tocando = false;
     const alDeslizar = () => {
       medir();
       const ps = paginas();
@@ -10925,19 +10934,43 @@ const TripDetail = {
         if (dayStrip) dayStrip._focusDay(k, { smooth:true });
       }
     };
+    // Se ha asentado: el alto pasa a ser el del día que toca y, si el día ha
+    // cambiado, la tira sube. Con el dedo encima no se toca nada.
+    const asentar = () => {
+      if (tocando || !pager.isConnected) return;
+      const ps = paginas();
+      if (!ps.length) return;
+      const w = ancho();
+      const i = Math.max(0, Math.min(ps.length - 1, Math.round(pager.scrollLeft / w)));
+      const destino = i * w;
+      // A veces el deslizamiento se queda a medias (basta que algo cambie el
+      // diseño a mitad de gesto para que el navegador abandone el anclaje):
+      // se termina de llevar al día más cercano, que es lo que se esperaba.
+      if (Math.abs(pager.scrollLeft - destino) > 2) {
+        const suave = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+        pager.scrollTo({ left: destino, behavior: suave ? 'smooth' : 'auto' });
+        return;                       // al llegar habrá otro scroll y otra pasada
+      }
+      medir(null, true);
+      if (TripDetail._diaVisible !== asentado) {
+        asentado = TripDetail._diaVisible;
+        TripDetail._subirTira({ pager });
+      }
+    };
+    const programarAsentar = (ms) => { clearTimeout(fin); fin = setTimeout(asentar, ms || 140); };
     pager.addEventListener('scroll', () => {
       if (!raf) raf = requestAnimationFrame(() => { raf = 0; alDeslizar(); });
-      clearTimeout(fin);
-      fin = setTimeout(() => {
-        medir();
-        // Solo al CAMBIAR de día: si no, un roce lateral movería la página a la
-        // fuerza mientras se está leyendo tan tranquilo.
-        if (TripDetail._diaVisible !== asentado) {
-          asentado = TripDetail._diaVisible;
-          TripDetail._subirTira({ pager });
-        }
-      }, 150);
+      programarAsentar();
     }, { passive:true });
+    // Mientras el dedo esté encima, el gesto es suyo: ni se mide fino ni se
+    // mueve la página. Antes, una pausa a mitad de deslizamiento disparaba el
+    // asentado con el dedo puesto y el día se quedaba clavado en medio.
+    pager.addEventListener('touchstart', () => { tocando = true; clearTimeout(fin); }, { passive:true });
+    const soltar = () => { tocando = false; programarAsentar(180); };
+    pager.addEventListener('touchend', soltar, { passive:true });
+    pager.addEventListener('touchcancel', soltar, { passive:true });
+    // Donde exista, el navegador avisa de que ya ha terminado de moverse.
+    if ('onscrollend' in pager) pager.addEventListener('scrollend', () => programarAsentar(0), { passive:true });
 
     // Con el teclado (y en escritorio, donde no hay dedo que deslizar).
     const alTeclado = (e) => {
@@ -10977,7 +11010,7 @@ const TripDetail = {
     // hay que volver a medir cuando pasa.
     TripDetail._pagerRO?.disconnect?.();
     if ('ResizeObserver' in window) {
-      const ro = new ResizeObserver(() => { medir(); });
+      const ro = new ResizeObserver(() => { medir(null, !tocando); });
       paginas().forEach(p => ro.observe(p));
       TripDetail._pagerRO = ro;
     }
