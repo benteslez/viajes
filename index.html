@@ -1316,7 +1316,16 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   min-width:15px; padding:2px 4px; border-radius:999px;
   background:color-mix(in srgb, var(--accent) 12%, var(--bg-soft)); color:var(--accent); }
 .day-pill .n.vacia { background:transparent; color:var(--line); }
-.day-pill.past { opacity:.5; }
+/* Día ya pasado: la pastilla se apaga en gris. Sigue siendo pulsable — se entra
+   a ver ese día igual que a cualquier otro; solo se ve que ya está consumido. */
+.day-pill.past:not(.active) { background:var(--bg-soft); border-color:transparent; }
+.day-pill.past:not(.active) i,
+.day-pill.past:not(.active) b,
+.day-pill.past:not(.active) .wd { color:var(--text-muted); opacity:.8; }
+.day-pill.past:not(.active) .n {
+  background:color-mix(in srgb, var(--text-muted) 15%, transparent); color:var(--text-muted);
+}
+.day-pill.past:not(.active) .n.vacia { background:transparent; color:var(--line); }
 .day-pill.today { border-color:var(--accent); }
 .day-pill.today i, .day-pill.today b { color:var(--accent); }
 .day-pill.active { background:var(--text); border-color:var(--text); color:var(--text-inv); opacity:1; }
@@ -1534,8 +1543,6 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   padding:10px 16px 66px;
 }
 .plan-page .day-group { margin:0; }
-.plan-page.day-past { display:none; }
-.show-past .plan-page.day-past { display:block; }
 /* Con el carrusel el hueco de abajo sobra: la página acaba donde acaba el día,
    justo lo necesario para que la tira pueda quedarse pegada arriba del todo. */
 main:has(.plan-pager) { padding-bottom:0; }
@@ -2586,12 +2593,12 @@ main:has(.plan-pager) { padding-bottom:0; }
 .day-group.collapsed .timeline-list,
 .day-group.collapsed .day-note-card { display:none; }
 
-/* Viaje en curso: días pasados ocultos hasta pulsar "Ver días anteriores". */
-.day-group.day-past { display:none; }
-.show-past .day-group.day-past { display:block; }
-.past-days-bar { display:flex; justify-content:center; margin:0 0 18px; }
-.past-days-bar .show-past-btn { color:var(--text-muted); }
-.past-days-bar .show-past-btn svg { width:15px; height:15px; }
+/* Viaje en curso: el día que ya ha pasado se apaga en gris. No se esconde (se
+   entra en él como en cualquier otro): solo pierde el color para que de un
+   vistazo se vea por dónde va el viaje. */
+.day-group.day-past .day-head { background:var(--bg-soft); }
+.day-group.day-past .day-badge { background:var(--text-muted); }
+.day-group.day-past .day-head-txt .day-date { color:var(--text-muted); }
 
 /* Maleta — sub-pestañas de persona + lista compacta */
 /* Cabecera de la maleta: progreso a la izquierda, controles a la derecha */
@@ -6341,8 +6348,18 @@ const Theme = {
    ============================================================ */
 const Router = {
   async go(view, opts={}) {
+    const vistaPrevia = STATE.view;
     STATE.view = view;
-    if (view === 'trip') STATE.currentTripId = opts.tripId || STATE.currentTripId;
+    if (view === 'trip') {
+      // Entrar a un viaje desde fuera olvida el día que se estuviera mirando:
+      // el planning se abre en el día de hoy. (Cambiar de pestaña ya dentro del
+      // viaje sí conserva el día, que para eso se acaba de elegir.)
+      if (vistaPrevia !== 'trip' || (opts.tripId && opts.tripId !== STATE.currentTripId)) {
+        TripDetail._planTrip = null;
+        TripDetail._diaVisible = null;
+      }
+      STATE.currentTripId = opts.tripId || STATE.currentTripId;
+    }
     if (opts.tab) STATE.currentTab = opts.tab;
     await this.render();
   },
@@ -10648,12 +10665,15 @@ const TripDetail = {
     // por pantalla, así que abrir otra igual encima no tenía sentido.
     if (keys.length) root.appendChild(el('div', { class:'plan-collapse-bar' }, [ calBtn, collapseAllBtn ]));
 
-    // Qué día se enseña al entrar: el que se estaba viendo si sigue existiendo,
-    // hoy si el viaje está en marcha y, si no, el primero.
+    // Qué día se enseña al entrar: el que se estaba viendo si se acaba de cambiar
+    // de pestaña, y si no HOY — o el primer día que quede por delante, para que
+    // entrar al planning deje ya mirando lo que toca y no el día 1 de hace una
+    // semana. Solo si el viaje entero quedó atrás se vuelve al primer día.
     const todayStr = todayIso();
     const diaPrevio = (TripDetail._planTrip === t.id) ? TripDetail._diaVisible : null;
+    const primeroPorVenir = keys.find(k => k !== 'sin-fecha' && k >= todayStr);
     const diaInicial = keys.includes(diaPrevio) ? diaPrevio
-                     : (keys.includes(todayStr) ? todayStr : keys[0]);
+                     : (primeroPorVenir || keys[0]);
     TripDetail._planTrip = t.id;
 
     // Tira de días (pegada arriba): un toque salta a ese día y sube la tira al
@@ -10664,19 +10684,11 @@ const TripDetail = {
     }) : null;
     if (dayStrip) root.appendChild(dayStrip);
 
-    // Viaje EN CURSO: ocultamos los días ya pasados y dejamos un botón para verlos.
+    // Viaje EN CURSO: los días que ya han pasado se quedan apagados en gris. Siguen
+    // en el carrusel y se entra en ellos igual, pero se ve que ya están hechos.
+    // (En un viaje terminado no se apaga nada: lo estaría todo y no diría nada.)
     const isEnCurso = tripStatus(t) === 'curso';
-    const pastKeys = isEnCurso ? keys.filter(k => k !== 'sin-fecha' && k < todayStr) : [];
-    if (pastKeys.length) {
-      const pastBtn = el('button', { class:'btn btn-sm btn-ghost show-past-btn', onclick: () => {
-        const showing = root.classList.toggle('show-past');
-        pastBtn.lastChild.textContent = showing
-          ? 'Ocultar días anteriores'
-          : `Ver días anteriores (${pastKeys.length})`;
-      } }, [ el('span', { html: svg('clock'), 'aria-hidden':'true' }),
-             el('span', { text:`Ver días anteriores (${pastKeys.length})` }) ]);
-      root.appendChild(el('div', { class:'past-days-bar' }, [ pastBtn ]));
-    }
+    const esPasado = (k) => isEnCurso && k !== 'sin-fecha' && k < todayStr;
 
     // Token de render: invalida los recálculos de rutas en vuelo de renders anteriores.
     const renderToken = (TripDetail._planRenderToken = {});
@@ -10694,7 +10706,7 @@ const TripDetail = {
     const pager = el('div', { class:'plan-pager' });
     for (const k of keys) {
       const collapsed = TripDetail._collapsedDays.has(k);
-      const isPast = pastKeys.includes(k);
+      const isPast = esPasado(k);
       const g = el('div', { class:'day-group' + (collapsed ? ' collapsed' : '') + (isPast ? ' day-past' : '') + (k === todayStr ? ' day-today' : ''), data:{ day:k } });
       const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
       const dayMeta = noteMap[k];
@@ -10997,8 +11009,8 @@ const TripDetail = {
     return true;
   },
 
-  // Páginas del carrusel que se pueden ver (el viaje en curso esconde las de los
-  // días pasados hasta que se piden).
+  // Páginas del carrusel que se pueden ver (por si alguna quedara oculta: el
+  // índice de scroll tiene que contar solo las que de verdad ocupan sitio).
   _paginasVisibles(pager) {
     return [...(pager || document).querySelectorAll('.plan-page')].filter(p => p.offsetParent !== null);
   },
@@ -11012,12 +11024,7 @@ const TripDetail = {
     const esc = (x) => (window.CSS && CSS.escape) ? CSS.escape(x) : x;
     const pag = pager.querySelector(`.plan-page[data-day="${esc(k)}"]`);
     if (!pag) return false;
-    // Día pasado escondido o plegado: llevar ahí al usuario y dejarle mirando
-    // una página en blanco no sirve de nada.
-    if (!pag.offsetParent) {
-      const cont = pager.closest('#view-root') || document.body;
-      cont.classList.add('show-past');
-    }
+    // Llevar ahí al usuario y dejarle mirando un día plegado no sirve de nada.
     const g = pag.querySelector('.day-group');
     if (g && g.classList.contains('collapsed')) {
       g.classList.remove('collapsed');
