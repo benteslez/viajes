@@ -1439,6 +1439,46 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .timeline-item.list-item.type-vuelo.is-next,
 .timeline-list .timeline-item.list-item.type-coche.is-next { background:var(--accent-bg) !important; }
 
+/* Lugares: círculo con el número de orden. Ligero: aro fino, sin relleno,
+   y el número centrado de verdad (flex + line-height 1, sin descuadres). */
+.li-num {
+  flex:0 0 26px; width:26px; height:26px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  border:1.5px solid color-mix(in srgb, var(--li-pill) 55%, transparent);
+  background:color-mix(in srgb, var(--li-pill) 7%, transparent);
+  color:color-mix(in srgb, var(--li-pill) 88%, #000);
+  font-size:11.5px; font-weight:800; line-height:1; font-feature-settings:"tnum";
+}
+.li-num span { display:block; line-height:1; transform:translateY(.5px); }
+:root[data-tema="oscuro"] .li-num { color:color-mix(in srgb, var(--li-pill) 55%, #fff); }
+/* Con número, la hora va en plano (sin pastilla de color): pesa mucho menos. */
+.timeline-list .timeline-item .li-time.li-time-plain {
+  background:transparent; padding:4px 2px; min-width:46px;
+}
+.timeline-list .timeline-item .li-time.li-time-plain .li-time-a { color:var(--text); }
+.timeline-list .timeline-item .li-time.li-time-plain .li-time-b { color:var(--text-muted); }
+.timeline-list .timeline-item.visited .li-num { opacity:.6; }
+
+/* Actividades: barra con el trozo del día que ocupan */
+/* Con barra, la fila crece: la hora y el número se alinean arriba. */
+.timeline-list .timeline-item.list-item:has(.li-actbar) { align-items:flex-start; }
+.timeline-list .timeline-item.list-item:has(.li-actbar) .li-time,
+.timeline-list .timeline-item.list-item:has(.li-actbar) .item-emoji { margin-top:1px; }
+.li-actbar { margin-top:7px; }
+.ab-track {
+  height:5px; border-radius:5px; position:relative;
+  background:color-mix(in srgb, var(--tipo-actividad) 14%, var(--bg-soft));
+}
+.ab-fill {
+  position:absolute; top:0; bottom:0; border-radius:5px;
+  background:linear-gradient(90deg, var(--tipo-actividad), color-mix(in srgb, var(--tipo-actividad) 55%, #fff));
+}
+.ab-lbl {
+  display:flex; justify-content:space-between; gap:8px; margin-top:4px;
+  font-size:10px; font-weight:700; color:var(--text-muted); font-feature-settings:"tnum";
+}
+.ab-lbl .ab-mid { color:color-mix(in srgb, var(--tipo-actividad) 75%, var(--text-muted)); font-weight:800; }
+
 /* ======================================================================
    BILLETE — los traslados no son una parada más: son un ticket. Cuerpo en
    color, troquel con muescas a los lados y campos con etiqueta pequeña.
@@ -9538,6 +9578,25 @@ const TripDetail = {
     const _isToday = (k === todayStr);
     const _nowM = _isToday ? (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })() : null;
     const _nowLine = () => { const d = new Date(); const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0'); return el('div', { class:'now-line' }, [ el('span', { class:'now-dot' }), el('span', { class:'now-label', text:`ahora ${hh}:${mm}` }) ]); };
+    // Ventana horaria del día: de la primera hora a la última, redondeadas a
+    // hora en punto y con un mínimo de 6 h. La usa la barra de las actividades
+    // para enseñar qué trozo del día ocupan.
+    const _PLACE_TYPES = ['lugar', 'playa'];
+    const _win = (() => {
+      const starts = [], ends = [];
+      _nonVirt.forEach(x => {
+        const a = _timeMin(x.time); if (a == null) return;
+        starts.push(a);
+        const e = _endInfo(x);
+        ends.push(e.min != null && e.min > a ? e.min : a + (visitMinutes(x) || 60));
+      });
+      if (!starts.length) return null;
+      let a = Math.floor(Math.min(...starts) / 60) * 60;
+      let b = Math.ceil(Math.max(...ends) / 60) * 60;
+      if (b - a < 360) b = a + 360;
+      return { a, b };
+    })();
+    let _placeN = 0;
     let _lastPart = null, _threadSeen = 0, _nowInserted = false, _prevTimed = null;
     for (let di = 0; di < dayArr.length; di++) {
       const it = dayArr[di];
@@ -9578,7 +9637,9 @@ const TripDetail = {
             : el('div', { class:'gap-chip', text: `libre ${dur}` }));
         }
       }
-      const card = this._planningItem(it, t);
+      // Lugares numerados: el día se lee como una ruta 1 → 2 → 3.
+      const _num = (!it._virtual && _PLACE_TYPES.includes(it.type)) ? ++_placeN : null;
+      const card = this._planningItem(it, t, { num: _num, win: _win });
       if (_useThread && !it._virtual && it.time) {
         card.classList.add('li-thread'); _threadSeen++;
         if (_threadSeen === 1) card.classList.add('thread-first');
@@ -10142,7 +10203,8 @@ const TripDetail = {
     return true;
   },
 
-  _planningItem(it, t) {
+  _planningItem(it, t, opts) {
+    opts = opts || {};
     const td = typeDef(it.type);
     const status = itemStatus(it);                  // null para lugar/comida/otro
     const statusDef = STATUS_PLANNING.find(s => s.id === status);
@@ -10171,16 +10233,33 @@ const TripDetail = {
     // más abajo, cuando ya está el subtítulo (asientos, localizador…).
     const _mdMove = it.metadata || {};
     const _isMove = ['vuelo', 'transporte', 'coche'].includes(it.type);
-    // Si no hay origen/destino en los datos, se intenta sacar del título
-    // ("Pescadero - Barichara"), que es como se escriben casi siempre.
+    // Origen y destino: mandan SIEMPRE los datos del transporte, lado a lado.
+    // Lo que falte se intenta deducir del título, pero con cuidado: partir por
+    // " a " convertía "Transporte a Barichara" en origen "Transporte".
     const _ruta = (() => {
-      if (_mdMove.origen && _mdMove.destino) return { o:_mdMove.origen, d:_mdMove.destino };
-      const parts = String(it.title || '').split(/\s+(?:-|–|—|→|->|a)\s+/);
-      if (parts.length === 2) {
-        const o = parts[0].trim(), d = parts[1].trim();
-        if (o && d && o.length <= 34 && d.length <= 34) return { o, d };
+      const tit = String(it.title || '').trim();
+      let po = '', pd = '';
+      // 1) Separador explícito de ruta: "Pescadero - Barichara", "A → B".
+      const partes = tit.split(/\s+(?:-|–|—|→|->|>)\s+/);
+      if (partes.length === 2) { po = partes[0].trim(); pd = partes[1].trim(); }
+      if (!po && !pd) {
+        // 2) "X hacia Y" / "de X a Y".
+        const mh = tit.match(/^(?:salida\s+)?(?:de\s+)?(.+?)\s+(?:hacia|hasta)\s+(.+)$/i)
+                || tit.match(/^de\s+(.+?)\s+a\s+(.+)$/i);
+        if (mh) { po = mh[1].trim(); pd = mh[2].trim(); }
       }
-      return null;
+      if (!pd) {
+        // 3) "<medio> a Y": eso no es una ruta, solo dice el destino.
+        const ma = tit.match(/^(.+?)\s+a\s+(.+)$/i);
+        if (ma && /^(transporte|viaje|traslado|salida|vuelo|coche|tren|bus|autob[úu]s|ferry|barco|taxi|metro)$/i.test(ma[1].trim())) {
+          pd = ma[2].trim();
+        }
+      }
+      const limpia = (x) => (x || '').replace(/\s*\(.*?\)\s*$/, '').trim();
+      const o = limpia(_mdMove.origen) || limpia(po);
+      const d = limpia(_mdMove.destino) || limpia(pd);
+      if (!o || !d || o.length > 34 || d.length > 34) return null;
+      return { o, d };
     })();
     const boarding = (!isVirtual && _isMove && _ruta) ? (() => {
       const bt1 = (it.consultation_planned_t1 || it.time || '').slice(0, 5);
@@ -10430,21 +10509,23 @@ const TripDetail = {
       // Pastilla de hora a la izquierda, del color del tipo. Siempre hay una
       // (sin hora, "—"; en alojamiento, "noche"), para que todas las filas
       // arranquen en la misma columna y el ojo baje en línea recta.
+      // Lugares: el orden de la ruta, en un círculo ligero.
+      (opts.num && !isVirtual) ? el('div', { class:'li-num' }, el('span', { text: String(opts.num) })) : null,
       ticket ? null : (() => {
         if (timeRangeText) {
           const _p = String(timeRangeText).split(' – ');
-          return el('div', { class:'li-time' }, [
+          return el('div', { class:'li-time' + (opts.num ? ' li-time-plain' : '') }, [
             el('span', { class:'li-time-a', text: _p[0] }),
             _p[1] ? el('span', { class:'li-time-b', text: _p[1] }) : null,
           ].filter(Boolean));
         }
         if (it.type === 'hotel') return el('div', { class:'li-time li-time-tag' }, [ el('span', { class:'li-time-a', text:'noche' }) ]);
-        return el('div', { class:'li-time li-time-none' }, [ el('span', { class:'li-time-a', text:'—' }) ]);
+        return el('div', { class:'li-time li-time-none' + (opts.num ? ' li-time-plain' : '') }, [ el('span', { class:'li-time-a', text:'—' }) ]);
       })(),
       // Los virtuales no se pueden arrastrar (lo controlan las fechas del hotel)
       isVirtual ? null : el('div', { class:'drag-handle', html: svg('grip'), title:'Arrastra para reordenar' }),
       // Emoji del tipo (varía con el modo en transporte), centrado en la card
-      ticket ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
+      (ticket || opts.num) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: () => TripDetail.openPlanningEditor(t, it) }, [
         ticket
           ? el('div', { class:'li-title', style:{display:'flex', alignItems:'center', gap:'6px'} }, [ ticket ])
@@ -10455,9 +10536,30 @@ const TripDetail = {
         // 2ª fila: hora (a la izquierda) + datos. En transporte/vuelo/coche NO se pone
         // el label genérico ("Transporte"): solo datos reales (compañía, asiento,
         // localizador, ruta…). Si no hay nada, la fila queda vacía pero reserva alto.
+        // Actividades: barra que enseña qué trozo del día ocupan.
+        (it.type === 'actividad' && !isVirtual && opts.win && it.time) ? (() => {
+          const toMin = (x) => { const m = /^(\d{1,2}):(\d{2})/.exec(x || ''); return m ? (+m[1] * 60 + +m[2]) : null; };
+          const a = toMin(it.time);
+          if (a == null) return null;
+          const fin = toMin(it.end_time) ?? (a + (visitMinutes(it) || 90));
+          const span = Math.max(1, opts.win.b - opts.win.a);
+          const left = Math.max(0, Math.min(100, ((a - opts.win.a) / span) * 100));
+          const width = Math.max(4, Math.min(100 - left, ((Math.max(fin, a + 15) - a) / span) * 100));
+          const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+          return el('div', { class:'li-actbar' }, [
+            el('div', { class:'ab-track' }, el('span', { class:'ab-fill', style:{ left: left + '%', width: width + '%' } })),
+            el('div', { class:'ab-lbl' }, [
+              el('span', { text: hhmm(opts.win.a) }),
+              el('span', { class:'ab-mid', text: `ocupa ${fmtDur(Math.max(15, fin - a))} del día` }),
+              el('span', { text: hhmm(opts.win.b) }),
+            ]),
+          ]);
+        })() : null,
         ticket ? null : (() => {
           const isTransportType = ['vuelo', 'transporte', 'coche'].includes(it.type);
-          const subText = subParts.join(' · ') || ((isVirtual || isTransportType) ? '' : typeLabelFor(it));
+          // Sin repetidos: el lugar y el organizador suelen ser lo mismo.
+          const subText = [...new Set(subParts.filter(Boolean))].join(' · ')
+            || ((isVirtual || isTransportType) ? '' : typeLabelFor(it));
           return el('div', { class:'li-subrow' }, [
             subText ? el('span', { class:'li-sub-text', text: subText }) : null,
           ].filter(Boolean));
