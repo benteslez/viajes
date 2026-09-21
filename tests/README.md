@@ -51,6 +51,7 @@ tests/
     ├── dias-pasados.js      días pasados apagados pero accesibles; abrir en hoy
     ├── editor-parada.js     el asistente de dos pasos y el orden del formulario
     ├── escritorio.js        en pantalla ancha el día se queda en una columna
+    ├── etiqueta-dia.js      la pastilla del día ("Tulum"), y que se lea
     ├── fechas-viaje.js      tira de días y el editor de fechas ("Sin fecha")
     ├── ficha.js             la ficha de una parada: abrir, cerrar, cambiar tipo
     ├── ficha-contacto.js    notas, teléfono, WhatsApp y dirección desde la ficha

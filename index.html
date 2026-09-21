@@ -1524,7 +1524,7 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   font-size:13px; font-weight:600; color:var(--text-muted);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.day-group .day-meta-row .day-meta-pill { color:var(--accent); font-weight:700; max-width:70%; }
+
 .day-group .day-meta-row .day-meta-stops { color:var(--text-muted); }
 /* Fotos, añadir y pantalla completa, al final de la misma fila */
 .day-group .day-meta-row .day-actions { margin-left:auto; display:flex; gap:2px; flex:none; }
@@ -3852,35 +3852,76 @@ body.dragging-planning .day-head { color: var(--accent); }
 .day-actions .icon-btn { width:30px; height:30px; }
 .day-actions .icon-btn svg { width:16px; height:16px; }
 
-/* Pill del título del día */
+/* Pill del título del día ------------------------------------------------
+   Dos variables y una sola regla: `--pill-c` es el color de la etiqueta y
+   `--pill-t` el del texto. Las variantes de color solo cambian esas dos, y los
+   temas oscuros solo `--pill-t`. Antes cada variante repetía fondo, borde y
+   color, y la de por defecto —la que no elige color— se había quedado con el
+   `--accent` a pelo sobre un fondo del MISMO accent: 4,3:1, y encima la
+   cabecera del día lleva su propio tinte accent debajo. El nombre del día, que
+   es lo más útil de esa línea, era lo que menos se veía. */
 .day-title-pill {
+  --pill-c: var(--accent);
+  --pill-t: color-mix(in srgb, var(--pill-c) 68%, #000);
   display:inline-block; vertical-align:middle; max-width:100%;
   font-family:var(--font-ui);
-  font-size:12.5px; font-weight:600; letter-spacing:-.005em;
+  font-size:12.5px; font-weight:700; letter-spacing:-.005em;
   padding:4px 12px; border-radius:var(--r-pill);
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg-elev));
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  /* Va en su propia fila a ancho completo: cabe casi siempre; recorta con elipsis
-     solo si es larguísima. */
+  background: color-mix(in srgb, var(--pill-c) 20%, var(--bg-elev));
+  border: 1px solid color-mix(in srgb, var(--pill-c) 42%, transparent);
+  color: var(--pill-t);
+  /* Cabe casi siempre; recorta con elipsis solo si es larguísima. */
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.day-title-pill.color-azul    { background:color-mix(in srgb, #3b82f6 18%, var(--bg-elev)); color:#1e40af; border-color:color-mix(in srgb, #3b82f6 38%, transparent); }
-.day-title-pill.color-verde   { background:color-mix(in srgb, #10b981 18%, var(--bg-elev)); color:#047857; border-color:color-mix(in srgb, #10b981 38%, transparent); }
-.day-title-pill.color-naranja { background:color-mix(in srgb, #f97316 18%, var(--bg-elev)); color:#9a3412; border-color:color-mix(in srgb, #f97316 38%, transparent); }
-.day-title-pill.color-rojo    { background:color-mix(in srgb, #ef4444 18%, var(--bg-elev)); color:#991b1b; border-color:color-mix(in srgb, #ef4444 38%, transparent); }
-.day-title-pill.color-morado  { background:color-mix(in srgb, #a855f7 18%, var(--bg-elev)); color:#6b21a8; border-color:color-mix(in srgb, #a855f7 38%, transparent); }
-.day-title-pill.color-rosa    { background:color-mix(in srgb, #ec4899 18%, var(--bg-elev)); color:#9d174d; border-color:color-mix(in srgb, #ec4899 38%, transparent); }
-.day-title-pill.color-ambar   { background:color-mix(in srgb, #f59e0b 18%, var(--bg-elev)); color:#92400e; border-color:color-mix(in srgb, #f59e0b 38%, transparent); }
-.day-title-pill.color-gris    { background:color-mix(in srgb, #64748b 18%, var(--bg-elev)); color:#334155; border-color:color-mix(in srgb, #64748b 38%, transparent); }
-:root[data-tema="oscuro"] .day-title-pill.color-azul    { color:#93c5fd; }
-:root[data-tema="oscuro"] .day-title-pill.color-verde   { color:#6ee7b7; }
-:root[data-tema="oscuro"] .day-title-pill.color-naranja { color:#fdba74; }
-:root[data-tema="oscuro"] .day-title-pill.color-rojo    { color:#fca5a5; }
-:root[data-tema="oscuro"] .day-title-pill.color-morado  { color:#d8b4fe; }
-:root[data-tema="oscuro"] .day-title-pill.color-rosa    { color:#fbcfe8; }
-:root[data-tema="oscuro"] .day-title-pill.color-ambar   { color:#fcd34d; }
-:root[data-tema="oscuro"] .day-title-pill.color-gris    { color:#cbd5e1; }
+/* Dentro de la tarjeta del día, el `> *` de la fila de chips la dejaba en texto
+   suelto (fuera fondo, fuera borde, fuera acolchado). La etiqueta es la
+   excepción: el resto de esa fila sí es texto, ella no.
+   Se repite el dibujo, no las variables: las variables las ponen las reglas de
+   arriba —que tienen menos peso que `.color-verde`— y aquí solo se leen. Si se
+   declarara `--pill-c` también aquí, esta regla le ganaría a las variantes y
+   todas las etiquetas saldrían azules. */
+.day-group .day-meta-row .day-meta-pill {
+  max-width:70%; padding:3px 11px; border-radius:var(--r-pill);
+  font-size:12.5px; font-weight:700;
+  background: color-mix(in srgb, var(--pill-c) 20%, var(--bg-elev));
+  border: 1px solid color-mix(in srgb, var(--pill-c) 42%, transparent);
+  color: var(--pill-t);
+}
+
+.day-title-pill.color-azul    { --pill-c:#3b82f6; --pill-t:#1e40af; }
+.day-title-pill.color-verde   { --pill-c:#10b981; --pill-t:#047857; }
+.day-title-pill.color-naranja { --pill-c:#f97316; --pill-t:#9a3412; }
+.day-title-pill.color-rojo    { --pill-c:#ef4444; --pill-t:#991b1b; }
+.day-title-pill.color-morado  { --pill-c:#a855f7; --pill-t:#6b21a8; }
+.day-title-pill.color-rosa    { --pill-c:#ec4899; --pill-t:#9d174d; }
+.day-title-pill.color-ambar   { --pill-c:#f59e0b; --pill-t:#92400e; }
+.day-title-pill.color-gris    { --pill-c:#64748b; --pill-t:#334155; }
+
+/* En oscuro el fondo tintado ya es oscuro: el texto va claro, no más oscuro.
+   Va por duplicado —tema elegido y tema del sistema— como el resto del
+   archivo: `:root:not([data-tema])` es "no has elegido, manda el sistema". */
+:root[data-tema="oscuro"] .day-title-pill,
+:root[data-tema="oscuro"] .day-meta-pill         { --pill-t:var(--accent); }
+:root[data-tema="oscuro"] .day-title-pill.color-azul    { --pill-t:#93c5fd; }
+:root[data-tema="oscuro"] .day-title-pill.color-verde   { --pill-t:#6ee7b7; }
+:root[data-tema="oscuro"] .day-title-pill.color-naranja { --pill-t:#fdba74; }
+:root[data-tema="oscuro"] .day-title-pill.color-rojo    { --pill-t:#fca5a5; }
+:root[data-tema="oscuro"] .day-title-pill.color-morado  { --pill-t:#d8b4fe; }
+:root[data-tema="oscuro"] .day-title-pill.color-rosa    { --pill-t:#fbcfe8; }
+:root[data-tema="oscuro"] .day-title-pill.color-ambar   { --pill-t:#fcd34d; }
+:root[data-tema="oscuro"] .day-title-pill.color-gris    { --pill-t:#cbd5e1; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema]) .day-title-pill,
+  :root:not([data-tema]) .day-meta-pill         { --pill-t:var(--accent); }
+  :root:not([data-tema]) .day-title-pill.color-azul    { --pill-t:#93c5fd; }
+  :root:not([data-tema]) .day-title-pill.color-verde   { --pill-t:#6ee7b7; }
+  :root:not([data-tema]) .day-title-pill.color-naranja { --pill-t:#fdba74; }
+  :root:not([data-tema]) .day-title-pill.color-rojo    { --pill-t:#fca5a5; }
+  :root:not([data-tema]) .day-title-pill.color-morado  { --pill-t:#d8b4fe; }
+  :root:not([data-tema]) .day-title-pill.color-rosa    { --pill-t:#fbcfe8; }
+  :root:not([data-tema]) .day-title-pill.color-ambar   { --pill-t:#fcd34d; }
+  :root:not([data-tema]) .day-title-pill.color-gris    { --pill-t:#cbd5e1; }
+}
 
 /* Color picker dentro del modal de editar día */
 .color-grid {
