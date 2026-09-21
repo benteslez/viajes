@@ -13,6 +13,7 @@ viajes/
 ├── service-worker.js   ← cache de app shell y CDNs
 ├── schema.sql          ← tablas Supabase + RLS por perfil
 ├── schema-touch-insert.sql ← migración: sellar updated_at también en el INSERT
+├── schema-ui-prefs.sql ← migración: preferencias de interfaz por perfil (sincronizadas)
 ├── icons/              ← iconos PWA
 ├── imports/            ← viajes en el formato de «Importar JSON» (ver imports/README.md)
 └── README.md
@@ -201,6 +202,22 @@ discrepan, manda la base y la pantalla está mal.
 - Los cambios se guardan al tocarlos, sin botón de Guardar.
 - La lista de personas se cachea (`AdminView.cargado`): cada toque repinta la vista, y sin
   caché cada repintado volvía a llamar a la Edge Function.
+
+### Preferencias de interfaz (sincronizadas)
+
+`schema-ui-prefs.sql`. Todo lo que la app recordaba de la interfaz vivía en `localStorage` y,
+por tanto, en un solo aparato: el tema, el último perfil, el orden de la administración. Eso
+vale para lo que es **del dispositivo**, no para **cómo quieres ver la app**: si reordenas los
+bloques de la ficha de una parada en el móvil, en el portátil salían en el orden de fábrica.
+
+`ui_prefs` guarda una fila por perfil con un jsonb dentro (`data`), y viaja por la misma cola
+que el resto. Las claves las pone la app: añadir una preferencia nueva no vuelve a tocar SQL.
+**Sin ejecutar ese archivo la app funciona igual**, pero la preferencia se queda en el
+dispositivo; las filas esperan en la cola sin atascar al resto y suben solas el día que se
+ejecute (la app trata «esa tabla no existe» como error permanente, no como un fallo de red).
+
+A diferencia del pasaporte o la plantilla de maleta, estas preferencias **no se comparten**:
+son de quien mira, y la política de RLS es «lo tuyo y solo lo tuyo».
 
 ### Datos personales (no son de ningún viaje)
 

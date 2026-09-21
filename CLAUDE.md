@@ -64,9 +64,12 @@ grande: el detalle de un viaje y todas sus pestañas.
 ### Paradas virtuales
 
 En el planning hay filas que **no** son registros: las noches de un hotel, el
-check-out, la llegada de un vuelo, los días intermedios de un evento largo.
-Llevan `_virtual: 'night' | 'checkout' | 'arrival' | 'span'` y son **copias**
-del registro real, con el mismo `id`.
+check-out, la llegada de un vuelo, los días de un coche de alquiler, los días
+intermedios de un evento largo. Llevan
+`_virtual: 'night' | 'checkout' | 'arrival' | 'rental' | 'return' | 'span'` y
+son **copias** del registro real, con el mismo `id`. Las genera
+`TripDetail._expandHotels`, que a pesar del nombre expande todos los tipos que
+duran varios días.
 
 > Antes de escribir sobre una parada, si es `_virtual` vuelve a leer el registro
 > de verdad: `await DB.get('planning_items', it.id)`. Escribir la copia pierde
@@ -75,15 +78,39 @@ del registro real, con el mismo `id`.
 ### La ficha también escribe
 
 `openPlanningDetail` no es solo de lectura: las notas, el teléfono, el WhatsApp
-y la dirección se escriben ahí y se guardan al salir del campo. Dos cosas que
+y la dirección se escriben ahí y se guardan al salir del campo. Tres cosas que
 hay que respetar si tocas eso:
 
 - Los guardados van **en fila** (`colaGuardado`). Cada uno relee el registro
   entero; dos a la vez leían la misma versión y el segundo pisaba al primero.
-- El teléfono y el WhatsApp viven en `metadata` pero **no** están declarados en
-  `PLANNING_METADATA`, y `collect()` reconstruye `metadata` desde los campos del
-  tipo. Por eso existe `CAMPOS_CONTACTO`: sin conservarlos a mano, guardar desde
-  el editor los borraba. Si añades otro campo que solo pida la ficha, mételo ahí.
+- El teléfono, el WhatsApp y la nota con formato viven en `metadata` pero **no**
+  están declarados en `PLANNING_METADATA`, y `collect()` reconstruye `metadata`
+  desde los campos del tipo. Por eso existe `CAMPOS_FICHA`: sin conservarlos a
+  mano, guardar desde el editor los borraba. Si añades otro campo que solo pida
+  la ficha, mételo ahí.
+- El orden de los bloques lo decide `ordenFicha()` y se guarda en `Prefs`, no en
+  el registro: es cómo quiere ver la app quien mira, no un dato del viaje.
+
+### La nota, en dos formatos
+
+`notes` es **texto plano** y no puede dejar de serlo: lo leen el buscador, el
+PDF, la guía, el subtítulo de la tarjeta y el `.ics`, y ninguno pinta HTML. El
+formato (negrita, cursiva, subrayado, enlaces) va aparte, en
+`metadata.notes_html`, y **todo** lo que entra o sale de ahí pasa por
+`notaSanear()` — una lista blanca cerrada— porque puede venir de un pegado o de
+otro dispositivo. `notaTexto(html)` deriva el plano.
+
+Si se reescribe la nota desde un sitio que solo maneja texto (el editor, la hoja
+de nota rápida), el HTML se tira: quedarse con un formato que ya no dice lo
+mismo es peor que perder la negrita.
+
+### Preferencias de interfaz: `Prefs`, no `localStorage`
+
+`localStorage` vale para lo que es del aparato (el tema, el último perfil). Cómo
+quieres ver la app no lo es: eso va a `Prefs`, una fila por perfil en el store
+`ui_prefs` que viaja por la misma cola que el resto y aparece en el otro
+dispositivo. La tabla remota la crea `schema-ui-prefs.sql`; sin ejecutarlo todo
+sigue funcionando en local.
 
 ### Estilo de los comentarios
 

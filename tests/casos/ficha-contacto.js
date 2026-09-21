@@ -45,7 +45,7 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   const campos = await p.evaluate(() => {
     const f = (lbl) => [...document.querySelectorAll('.dv-row')].find((r) => r.querySelector('.dv-l')?.textContent === lbl);
     return { tel: !!f('Teléfono')?.querySelector('input'), wa: !!f('WhatsApp')?.querySelector('input'),
-             dir: !!f('Dirección')?.querySelector('input'), notas: !!document.querySelector('.dv-ta') };
+             dir: !!f('Dirección')?.querySelector('input'), notas: !!document.querySelector('.dv-rt') };
   });
   ok(campos.tel && campos.wa && campos.dir && campos.notas,
     'los cuatro se escriben aquí mismo, sin abrir el editor', campos);
@@ -55,8 +55,8 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   await escribir('WhatsApp', '+57 300 111 2233');
   await escribir('Dirección', 'Calle Mayor 1, Madrid');
   await p.evaluate(() => {
-    const ta = document.querySelector('.dv-ta');
-    ta.value = 'Mostrador 14, llevar impreso'; ta.dispatchEvent(new Event('change'));
+    const c = document.querySelector('.dv-rt');
+    c.focus(); document.execCommand('insertText', false, 'Mostrador 14, llevar impreso'); c.blur();
   });
   await sleep(p, 900);
   let g = await guardado();
