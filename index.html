@@ -1269,6 +1269,32 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
 
+/* Correr el día — vista previa antes de tocar nada. */
+.cd-min { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.cd-chips { display:flex; gap:6px; flex-wrap:wrap; }
+.cd-chip {
+  border:1px solid var(--line); background:var(--bg-elev); color:var(--text);
+  border-radius:var(--r-pill); padding:7px 12px; cursor:pointer;
+  font-family:inherit; font-size:13px; font-weight:700; font-feature-settings:"tnum";
+}
+.cd-chip.on { background:var(--text); border-color:var(--text); color:var(--text-inv); }
+.cd .cd-num { width:84px; flex:none; text-align:center; font-feature-settings:"tnum"; }
+.cd-lista { border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; }
+.cd-fila {
+  display:flex; align-items:center; gap:9px; padding:10px 11px; cursor:pointer;
+  font-size:13.5px;
+}
+.cd-fila + .cd-fila { border-top:1px solid var(--line-soft); }
+.cd-fila.off { opacity:.5; }
+.cd-fila input { width:19px; height:19px; flex:none; accent-color:var(--accent); margin:0; }
+.cd-fila .cd-em { flex:none; font-size:15px; }
+.cd-fila .cd-tit { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.cd-fila .cd-hora { flex:none; display:flex; gap:7px; align-items:baseline; font-feature-settings:"tnum"; }
+.cd-fila .cd-hora s { color:var(--text-muted); font-size:12.5px; }
+.cd-fila .cd-hora b { font-weight:800; }
+.cd-fila.off .cd-hora s { text-decoration:none; }
+.cd-fila.off .cd-hora b { display:none; }
+
 /* Gasto rápido — el importe manda, en grande y con el teclado numérico. */
 .qe .qe-amount {
   font-size:34px; font-weight:800; letter-spacing:-.03em; text-align:center;
@@ -10959,6 +10985,14 @@ const TripDetail = {
             html: svg('compass'),
             'aria-label':'Optimizar orden del día',
           }) : null,
+          // Correr el día: cuando algo se alarga, mover a mano parada por parada
+          // era el camino largo.
+          (canEdit() && k !== 'sin-fecha' && byDay[k].some(i => i.time || i.consultation_planned_t1)) ? el('button', {
+            class:'icon-btn', title:'Correr las horas del día',
+            onclick: () => TripDetail.openCorrerDia(t, k),
+            html: svg('clock'),
+            'aria-label':'Correr las horas de este día',
+          }) : null,
           canEdit() ? el('button', {
             class:'icon-btn', title:'Añadir evento a este día',
             onclick: () => TripDetail.openPlanningEditor(t, null, { day: k !== 'sin-fecha' ? k : null }),
@@ -13199,6 +13233,10 @@ const TripDetail = {
             fila('Duración', dur || (visitMinutes(iti) ? fmtDur(visitMinutes(iti)) : null)),
             fila('Hasta', (md.end_date && md.end_date > (iti._spanStart || iti.day_date)) ? fmtDayLong(md.end_date) : null),
           ];
+      // Marcar una parada como vista ya guardaba `visited_at`, pero ese dato no
+      // se leía en ningún sitio. Aquí se compara con la hora planeada: es lo
+      // que cuenta de verdad cómo fue el día.
+      cuando.push(TripDetail._filaHoraReal(iti, fila));
       cuerpo.appendChild(bloque('Cuándo', cuando) || el('span'));
 
       // --- Dónde ---
@@ -15452,6 +15490,138 @@ const TripDetail = {
       ]));
     });
     root.appendChild(list);
+  },
+
+  // "Planeado 12:00 · hecho 13:40 (+1 h 40)". Solo cuando hay las dos horas y
+  // son del mismo día: marcar una parada al día siguiente no es un retraso, es
+  // que se marcó tarde, y dar "+22 h" solo confundiría.
+  _filaHoraReal(it, fila) {
+    if (!it.visited || !it.visited_at) return null;
+    const planeada = it.time || it.consultation_planned_t1;
+    if (!planeada) return null;
+    const d = new Date(it.visited_at);
+    if (isNaN(d.getTime())) return null;
+    const diaMarcado = isoLocal(d);
+    const diaPlan = (it._spanStart || it.consultation_planned_d1 || it.day_date);
+    if (diaPlan && diaMarcado !== diaPlan) return null;
+    const real = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const min = (h) => { const [a, b] = h.split(':').map(Number); return a * 60 + b; };
+    const desfase = min(real) - min(planeada);
+    const signo = desfase > 0 ? '+' : '−';
+    const txt = Math.abs(desfase) < 5
+      ? `${real} · en hora`
+      : `${real} · ${signo}${fmtDur(Math.abs(desfase))}`;
+    return fila('Hecho a las', txt);
+  },
+
+  // Correr las horas de lo que queda del día. Es lo que pasa en un viaje real
+  // —se alarga una comida, se retrasa un tren— y hasta ahora había que editar
+  // parada por parada.
+  //
+  // Nada se toca hasta pulsar Aplicar: la lista de abajo es una vista previa
+  // con una casilla por parada, y los vuelos y alojamientos salen DESMARCADOS
+  // porque sus horas las pone otro.
+  async openCorrerDia(t, dia) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const todas = (await DB.listByTrip('planning_items', t.id))
+      .filter(i => !i.deleted_at && (i.day_date === dia || i.consultation_planned_d1 === dia));
+    // Solo se puede correr lo que tiene hora.
+    const conHora = todas
+      .map(i => ({ it: i, hora: i.time || i.consultation_planned_t1 || '' }))
+      .filter(x => x.hora)
+      .sort((a, b) => a.hora.localeCompare(b.hora));
+    if (!conHora.length) { UI.toast('Este día no tiene nada con hora'); return; }
+
+    let minutos = 30;
+    const AJENAS = ['vuelo', 'hotel'];        // horas que no las pones tú
+    const marcadas = new Set(conHora.filter(x => !AJENAS.includes(x.it.type)).map(x => x.it.id));
+
+    const sumar = (hora, min) => {
+      const [h, m] = hora.split(':').map(Number);
+      // Sin pasar de medianoche: cruzar el día obligaría a mover la parada de
+      // día y a reordenarlo todo. Se avisa y se queda en 23:59.
+      const total = Math.max(0, Math.min(23 * 60 + 59, h * 60 + m + min));
+      return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+    };
+
+    const lista = el('div', { class:'cd-lista' });
+    const aviso = el('p', { class:'field-hint', style:{ margin:'8px 0 0' } });
+    const pintarLista = () => {
+      lista.innerHTML = '';
+      let tope = false;
+      conHora.forEach(({ it, hora }) => {
+        const puesta = marcadas.has(it.id);
+        const nueva = sumar(hora, minutos);
+        if (puesta && nueva !== sumar(hora, 0) && (nueva === '23:59' || nueva === '00:00')) tope = true;
+        const chk = el('input', { type:'checkbox', checked: puesta ? true : null });
+        chk.addEventListener('change', () => {
+          if (chk.checked) marcadas.add(it.id); else marcadas.delete(it.id);
+          pintarLista();
+        });
+        lista.appendChild(el('label', { class:'cd-fila' + (puesta ? '' : ' off') }, [
+          chk,
+          el('span', { class:'cd-em', text: planEmoji(it), 'aria-hidden':'true' }),
+          el('span', { class:'cd-tit', text: it.title || typeDef(it.type).label }),
+          el('span', { class:'cd-hora' }, [
+            el('s', { text: hora }),
+            el('b', { text: puesta ? nueva : hora }),
+          ]),
+        ]));
+      });
+      const ajenas = conHora.filter(x => AJENAS.includes(x.it.type)).length;
+      aviso.textContent = [
+        ajenas ? 'Los vuelos y alojamientos salen sin marcar: sus horas las pone otro.' : '',
+        tope ? 'Alguna hora toca las 23:59: no se pasa al día siguiente.' : '',
+      ].filter(Boolean).join(' ');
+    };
+
+    const chips = el('div', { class:'cd-chips' });
+    const campo = el('input', { type:'number', step:'5', value:String(minutos), inputmode:'numeric', class:'cd-num' });
+    const ponerMinutos = (n) => { minutos = n; campo.value = String(n); pintarChips(); pintarLista(); };
+    const pintarChips = () => {
+      chips.innerHTML = '';
+      [-30, -15, 15, 30, 60].forEach(n => chips.appendChild(el('button', {
+        type:'button', class:'cd-chip' + (minutos === n ? ' on' : ''),
+        onclick: () => ponerMinutos(n),
+      }, `${n > 0 ? '+' : '−'}${Math.abs(n)}`)));
+    };
+    campo.addEventListener('input', () => {
+      const n = parseInt(campo.value, 10);
+      if (isFinite(n)) { minutos = n; pintarChips(); pintarLista(); }
+    });
+    pintarChips(); pintarLista();
+
+    UI.openSheet({
+      title: `Correr el ${fmtDate(dia, { weekday:'long', day:'numeric', month:'long' })}`,
+      body: el('div', { class:'cd' }, [
+        el('div', { class:'form-row' }, [
+          el('label', { text:'Minutos' }),
+          el('div', { class:'cd-min' }, [ chips, campo ]),
+        ]),
+        el('div', { class:'form-row' }, [ el('label', { text:'Qué se mueve' }), lista, aviso ]),
+      ]),
+      footer: [
+        el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'),
+        el('button', { class:'btn btn-primary', onclick: async () => {
+          const mover = conHora.filter(x => marcadas.has(x.it.id));
+          if (!mover.length || !minutos) { UI.closeSheet(); return; }
+          try {
+            for (const { it } of mover) {
+              const base = await DB.get('planning_items', it.id);
+              if (!base || base.deleted_at) continue;
+              if (base.time)     base.time = sumar(base.time, minutos);
+              if (base.end_time) base.end_time = sumar(base.end_time, minutos);
+              if (base.consultation_planned_t1) base.consultation_planned_t1 = sumar(base.consultation_planned_t1, minutos);
+              if (base.consultation_planned_t2) base.consultation_planned_t2 = sumar(base.consultation_planned_t2, minutos);
+              await DB.put('planning_items', base);
+            }
+          } catch (e) { console.error('correrDia', e); UI.toast('No se pudo mover todo'); }
+          UI.closeSheet();
+          UI.toast(`${mover.length} ${mover.length === 1 ? 'parada movida' : 'paradas movidas'} ${minutos > 0 ? '+' : '−'}${Math.abs(minutos)} min`);
+          Router.render();
+        } }, 'Aplicar'),
+      ],
+    });
   },
 
   // Conversor de ida y vuelta entre la moneda del viaje y el euro. Sin botón de
