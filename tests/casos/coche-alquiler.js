@@ -105,6 +105,100 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(ed.t1 === '10:00' && ed.t2 === '18:30', 'y con sus horas', ed);
   await p.evaluate(() => UI.closeSheet()); await sleep(p, 600);
 
+  titulo('HORA DE RECOGIDA Y DE DEVOLUCIÓN');
+  // Un alquiler no se recoge "el martes": se recoge el martes A LAS 10:30, y la
+  // hora de devolverlo es justo el dato que hace falta el último día.
+  await p.evaluate(async () => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    await TripDetail.openPlanningEditor(t, null, { day: window.__dias.inicio });
+  });
+  await sleep(p, 900);
+  await p.evaluate(() => [...document.querySelectorAll('.wz-cell')].find((x) => /Otro transporte/.test(x.textContent)).click());
+  await sleep(p, 700);
+  await p.evaluate(() => [...document.querySelectorAll('.wz-cell')].find((x) => /Coche de alquiler/.test(x.textContent)).click());
+  await sleep(p, 1200);
+  const campos = await p.evaluate(() => {
+    const vis = (n) => !!(n && n.checkVisibility());
+    return {
+      titulo: document.querySelector('#dates-block .grupo-tit')?.textContent,
+      subLbl: [...document.querySelectorAll('#dates-block .sub-lbl')].map((x) => x.textContent),
+      t1: vis(document.getElementById('tr-t1')), t2: vis(document.getElementById('tr-t2')),
+      tipoT1: document.getElementById('tr-t1')?.type,
+    };
+  });
+  ok(campos.t1 && campos.t2 && campos.tipoT1 === 'time',
+    'el editor pide las dos horas', campos);
+  ok(JSON.stringify(campos.subLbl) === '["Recogida","Hora","Devolución","Hora"]',
+    'cada una al lado de su fecha', campos.subLbl);
+  ok(campos.titulo === 'Alquiler', 'bajo su propia cabecera', campos.titulo);
+
+  titulo('EL SITIO Y LA FECHA NO SE LLAMAN IGUAL');
+  // El par de arriba son los LUGARES y el de abajo las FECHAS. Con "Recogida" en
+  // los dos, una encima de otra, no se sabía cuál era cuál.
+  const etiquetas = await p.evaluate(() => {
+    const f = document.querySelector('.wz-step.on');
+    return [...f.querySelectorAll('#ruta-block label')].map((l) => ({
+      txt: l.textContent, lineas: Math.round(l.getBoundingClientRect().height / 18) }));
+  });
+  ok(etiquetas.map((e) => e.txt).join(' → ') === 'Lugar de recogida → Lugar de devolución',
+    'los de arriba dicen que son el sitio', etiquetas.map((e) => e.txt));
+  ok(etiquetas.every((e) => e.lineas === 1), 'y caben en una línea', etiquetas);
+
+  titulo('SE GUARDAN Y VUELVEN');
+  await p.evaluate((d) => {
+    const set = (id, v) => { const n = document.getElementById(id); n.value = v; n.dispatchEvent(new Event('change')); };
+    set('tr-d1', d.inicio); set('tr-t1', '10:30');
+    set('tr-d2', d.fin);    set('tr-t2', '18:45');
+    const tit = document.getElementById('f-title'); tit.value = 'Coche Mérida'; tit.dispatchEvent(new Event('change'));
+  }, d);
+  await p.evaluate(() => [...document.querySelectorAll('#sheet-foot button')].find((b) => /Guardar/.test(b.textContent)).click());
+  await sleep(p, 1200);
+  await p.evaluate(() => document.getElementById('ew-discard')?.click());
+  await sleep(p, 2200);
+  const nuevo = await p.evaluate(async () => {
+    const all = (await DB.listByTrip('planning_items', 'trip-demo-1'))
+      .filter((x) => !x.deleted_at && x.title === 'Coche Mérida');
+    const x = all[0];
+    return x && { id: x.id, t1: x.consultation_planned_t1, t2: x.consultation_planned_t2, time: x.time };
+  });
+  ok(nuevo && nuevo.t1 === '10:30' && nuevo.t2 === '18:45', 'las dos horas se guardan', nuevo);
+  ok(nuevo.time === '10:30', 'y la de recogida es la hora de la parada, la que ordena el día', nuevo.time);
+
+  titulo('LA FICHA LO CUENTA CON SUS PALABRAS');
+  await p.evaluate(async (id) => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    TripDetail.openPlanningDetail(t, await DB.get('planning_items', id));
+  }, nuevo.id);
+  await sleep(p, 1400);
+  const ficha = await p.evaluate(() => {
+    const b = [...document.querySelectorAll('.dv-block')].find((x) => x.dataset.bloque === 'cuando');
+    return [...b.querySelectorAll('.dv-row')].map((r) =>
+      [r.querySelector('.dv-l')?.textContent, r.querySelector('.dv-v')?.textContent]);
+  });
+  const dic = Object.fromEntries(ficha);
+  // Un coche ni sale ni llega: se recoge y se devuelve.
+  ok(dic['Recogida'] && /10:30/.test(dic['Recogida']), 'la recogida, con su hora', ficha);
+  ok(dic['Devolución'] && /18:45/.test(dic['Devolución']), 'la devolución, con la suya', ficha);
+  ok(!dic['Salida'] && !dic['Llegada'], 'y ni "Salida" ni "Llegada", que son de un vuelo', Object.keys(dic));
+  ok(dic['Días'] === '9', 'y cuántos días es, contando los dos extremos', dic['Días']);
+  await p.screenshot({ path: captura('coche-ficha.png') });
+  await p.evaluate(() => document.querySelector('.detailview .flash-close')?.click());
+  await sleep(p, 800);
+
+  titulo('Y EL RESUMEN TAMBIÉN');
+  // Sin esto el coche no tenía resumen: las horas no llegaban ni a la pastilla
+  // del resumen ni al globo del mapa del día.
+  const res = await p.evaluate(async (id) => {
+    const x = await DB.get('planning_items', id);
+    const uno = TripDetail._reservationSummary(x);
+    const dev = TripDetail._reservationSummary({ ...x, _virtual:'return' });
+    return { uno, dev };
+  }, nuevo.id);
+  ok(res.uno && res.uno.label === 'Coche de alquiler' && /10:30/.test(res.uno.sub),
+    'el día de recogerlo enseña la hora de recogida', res.uno);
+  ok(res.dev && res.dev.label === 'Devolución del coche' && /18:45/.test(res.dev.sub),
+    'y el de devolverlo, la de devolución, no la de hace ocho días', res.dev);
+
   titulo('LAS COPIAS NO CUENTAN COMO PARADA');
   const cuenta = await p.evaluate((dia) => {
     const pag = document.querySelector(`.plan-page[data-day="${dia}"]`);
