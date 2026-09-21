@@ -103,6 +103,25 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(auto && auto.contraste >= 4.5,
     'sin tema elegido y con el sistema en oscuro, sigue leyéndose', auto && `${auto.contraste}:1`);
 
+  titulo('Y EN LA TIRA DE DÍAS, AL PASAR POR ENCIMA');
+  // En la pastilla de la tira no cabe (son 54 px), pero la tira es por donde se
+  // navega: saber qué es cada día sin entrar en él es justo su trabajo.
+  await p.emulateMedia({ colorScheme: 'light' });
+  await pintar('claro');
+  const tira = await p.evaluate(() => {
+    const d = window.__dias;
+    const c = (k) => { const n = document.querySelector(`.day-pill[data-day="${k}"]`);
+      return n ? { title: n.getAttribute('title'), aria: n.getAttribute('aria-label') } : null; };
+    return { hoy: c(d.hoy), manana: c(d.manana), sinEtiqueta: c(d.pasado) };
+  });
+  ok(/Tulum/.test(tira.hoy.title), 'la etiqueta sale en el tooltip del día', tira.hoy.title);
+  ok(/\d/.test(tira.hoy.title) && /Tulum/.test(tira.hoy.title),
+    'sin perder la fecha larga, que es lo que ponía antes', tira.hoy.title);
+  ok(/Tulum/.test(tira.hoy.aria), 'y también para quien va con lector de pantalla', tira.hoy.aria);
+  ok(/Playa del Carmen/.test(tira.manana.title), 'cada día con la suya', tira.manana.title);
+  ok(tira.sinEtiqueta && !/·/.test(tira.sinEtiqueta.title.replace(/,/g, '')),
+    'y un día sin etiqueta se queda como estaba', tira.sinEtiqueta.title);
+
   terminar(errs);
   await cerrar();
 })();

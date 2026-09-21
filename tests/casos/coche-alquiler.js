@@ -123,7 +123,13 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(ed.d1 === d.inicio && ed.d2 === d.fin,
     'el editor abre con las fechas del alquiler, no con el día de la copia', ed);
   ok(ed.t1 === '10:00' && ed.t2 === '18:30', 'y con sus horas', ed);
-  await p.evaluate(() => UI.closeSheet()); await sleep(p, 600);
+  // Y guardar desde ahí no puede dejar los marcadores de la copia metidos en el
+  // registro: son de pintar, no son datos, y Supabase no tiene esas columnas.
+  await p.evaluate(() => [...document.querySelectorAll('#sheet-foot button')].find((b) => /Guardar/.test(b.textContent)).click());
+  await sleep(p, 2200);
+  const restos = await p.evaluate(async () =>
+    Object.keys(await DB.get('planning_items', 'coche-demo')).filter((k) => k.startsWith('_')));
+  ok(restos.length === 0, 'el registro guardado no se queda con los _rental*', restos);
 
   titulo('HORA DE RECOGIDA Y DE DEVOLUCIÓN');
   // Un alquiler no se recoge "el martes": se recoge el martes A LAS 10:30, y la

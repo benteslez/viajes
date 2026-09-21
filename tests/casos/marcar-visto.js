@@ -48,10 +48,21 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(res.scroll===0, '20b) al cambiar de pestaña se empieza por arriba', String(res.scroll));
   const c = await p.context().newCDPSession(p);
   const pt=(x,y)=>[{x,y,radiusX:5,radiusY:5,force:1}];
-  const swipe = async (x,y,dx) => { await c.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:pt(x,y)});
-    for(let s=1;s<=12;s++){ await c.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:pt(Math.round(x+dx*s/12),y)}); await sleep(p,14); }
-    await c.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]}); await sleep(p,1200); };
+  // OJO con el tiempo: la app descarta el gesto si pasan más de 600 ms entre
+  // touchstart y touchend (`_wireTabSwipe`). Cada `c.send` es una ida y vuelta
+  // por CDP, así que 12 movimientos CON una espera de 14 ms entre ellos salían
+  // a 580 ms y el caso fallaba dos de cada tres veces sin que nadie tocara la
+  // app. Sin la espera son ~300 ms y hay margen de sobra.
+  let ultimoGesto = 0;
+  const swipe = async (x,y,dx) => { const t0 = Date.now();
+    await c.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:pt(x,y)});
+    for(let s=1;s<=8;s++){ await c.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:pt(Math.round(x+dx*s/8),y)}); }
+    await c.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    ultimoGesto = Date.now() - t0; await sleep(p,1200); };
   await swipe(195,480,-230);
+  // Si esto falla, el caso miente: no se está probando la app, se está probando
+  // lo que tarda Playwright en mandar los eventos.
+  ok(ultimoGesto < 500, 'el gesto entra dentro de los 600 ms que la app acepta', `${ultimoGesto} ms`);
   ok(await p.evaluate(()=>STATE.currentTab==='planning'), '20c) deslizar cambia de pestaña');
   const antesDia = await p.evaluate(()=>TripDetail._diaVisible);
   await swipe(195,560,-230);

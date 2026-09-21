@@ -136,6 +136,27 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   await sleep(p, 500);
   ok(avisos.some((m) => /Selecciona/.test(m)), 'se dice qué falta en vez de no hacer nada', avisos);
 
+  titulo('ESCAPE SUELTA EL CAMPO ANTES DE CERRAR');
+  // La nota con formato es un <div contenteditable>, no un <textarea>: el
+  // guardia de Escape la pasaba por alto y cerraba de una.
+  await escribir('a medio escribir');
+  await p.keyboard.press('Escape');
+  await sleep(p, 500);
+  const trasEsc = await p.evaluate(() => ({
+    abierta: !!document.querySelector('.detailview'),
+    enfocada: document.activeElement === document.querySelector('.dv-rt'),
+  }));
+  ok(trasEsc.abierta && !trasEsc.enfocada,
+    'el primer Escape suelta la nota y deja la ficha abierta', trasEsc);
+  await sleep(p, 600);
+  ok(/a medio escribir/.test((await guardado()).notes || ''),
+    'y de paso la guarda, que es lo que hace salir del campo', (await guardado()).notes);
+  await p.keyboard.press('Escape');
+  await sleep(p, 700);
+  ok(!(await p.evaluate(() => !!document.querySelector('.detailview'))),
+    'el segundo sí cierra');
+  await abrirFicha();
+
   titulo('LA CAJA CRECE CON EL TEXTO');
   // Era la pega del <textarea>: leer una nota larga por una ventanita de tres
   // líneas. Un contenteditable no tiene alto fijo.

@@ -18,13 +18,21 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     }
     const d = new Date(Date.now() + m * 60000);
     const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    // El día sale de la MISMA fecha que la hora, no de `todayIso()`. Pasadas las
+    // 23:00, "dentro de una hora" es mañana: con el día de hoy quedaba una
+    // parada a las 00:03 de hace 23 horas, `nextTimedEvent` la descartaba por
+    // pasada y la barra no salía. Este caso fallaba una hora al día, todos los
+    // días, y solo si lo pasabas justo entonces.
     await DB.put('planning_items', {
       id: 'prox-1', trip_id: 'trip-demo-1', profile: dataProfile(), type: 'lugar',
-      title: 'Mirador', day_date: todayIso(), time: hh, lat: la, lng: ln,
+      title: 'Mirador', day_date: isoLocal(d), time: hh, lat: la, lng: ln,
       place_name: 'Mirador', metadata: {}, order_index: 0,
     });
     const t = await DB.get('trips', 'trip-demo-1');
-    t.start_date = todayIso(); t.in_preparation = false; await DB.put('trips', t);
+    t.start_date = todayIso(); t.in_preparation = false;
+    // Si la parada se fue a mañana, el viaje tiene que llegar hasta allí.
+    if ((t.end_date || '') < isoLocal(d)) t.end_date = isoLocal(d);
+    await DB.put('trips', t);
     await Router.go('trip', { tripId: 'trip-demo-1', tab: 'resumen' });
   }, [minutos, lat, lng]);
 
