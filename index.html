@@ -6161,6 +6161,10 @@ const SYNC = {
     if (document.querySelector('.sheet.show')) return false;        // editando en una hoja
     const ae = document.activeElement;
     if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return false;
+    // La nota con formato de la ficha es un <div contenteditable>, no un
+    // <textarea>: sin esto, un pull automático repinta la ficha entera y
+    // sustituye lo que estabas escribiendo por lo último guardado.
+    if (ae && ae.isContentEditable) return false;
     return true;
   },
 };
@@ -11392,10 +11396,15 @@ const TripDetail = {
       if (!n) cls.push('vacio');
       if (!sinFecha && k < today) cls.push('past');
       if (opts.active === k) cls.push('active');
+      // La etiqueta del día ("Tulum") en el tooltip: la tira es por donde se
+      // navega, y saber qué es cada día sin entrar en él es justo su trabajo.
+      // En la pastilla no cabe —son 54 px—, pero al pasar por encima sí.
+      const etiq = ((opts.notas && opts.notas[k] && opts.notas[k].title) || '').trim();
       const pill = el('button', {
         type:'button', class: cls.join(' '), data:{ day:k },
-        'aria-label': sinFecha ? 'Sin fecha' : `${fmtDayLong(k)} · ${n} ${n === 1 ? 'parada' : 'paradas'}`,
-        title: sinFecha ? 'Sin fecha' : fmtDayLong(k),
+        'aria-label': sinFecha ? 'Sin fecha'
+          : [fmtDayLong(k), etiq, `${n} ${n === 1 ? 'parada' : 'paradas'}`].filter(Boolean).join(' · '),
+        title: sinFecha ? 'Sin fecha' : [fmtDayLong(k), etiq].filter(Boolean).join(' · '),
         onclick: () => { if (opts.onPick) opts.onPick(k, pill); },
       }, sinFecha
         ? [ el('i', { text:'SIN' }), el('b', { text:'—' }), el('span', { class:'wd', text:'fecha' }) ]
@@ -11607,6 +11616,7 @@ const TripDetail = {
     // borde superior de la pantalla, que es lo que hacía la pantalla completa.
     const dayStrip = (keys.length > 1) ? TripDetail._dayStrip(t, keys, byDay, {
       active: diaInicial,
+      notas: noteMap,
       onPick: (k) => TripDetail._irADia(k, { animar:true }),
     }) : null;
     if (dayStrip) root.appendChild(dayStrip);
@@ -12900,6 +12910,7 @@ const TripDetail = {
       if (keys.length > 1) {
         flashStrip = TripDetail._dayStrip(t, keys, byDay, {
           active: focusDay,
+          notas: noteMap,
           onPick: (k) => {
             const i = keys.indexOf(k);
             if (i >= 0) track.scrollTo({ left: i * track.clientWidth, behavior:'smooth' });
@@ -13873,7 +13884,11 @@ const TripDetail = {
       if (huboCambios) {
         huboCambios = false;
         const sy = window.scrollY;
-        Router.render().then(() => {
+        // `colaGuardado` primero: cerrar sin animación —la fila fuera de vista, o
+        // con el movimiento reducido— corre esto antes de que el último campo
+        // termine de escribirse, y la tarjeta de abajo se repintaba con la nota
+        // vieja.
+        colaGuardado.catch(() => {}).then(() => Router.render()).then(() => {
           requestAnimationFrame(() => window.scrollTo(0, sy));
           setTimeout(() => window.scrollTo(0, sy), 90);
         });
@@ -13922,7 +13937,9 @@ const TripDetail = {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       const f = document.activeElement;
-      if (f && overlay.contains(f) && (f.tagName === 'TEXTAREA' || f.tagName === 'INPUT')) { f.blur(); return; }
+      // `isContentEditable` además de los campos de siempre: la nota con formato
+      // es un <div>, y sin esto Escape se la saltaba y cerraba de una.
+      if (f && overlay.contains(f) && (f.tagName === 'TEXTAREA' || f.tagName === 'INPUT' || f.isContentEditable)) { f.blur(); return; }
       cerrar();
     };
 
@@ -13966,6 +13983,7 @@ const TripDetail = {
       // Una parada virtual —la noche de un hotel, la llegada de un vuelo— es una
       // COPIA del registro real con su mismo id. Escribir sobre la copia perdería
       // todo lo que la copia no traía, así que se relee el de verdad.
+      if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
       let real = null;
       try { real = await DB.get('planning_items', base.id); } catch (_) {}
       if (!real || real.deleted_at) return;
@@ -13997,7 +14015,7 @@ const TripDetail = {
         : notaDesdeTexto(iti.notes || '');
 
       const caja = el('div', {
-        class:'dv-rt', contenteditable: ordenando ? 'false' : 'true',
+        class:'dv-rt', contenteditable: (ordenando || !canEdit()) ? 'false' : 'true',
         role:'textbox', 'aria-multiline':'true', 'aria-label':'Notas',
         'data-ph':'Apunta aquí lo que sea…', html: inicial,
       });
@@ -14091,7 +14109,9 @@ const TripDetail = {
         return (a && caja.contains(a)) ? a : null;
       };
 
-      const barra = el('div', { class:'dv-rt-bar' }, [
+      // Sin permiso para escribir tampoco hay barra de formato: un botón que no
+      // hace nada es peor que no tenerlo.
+      const barra = !canEdit() ? null : el('div', { class:'dv-rt-bar' }, [
         boton('<b>B</b>', 'Negrita', () => cmd('bold')),
         boton('<i>I</i>', 'Cursiva', () => cmd('italic')),
         boton('<u>U</u>', 'Subrayado', () => cmd('underline')),
@@ -14108,7 +14128,7 @@ const TripDetail = {
         }),
       ]);
 
-      return el('div', { class:'dv-rt-wrap' }, [ barra, caja, filaEnlace ]);
+      return el('div', { class:'dv-rt-wrap' }, [ barra, caja, canEdit() ? filaEnlace : null ]);
     };
 
     const pintar = () => {
@@ -14144,12 +14164,18 @@ const TripDetail = {
       // Fila con un campo que se escribe aquí mismo. `accion` recibe el input y
       // devuelve el botón que lo acompaña (llamar, abrir WhatsApp), para que ese
       // botón se entere de lo que se va tecleando sin repintar la ficha entera.
+      // En modo lector la ficha se lee, no se escribe. Sin esto el campo dejaba
+      // teclear, encolaba la fila y Supabase la rechazaba por RLS: el cambio no
+      // llegaba a ninguna parte y el indicador se quedaba en rojo sin que el
+      // lector pudiera hacer nada.
+      const puedeEscribir = canEdit();
       const filaEdit = (lbl, valor, alSalir, opc = {}) => {
         const inp = el('input', {
           class:'dv-in', type: opc.tipo || 'text', value: valor || '',
-          placeholder: opc.placeholder || 'Añadir…',
+          placeholder: puedeEscribir ? (opc.placeholder || 'Añadir…') : '—',
+          readonly: puedeEscribir ? null : true,
           inputmode: opc.inputmode || null, autocomplete: opc.autocomplete || null,
-          onchange: (e) => alSalir(e.target.value.trim()),
+          onchange: (e) => { if (puedeEscribir) alSalir(e.target.value.trim()); },
         });
         const extra = opc.accion ? opc.accion(inp) : null;
         return el('div', { class:'dv-row' }, [
@@ -14530,16 +14556,21 @@ const TripDetail = {
     // los marcadores para no persistirlos.
     if (existing && (existing._virtual || existing._spanStart)) {
       const v = existing._virtual;
+      const inicio = existing._spanStart, hora = existing._spanTime;
       existing = { ...existing };
-      delete existing._virtual; delete existing._isFirstNight;
+      // TODOS los marcadores, no una lista escrita a mano: se borraban
+      // `_virtual`, `_isFirstNight` y los `_span*`, pero no `_nightN` ni los
+      // `_rental*`, que acababan guardados en el registro y subiendo a
+      // Supabase a una columna que no existe. Cada marcador nuevo habría
+      // vuelto a caer en la misma trampa.
+      Object.keys(existing).forEach(k => { if (k.startsWith('_')) delete existing[k]; });
       if (v === 'span') {
-        existing.day_date = existing._spanStart || existing.day_date;
-        existing.time = existing._spanTime || '';
+        existing.day_date = inicio || existing.day_date;
+        existing.time = hora || '';
       } else if (v) {
         existing.day_date = existing.consultation_planned_d1 || existing.day_date;
         existing.time = typeDef(existing.type).hideTime ? null : (existing.consultation_planned_t1 || existing.time || '');
       }
-      delete existing._spanStart; delete existing._spanEnd; delete existing._spanTime;
     }
     // Busca un budget_item vinculado a este planning_item (lo hubo o no).
     // Sirve para precargar el importe en el editor y para no duplicar al guardar.

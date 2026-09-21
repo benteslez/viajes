@@ -148,6 +148,40 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     ok(true, 'no hay alojamiento en la semilla para probarlo', '(no aplica)');
   }
 
+  titulo('EN MODO LECTOR SE LEE, NO SE ESCRIBE');
+  // Sin esto el campo dejaba teclear, encolaba la fila y Supabase la rechazaba
+  // por RLS: el cambio no llegaba a ninguna parte y el indicador se quedaba en
+  // rojo sin que el lector pudiera hacer nada.
+  // Se cambia el PERFIL, no se parchea `canEdit`: es un `const` del ámbito del
+  // <script> y asignarle algo a `window` no lo sustituye. 'sergio' es lector y
+  // sin concesión de edición sobre este viaje.
+  await p.evaluate(() => { window.__perfil = STATE.profile; STATE.profile = 'sergio'; GRANTS.mapa = {}; GRANTS.cargado = true; });
+  ok(await p.evaluate(() => canEdit() === false), 'con un perfil lector, canEdit() dice que no');
+  await abrirFicha();
+  const lector = await p.evaluate(() => {
+    const f = (lbl) => [...document.querySelectorAll('.dv-row')].find((r) => r.querySelector('.dv-l')?.textContent === lbl);
+    return {
+      tel: f('Teléfono').querySelector('input').readOnly,
+      dir: f('Dirección').querySelector('input').readOnly,
+      nota: document.querySelector('.dv-rt').getAttribute('contenteditable'),
+      barra: !!document.querySelector('.dv-rt-bar'),
+    };
+  });
+  ok(lector.tel && lector.dir, 'los campos salen de solo lectura', lector);
+  ok(lector.nota === 'false', 'la nota no se escribe', lector.nota);
+  ok(!lector.barra, 'y no hay barra de formato: un botón que no hace nada es peor que no tenerlo');
+  const antesLector = await guardado();
+  await p.evaluate(() => {
+    const f = [...document.querySelectorAll('.dv-row')].find((r) => r.querySelector('.dv-l')?.textContent === 'Teléfono');
+    const n = f.querySelector('input');
+    n.value = '+34 000 00 00 00'; n.dispatchEvent(new Event('change'));
+  });
+  await sleep(p, 900);
+  ok(JSON.stringify(await guardado()) === JSON.stringify(antesLector),
+    'y aunque se fuerce el cambio, no se guarda nada', await guardado());
+  await cerrarFicha();
+  await p.evaluate(() => { STATE.profile = window.__perfil; });
+
   terminar(errs);
   await cerrar();
 })();
