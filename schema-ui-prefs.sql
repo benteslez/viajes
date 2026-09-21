@@ -25,26 +25,52 @@
 --   tabla no existe" como error permanente, no como un fallo de red— y suben
 --   solas el día que se ejecute esto.
 --
--- Es autosuficiente: crea también las funciones que usa, por si la DB se montó
--- con una versión antigua de schema.sql. Van con CREATE OR REPLACE.
 -- ============================================================
 
--- 0) Funciones auxiliares (idempotentes) ---------------------
-create or replace function app_profile() returns text
-language sql stable as $$
-  select coalesce(
-    current_setting('request.headers', true)::jsonb ->> 'x-app-profile',
-    'invitado'
-  );
-$$;
 
-create or replace function touch_updated_at() returns trigger
-language plpgsql as $$
+-- 0) Funciones auxiliares -------------------------------------
+-- SOLO SI NO EXISTEN, nunca `create or replace`.
+--
+-- Esto ya salió caro una vez: este archivo llegó copiando de
+-- `schema-wardrobe.sql` un `create or replace` de las dos, "por si la base era
+-- antigua". Pero `schema-auth.sql` y `schema-autoria.sql` las habían
+-- redefinido después con otra lógica, así que ejecutarlo las devolvió a la
+-- versión vieja: `app_profile()` pasó a leer una cabecera que la app ya no
+-- manda, devolvía 'invitado' y la RLS empezó a rechazar TODA escritura
+-- ("new row violates row-level security policy"). El arreglo está en
+-- `schema-arreglo-funciones.sql`.
+--
+-- Una migración pequeña no tiene por qué saber cuál es la versión buena de una
+-- función que no es suya. Si falta, se crea lo mínimo; si está, no se toca.
+
+do $$
 begin
-  new.updated_at := now();
-  return new;
-end;
-$$;
+  if to_regprocedure('public.app_profile()') is null then
+    execute $f$
+      create function app_profile() returns text
+      language sql stable as $q$
+        select coalesce(
+          current_setting('request.headers', true)::jsonb ->> 'x-app-profile',
+          'invitado'
+        );
+      $q$;
+    $f$;
+    raise notice 'app_profile() no existía: creada la versión mínima. Ejecuta schema-auth.sql.';
+  end if;
+
+  if to_regprocedure('public.touch_updated_at()') is null then
+    execute $f$
+      create function touch_updated_at() returns trigger
+      language plpgsql as $q$
+      begin
+        new.updated_at := now();
+        return new;
+      end;
+      $q$;
+    $f$;
+    raise notice 'touch_updated_at() no existía: creada.';
+  end if;
+end$$;
 
 -- 1) La tabla -------------------------------------------------
 -- `id` es texto, no uuid: la app usa una clave legible por perfil

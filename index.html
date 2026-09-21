@@ -2091,6 +2091,31 @@ main:has(.plan-pager) { padding-bottom:0; }
 .sl-dots { display:flex; gap:3px; flex:none; }
 .sl-dots i { width:6px; height:6px; border-radius:50%; background:color-mix(in srgb, var(--tipo-hotel) 25%, transparent); }
 .sl-dots i.on { background:var(--tipo-hotel); }
+ /* · Coche alquilado: la misma idea, arriba y en una línea · */
+.timeline-list .timeline-item.li-drive {
+  display:flex; align-items:center; gap:9px;
+  margin:-4px -9px 10px; padding:8px 15px; border-radius:0;
+  background:color-mix(in srgb, var(--tipo-transporte) 7%, var(--bg-elev));
+  border:0; border-bottom:1px solid color-mix(in srgb, var(--tipo-transporte) 18%, transparent);
+  box-shadow:none; min-height:0;
+}
+.timeline-list .timeline-item.li-drive::after { display:none; }
+.flash-card .timeline-list > .timeline-item.li-drive { margin:-4px -9px 8px; }
+.li-drive .dr-ic { flex:none; font-size:15px; line-height:1; }
+/* Título y detalle en la MISMA línea: si se apilan deja de ser una línea fina y
+   pasa a competir con las paradas de verdad, que es justo lo que no es. */
+.li-drive .dr-main {
+  display:flex; align-items:baseline; gap:7px; flex:1 1 auto; min-width:0;
+  padding:0; background:none; cursor:pointer;
+}
+.li-drive .dr-t { flex:none; font-size:12.5px; font-weight:800; color:var(--tipo-transporte); }
+.li-drive .dr-s {
+  font-size:12px; font-weight:600; color:var(--text-muted);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+}
+.li-drive .sl-dots i { background:color-mix(in srgb, var(--tipo-transporte) 25%, transparent); }
+.li-drive .sl-dots i.on { background:var(--tipo-transporte); }
+
 .li-sleep .sl-go {
   margin-left:auto; flex:none;
   font-size:10.5px; font-weight:800; color:var(--tipo-hotel); text-decoration:none;
@@ -4750,9 +4775,13 @@ const itemStatus = (it) => {
 // 2) Hoteles (noche / hotel base) SIEMPRE al final del día.
 // 3) Resto por hora ascendente.
 // 4) Empate → order_index.
+// El coche alquilado va ANTES que el check-out: no es una parada, es una banda
+// que se lee de un vistazo al abrir el día ("hoy tienes coche"), y su dibujo
+// —a sangre y pegada a la cabecera— pide ser la primera fila de la lista.
 const planningCompare = (a, b) => {
-  const aCo = a._virtual === 'checkout' ? -1 : 0;
-  const bCo = b._virtual === 'checkout' ? -1 : 0;
+  const _cab = (x) => x._virtual === 'rental' ? -2 : x._virtual === 'checkout' ? -1 : 0;
+  const aCo = _cab(a);
+  const bCo = _cab(b);
   if (aCo !== bCo) return aCo - bCo;
   const aEnd = (typeDef(a.type).endOfDay && a._virtual !== 'checkout') ? 1 : 0;
   const bEnd = (typeDef(b.type).endOfDay && b._virtual !== 'checkout') ? 1 : 0;
@@ -12427,6 +12456,28 @@ const TripDetail = {
       ].filter(Boolean));
       if (customColor) ncNode.style.setProperty('--card-color', customColor);
       return _conMenu(ncNode);
+    }
+
+    // --- Coche alquilado: banda al principio del día ---
+    // El hermano de la noche de continuación del hotel, que es la franja del
+    // pie. Aquí va arriba y en una sola línea porque dice menos: no es una
+    // parada ni algo que hacer, solo el recordatorio de que hoy tienes coche.
+    if (isRental) {
+      const cNombre = it.title || (it.metadata && it.metadata.compania) || 'Coche de alquiler';
+      const drNode = el('div', {
+        class: 'list-item timeline-item virtual rental-cont type-coche li-drive' + customCls,
+        draggable:'false',
+        data:{ id: it.id, day: it.day_date || 'sin-fecha' }
+      }, [
+        el('span', { class:'dr-ic', 'aria-hidden':'true', text:'🚗' }),
+        el('div', { class:'li-main dr-main', onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget) }, [
+          el('span', { class:'dr-t', text:'Coche alquilado' }),
+          el('span', { class:'dr-s', text: `Día ${it._rentalN + 1} de ${it._rentalTotal + 1} · ${cNombre}` }),
+        ]),
+        nightDots(it._rentalN + 1, it._rentalTotal + 1),
+      ].filter(Boolean));
+      if (customColor) drNode.style.setProperty('--card-color', customColor);
+      return _conMenu(drNode);
     }
 
     // --- Noche de llegada: tarjeta llave (el equivalente verde del billete) ---

@@ -14,6 +14,7 @@ viajes/
 ├── schema.sql          ← tablas Supabase + RLS por perfil
 ├── schema-touch-insert.sql ← migración: sellar updated_at también en el INSERT
 ├── schema-ui-prefs.sql ← migración: preferencias de interfaz por perfil (sincronizadas)
+├── schema-arreglo-funciones.sql ← arreglo: devolver app_profile()/touch_updated_at() a su sitio
 ├── icons/              ← iconos PWA
 ├── imports/            ← viajes en el formato de «Importar JSON» (ver imports/README.md)
 └── README.md
@@ -218,6 +219,27 @@ ejecute (la app trata «esa tabla no existe» como error permanente, no como un 
 
 A diferencia del pasaporte o la plantilla de maleta, estas preferencias **no se comparten**:
 son de quien mira, y la política de RLS es «lo tuyo y solo lo tuyo».
+
+### Si la sincronización empieza a decir «violates row-level security policy»
+
+`schema-arreglo-funciones.sql`. Las migraciones pequeñas (`schema-wardrobe.sql`,
+`schema-ui-prefs.sql`) se escribieron «autosuficientes»: creaban con `create or replace` las
+funciones auxiliares que usan, por si la base era antigua. Pero **esas funciones no eran suyas**:
+`schema-auth.sql` y `schema-perms.sql` redefinen `app_profile()` y `app_can_read()` con otra
+lógica —el perfil sale de la sesión, no de una cabecera `x-app-profile` que la app ya no manda—,
+así que ejecutar una de esas migraciones las devolvía a la versión vieja.
+
+A partir de ahí `app_profile()` responde `'invitado'` para todo el mundo y la RLS de cualquier
+tabla hija rechaza las escrituras:
+
+```
+[planning_items] new row violates row-level security policy for table "planning_items"
+```
+
+Ejecuta `schema-arreglo-funciones.sql` y vuelve a la app: la cola sube sola. El archivo mira qué
+hay montado en esa instancia en vez de suponerlo, e imprime al final cómo quedan las dos
+funciones. Las dos migraciones pequeñas ya no pisan nada: si la función falta la crean, y si
+está no la tocan.
 
 ### Datos personales (no son de ningún viaje)
 
