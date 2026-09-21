@@ -731,7 +731,12 @@ h2.section-title {
 .form-row.num input { font-feature-settings:"tnum","ss01"; }
 /* Dos columnas mientras quepan (150 px por campo); si no, cada uno en su línea.
    Antes eran dos fijas y en pantallas estrechas los campos se estrujaban. */
-.form-grid-2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+.form-grid-2 { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+/* Dos columnas fijas, no `auto-fit`: con `auto-fit` la rejilla se iba a tres
+   columnas en pantallas anchas y los campos dejaban de ir en pareja —el vuelo
+   salía "Aerolínea · Número · Localizador" y luego "Terminal · Puerta" con un
+   hueco al lado. En el móvil el resultado es el mismo que antes. */
+@media (max-width: 359px) { .form-grid-2 { grid-template-columns:1fr; } }
 .form-grid-2 > .span-2 { grid-column:1 / -1; }
 /* Las celdas del grid pueden encoger por debajo del contenido (si no, los inputs
    fuerzan el ancho y la rejilla se sale por los lados). */
@@ -1268,6 +1273,30 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 /* Los tramos y huecos se alinean con la columna del texto */
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
+
+/* Ruta de un traslado: origen → destino, siempre en la misma línea y con la
+   flecha entre medias. Antes eran dos campos sueltos en la rejilla de datos y,
+   a tres columnas, caían en filas distintas. */
+.ruta { display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:end; }
+.ruta > .form-row { margin-bottom:0; min-width:0; }
+.ruta-flecha {
+  font-size:17px; color:var(--text-muted); line-height:1;
+  padding-bottom:13px;            /* a la altura del input, no de la etiqueta */
+}
+/* Muy estrecho: la flecha baja a su propia línea y los campos se apilan, que es
+   mejor que dos cajas de 110 px donde no cabe ni "Aeropuerto". */
+@media (max-width: 359px) {
+  .ruta { grid-template-columns:1fr; gap:4px; }
+  .ruta-flecha { padding:0 0 2px; text-align:center; transform:rotate(90deg); }
+}
+
+/* Título de un grupo de campos: separa "Datos del vuelo" de lo de arriba sin
+   parecer la etiqueta de un campo más. */
+.grupo-tit {
+  display:block; margin:6px 0 2px;
+  font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--text-muted);
+}
 
 /* "¿Llego?" — bajo la barra de próximo evento. */
 .llego {
@@ -2250,7 +2279,6 @@ main:has(.plan-pager) { padding-bottom:0; }
 
 /* Sub-etiquetas pequeñas (celdas internas de fecha/hora del editor) */
 .sub-lbl { font-size:12px; color:var(--text-muted); font-weight:500; }
-#dates-block > label { display:block; margin-bottom:6px; }
 #dates-block .form-grid-2 + .form-grid-2,
 #dates-block .form-grid-2 + .form-row,
 #dates-block .form-row + .form-row { margin-top:8px; }
@@ -4289,16 +4317,23 @@ const canSeeDocs  = () => true;
 // Se persisten en planning_items.metadata (JSON) y se renderizan dinámicamente.
 // Cada campo: { id, label, placeholder?, type?, full? (ocupa fila entera) }
 const PLANNING_METADATA = {
+  // `grupo:'ruta'` saca el campo del bloque de datos y lo sube a la cabecera del
+  // formulario, emparejado con su compañero: de dónde a dónde vas es lo primero
+  // que se sabe de un traslado, antes que la hora y mucho antes que la compañía.
   vuelo: {
     label:'Datos del vuelo',
     fields: [
+      { id:'origen',     label:'Origen',          placeholder:'MAD · Madrid', grupo:'ruta' },
+      { id:'destino',    label:'Destino',         placeholder:'NRT · Tokio',  grupo:'ruta' },
+      // Emparejados a propósito y en el orden en que hacen falta: la compañía y
+      // el número identifican el vuelo, el localizador sirve para facturar (por
+      // eso va solo, en fila entera) y terminal y puerta no se saben hasta el
+      // aeropuerto.
       { id:'aerolinea',  label:'Aerolínea',       placeholder:'Iberia, Lufthansa…' },
       { id:'numero',     label:'Número de vuelo', placeholder:'IB6253' },
-      { id:'origen',     label:'Origen',          placeholder:'MAD · Madrid' },
-      { id:'destino',    label:'Destino',         placeholder:'NRT · Tokio' },
+      { id:'localizador',label:'Localizador',     placeholder:'ABC123', ancho:'todo' },
       { id:'terminal',   label:'Terminal',        placeholder:'4S' },
       { id:'puerta',     label:'Puerta',          placeholder:'M27' },
-      { id:'localizador',label:'Localizador',     placeholder:'ABC123' },
       { id:'asientos',   label:'Asientos',        type:'seats', full:true },
       { id:'url',        label:'Enlace de la reserva', placeholder:'https://… (web aerolínea, pasabordos, Drive…)', type:'url', full:true },
     ],
@@ -4306,7 +4341,9 @@ const PLANNING_METADATA = {
   hotel: {
     label:'Datos del alojamiento',
     fields: [
-      { id:'nombre',     label:'Nombre del alojamiento', placeholder:'Hotel Sakura', full:true },
+      // `ancho:'todo'`, no `full`: `full` manda el campo al final del bloque y el
+      // nombre del alojamiento es lo primero que se escribe, no lo último.
+      { id:'nombre',     label:'Nombre del alojamiento', placeholder:'Hotel Sakura', ancho:'todo' },
       { id:'habitacion', label:'Habitación',       placeholder:'Doble con vistas' },
       { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
       { id:'url',        label:'Enlace de la reserva', placeholder:'https://… (web del hotel, Drive…)', type:'url', full:true },
@@ -4315,12 +4352,12 @@ const PLANNING_METADATA = {
   coche: {
     label:'Datos del coche',
     fields: [
+      { id:'lugar_recogida',   label:'Recogida',   placeholder:'Aeropuerto MAD', grupo:'ruta' },
+      { id:'lugar_devolucion', label:'Devolución', placeholder:'Aeropuerto MAD', grupo:'ruta' },
       { id:'compania',   label:'Compañía',         placeholder:'Hertz, Sixt, Goldcar…' },
+      { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
       { id:'modelo',     label:'Modelo',           placeholder:'Toyota Aygo' },
       { id:'matricula',  label:'Matrícula',        placeholder:'1234 ABC' },
-      { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
-      { id:'lugar_recogida',   label:'Lugar de recogida',   placeholder:'Aeropuerto MAD', full:true },
-      { id:'lugar_devolucion', label:'Lugar de devolución', placeholder:'Aeropuerto MAD', full:true },
     ],
   },
   transporte: {
@@ -4346,15 +4383,15 @@ const PLANNING_METADATA = {
         { value:'barco', label:'Barco' },
         { value:'teleferico', label:'Teleférico' },
       ] },
+      { id:'origen',     label:'Origen',           placeholder:'Madrid Atocha',      grupo:'ruta' },
+      { id:'destino',    label:'Destino',          placeholder:'Sevilla Sta. Justa', grupo:'ruta' },
       { id:'compania',   label:'Compañía',         placeholder:'Renfe, JR, Eurostar…',
         // En taxi la "compañía" es la app: Uber, Cabify… (sugerencias, no cerrado).
         byMode:{ taxi:{ label:'Compañía o app', placeholder:'Uber, Cabify, Bolt, taxi local…',
                         suggest:['Uber','Cabify','Bolt','FREE NOW','Taxi local'] } } },
       { id:'numero',     label:'Línea o número',   placeholder:'AVE 02701 · Línea 5' },
-      { id:'origen',     label:'Origen',           placeholder:'Madrid Atocha' },
-      { id:'destino',    label:'Destino',          placeholder:'Sevilla Sta. Justa' },
-      { id:'vagon',      label:'Coche / Vagón',    placeholder:'7' },
       { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
+      { id:'vagon',      label:'Coche / Vagón',    placeholder:'7' },
       { id:'asientos',   label:'Asientos',         type:'seats', full:true },
       { id:'url',        label:'Enlace de la reserva', placeholder:'https://… (web compañía, billetes, Drive…)', type:'url', full:true },
     ],
@@ -13902,10 +13939,10 @@ const TripDetail = {
     // - Tipos puntuales (lugar/playa/comida/compras/actividad/otro): "Día" + "Hora"
     //   (+ "Hora fin" para lugar/playa).
     const RANGE_LABELS = {
-      hotel:      { d1:'Desde',    d2:'Hasta',      withTime:true,  hint:'El alojamiento aparece como noche al final de cada día del rango; la salida (check-out), al inicio del último día.' },
-      vuelo:      { d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
-      transporte: { d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
-      coche:      { d1:'Recogida', d2:'Devolución', withTime:false, hint:'' },
+      hotel:      { titulo:'Estancia', d1:'Desde',    d2:'Hasta',      withTime:true,  hint:'El alojamiento aparece como noche al final de cada día del rango; la salida (check-out), al inicio del último día.' },
+      vuelo:      { titulo:'Horario',  d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
+      transporte: { titulo:'Horario',  d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
+      coche:      { titulo:'Alquiler', d1:'Recogida', d2:'Devolución', withTime:false, hint:'' },
     };
     const datesBlock = el('div', { id:'dates-block', class:'form-row' });
     // Input de hora con botón ✕ para vaciarlo (en iOS el time nativo no se puede
@@ -13937,7 +13974,7 @@ const TripDetail = {
         const row2 = R.withTime
           ? el('div', { class:'form-grid-2' }, [ cell(R.d2, inD2), cell('Hora', timeInput('tr-t2', t2)) ])
           : cell(R.d2, inD2);
-        datesBlock.appendChild(el('label', { text:'Fechas' }));
+        datesBlock.appendChild(el('span', { class:'grupo-tit', text: R.titulo || 'Fechas' }));
         datesBlock.appendChild(row1);
         datesBlock.appendChild(row2);
         // "Hasta" no puede ser anterior a "Desde", y al fijar "Desde" arranca ahí.
@@ -13949,7 +13986,7 @@ const TripDetail = {
       } else {
         const showEnd = true;   // todos los tipos puntuales admiten día y hora de fin
         const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
-        datesBlock.appendChild(el('label', { text:'Fecha y hora' }));
+        datesBlock.appendChild(el('span', { class:'grupo-tit', text:'Fecha y hora' }));
         // Día y Hora de inicio, uno al lado del otro (2 columnas).
         const dayInput = el('input', { id:'f-day', type:'date', value: it.day_date || '' });
         datesBlock.appendChild(el('div', { class:'form-grid-2' }, [
@@ -14100,15 +14137,19 @@ const TripDetail = {
     // (La hora puntual y "hora fin" ahora viven en el bloque unificado de fechas, arriba.)
 
     // Bloque de zonas horarias — solo para vuelo / transporte intercontinental
+    // "Huso de…", no "Origen/Destino": esas dos etiquetas ya están arriba en la
+    // ruta y repetirlas más abajo hacía dudar de cuál era cuál. Y va con la
+    // misma rejilla que la ruta para que se lea como lo que es: el mismo par.
     const tzBlock = el('div', { id:'tz-block', class:'form-row' }, [
-      el('label', { text:'Zonas horarias (vuelos internacionales)' }),
-      el('div', { class:'form-grid-2' }, [
+      el('span', { class:'grupo-tit', text:'Zonas horarias (vuelos internacionales)' }),
+      el('div', { class:'ruta' }, [
         el('div', { class:'form-row' }, [
-          el('label', { class:'muted', style:{fontSize:'12px'}, text:'Origen' }),
+          el('label', { class:'muted', style:{fontSize:'12px'}, text:'Huso de salida' }),
           el('input', { id:'f-origin-tz', type:'text', list:'tz-list', value: it.origin_tz || '', placeholder:'Europe/Madrid' }),
         ]),
+        el('span', { class:'ruta-flecha', 'aria-hidden':'true', text:'\u2192' }),
         el('div', { class:'form-row' }, [
-          el('label', { class:'muted', style:{fontSize:'12px'}, text:'Destino' }),
+          el('label', { class:'muted', style:{fontSize:'12px'}, text:'Huso de llegada' }),
           el('input', { id:'f-dest-tz', type:'text', list:'tz-list', value: it.dest_tz || '', placeholder:'Asia/Tokyo' }),
         ]),
       ]),
@@ -14187,14 +14228,17 @@ const TripDetail = {
         text:`PDF o imagen, hasta ${Adjuntos.MAX_MB} MB. Se quedan en este dispositivo: no se sincronizan, pero sí entran en «Descargar fotos y adjuntos».` }));
     };
 
+    const rutaBlock = el('div', { id:'ruta-block', class:'form-row' });
     const metadataBlock = el('div', { id:'metadata-block', class:'form-row' });
     const renderMetadata = () => {
       const type = $('#f-type')?.value || it.type;
       const def = PLANNING_METADATA[type];
       metadataBlock.innerHTML = '';
+      rutaBlock.innerHTML = '';
+      rutaBlock.style.display = 'none';
       if (!def) { metadataBlock.style.display = 'none'; return; }
       metadataBlock.style.display = '';
-      metadataBlock.appendChild(el('label', { text: def.label }));
+      metadataBlock.appendChild(el('span', { class:'grupo-tit', text: def.label }));
       const grid = el('div', { class:'form-grid-2' });
       const single = el('div');
       const meta = it.metadata || {};
@@ -14203,6 +14247,25 @@ const TripDetail = {
       let fields = allow ? def.fields.filter(f => allow.includes(f.id)) : def.fields;
       // En el asistente el modo ya se ha elegido en su propio paso: no se repite.
       if (isWizard && type === 'transporte') fields = fields.filter(f => f.id !== 'modo');
+      // La ruta va aparte, arriba del todo y en pareja: "de dónde a dónde" es lo
+      // primero que se sabe de un traslado. Antes caía en medio de los datos y,
+      // con la rejilla a tres columnas, origen y destino ni siquiera salían en
+      // la misma fila.
+      const ruta = fields.filter(f => f.grupo === 'ruta');
+      if (ruta.length === 2) {
+        const campo = (f) => el('div', { class:'form-row' }, [
+          el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label }),
+          el('input', { id:`meta-${f.id}`, type:'text', value: meta[f.id] || '', placeholder: f.placeholder || '' }),
+        ]);
+        rutaBlock.style.display = '';
+        rutaBlock.appendChild(el('div', { class:'ruta' }, [
+          campo(ruta[0]),
+          el('span', { class:'ruta-flecha', 'aria-hidden':'true', text:'→' }),
+          campo(ruta[1]),
+        ]));
+        fields = fields.filter(f => f.grupo !== 'ruta');
+      }
+
       fields.forEach(f => {
         let node;
         if (f.type === 'seats') {
@@ -14952,11 +15015,18 @@ const TripDetail = {
         wzStep('tipo', [ typeGrid, typeRow ]),
         wzStep('form', [
           wzChip, typeRow, peopleSlotTop,
-          // Lo que se viene a rellenar, en el orden en que se piensa: cuándo,
-          // dónde, y los datos propios del tipo.
-          datesBlock,
+          // El orden en que se piensa una parada: QUÉ/DÓNDE, luego CUÁNDO, y al
+          // final los datos. De un vuelo lo primero que se sabe es de dónde a
+          // dónde vas; la hora viene después y la aerolínea, la última.
+          //
+          // El atajo de pegar la reserva va arriba del todo: si lo vas a usar,
+          // lo usas ANTES de empezar a teclear, no cuando ya llevas medio
+          // formulario relleno.
+          importBlock,
+          rutaBlock,
           placeBlock, travelBlock,
-          modeExtra, importBlock, metadataBlock, returnFlightWrap, tzBlock,
+          datesBlock,
+          modeExtra, metadataBlock, returnFlightWrap, tzBlock,
           titleRow,
           plegable('Reserva y gasto', subReserva, [ statusRow, consultaBlock, adjBlock, amountRow ], hayReserva),
           plegable('Más', subMas, [ peopleSlotBottom, notesRow, colorRow ], hayMas),
@@ -14984,6 +15054,7 @@ const TripDetail = {
       // ---- resto de campos ----
       importBlock,
       statusRow,
+      rutaBlock,
       metadataBlock,
       returnFlightWrap,
       tzBlock,

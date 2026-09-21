@@ -176,18 +176,22 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     'el estado se lee sin abrir "Reserva y gasto"', e.secciones[0].sub);
 
   titulo('EDITAR Y GUARDAR NO PIERDE NADA');
-  const antes = await p.evaluate(async () => {
+  // El orden de las claves de `metadata` sigue al de los campos del formulario:
+  // reordenarlos lo cambia sin perder nada, así que comparar el JSON tal cual
+  // fallaba por un cambio que no es un cambio. Se compara clave a clave.
+  const ordenada = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+  const leer = () => p.evaluate(async () => {
     const x = await DB.get('planning_items', 'vuelo-demo');
-    return { meta: JSON.stringify(x.metadata), estado: x.status, d1: x.consultation_planned_d1, t2: x.consultation_planned_t2 };
+    return { titulo: x.title, meta: x.metadata, estado: x.status,
+             d1: x.consultation_planned_d1, t2: x.consultation_planned_t2 };
   });
+  const antes = await leer();
   await p.evaluate(() => { const n = document.getElementById('f-title'); n.value = 'Vuelo BOG - MAD (editado)'; n.dispatchEvent(new Event('change')); });
   await guardar();
-  const despues = await p.evaluate(async () => {
-    const x = await DB.get('planning_items', 'vuelo-demo');
-    return { titulo: x.title, meta: JSON.stringify(x.metadata), estado: x.status, d1: x.consultation_planned_d1, t2: x.consultation_planned_t2 };
-  });
+  const despues = await leer();
   ok(despues.titulo === 'Vuelo BOG - MAD (editado)', 'el cambio se guarda', despues.titulo);
-  ok(despues.meta === antes.meta, 'los datos del vuelo siguen intactos', despues.meta.slice(0, 60));
+  ok(ordenada(despues.meta) === ordenada(antes.meta),
+    'los datos del vuelo siguen intactos', JSON.stringify(despues.meta).slice(0, 60));
   ok(despues.estado === antes.estado && despues.d1 === antes.d1 && despues.t2 === antes.t2,
     'el estado y las fechas, también', `${despues.estado} · ${despues.d1} → ${despues.t2}`);
 
@@ -215,6 +219,71 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   });
   ok(fin.hay && !fin.abierta && !fin.finVisible,
     'una parada nueva no pide día ni hora de fin hasta que se piden', fin);
+
+  titulo('UN TRASLADO EMPIEZA POR DE DÓNDE A DÓNDE');
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 400);
+  await abrirNueva(); await sleep(p, 800);
+  await celda('Vuelo'); await sleep(p, 900);
+  // Se leen las cabeceras y las parejas de la rejilla por su posición real:
+  // el orden del array de campos no basta, porque `full` manda campos al final
+  // y la rejilla decide cuáles caen en la misma fila.
+  const forma = () => p.evaluate(() => {
+    const f = document.querySelector('.wz-step.on');
+    const vis = (n) => !!(n && n.checkVisibility());
+    const y = (n) => Math.round(n.getBoundingClientRect().top);
+    const ruta = f.querySelector('#ruta-block');
+    const ins = ruta ? [...ruta.querySelectorAll('input')] : [];
+    const grid = f.querySelector('#metadata-block .form-grid-2');
+    const filas = {};
+    if (grid) [...grid.children].forEach((n) => {
+      (filas[y(n)] = filas[y(n)] || []).push(n.querySelector('label')?.textContent.trim());
+    });
+    return {
+      rutaVisible: vis(ruta),
+      etiquetas: ruta ? [...ruta.querySelectorAll('label')].map((x) => x.textContent) : [],
+      mismaLinea: ins.length === 2 && Math.abs(y(ins[0]) - y(ins[1])) < 2,
+      flecha: !!(ruta && ruta.querySelector('.ruta-flecha')),
+      titulos: [...f.querySelectorAll('.grupo-tit')].filter(vis).map((x) => x.textContent),
+      yRuta: ruta ? y(ruta) : null,
+      yDatos: (() => { const t = [...f.querySelectorAll('.grupo-tit')].find((x) => /Datos del/.test(x.textContent));
+                       return t ? y(t) : null; })(),
+      yHorario: (() => { const t = [...f.querySelectorAll('.grupo-tit')].find((x) => /Horario|Estancia|Alquiler|Fecha/.test(x.textContent));
+                         return t ? y(t) : null; })(),
+      filas: Object.values(filas),
+    };
+  });
+  let fm = await forma();
+  ok(fm.rutaVisible && fm.etiquetas.join(' → ') === 'Origen → Destino',
+    'lo primero del vuelo es el par origen/destino', fm.etiquetas);
+  ok(fm.mismaLinea && fm.flecha, 'en la misma línea y con la flecha entre medias', fm);
+  ok(fm.yRuta < fm.yHorario && fm.yHorario < fm.yDatos,
+    'y el orden es ruta → horario → datos', { ruta: fm.yRuta, horario: fm.yHorario, datos: fm.yDatos });
+  ok(fm.titulos[0] === 'Horario' && fm.titulos[1] === 'Datos del vuelo',
+    'las cabeceras dicen de qué es cada bloque', fm.titulos);
+  ok(JSON.stringify(fm.filas[0]) === '["Aerolínea","Número de vuelo"]'
+     && JSON.stringify(fm.filas[2]) === '["Terminal","Puerta"]',
+    'los campos van en pareja, no de tres en tres', fm.filas);
+  ok(JSON.stringify(fm.filas[1]) === '["Localizador"]',
+    'y el localizador, que se usa solo, ocupa su fila', fm.filas[1]);
+  await p.screenshot({ path: captura('ed-vuelo-orden.png') });
+
+  titulo('Y NO SE REPITEN "ORIGEN" Y "DESTINO" MÁS ABAJO');
+  const repes = await p.evaluate(() => {
+    const f = document.querySelector('.wz-step.on');
+    return [...f.querySelectorAll('label')].filter((l) => l.checkVisibility())
+      .map((l) => l.textContent.trim()).filter((t) => t === 'Origen' || t === 'Destino').length;
+  });
+  ok(repes === 2, 'las zonas horarias ya no vuelven a llamarse Origen y Destino', String(repes));
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 400);
+
+  titulo('EL ALOJAMIENTO EMPIEZA POR SU NOMBRE');
+  await abrirNueva(); await sleep(p, 800);
+  await celda('Alojamiento'); await sleep(p, 900);
+  fm = await forma();
+  ok(JSON.stringify(fm.filas[0]) === '["Nombre del alojamiento"]',
+    'el nombre va el primero y en fila entera, no al final', fm.filas);
+  ok(fm.titulos[0] === 'Estancia', 'y el bloque de fechas se llama por lo que es', fm.titulos);
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 400);
 
   terminar(errs);
   await cerrar();
