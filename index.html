@@ -4453,8 +4453,12 @@ const PLANNING_METADATA = {
   coche: {
     label:'Datos del coche',
     fields: [
-      { id:'lugar_recogida',   label:'Recogida',   placeholder:'Aeropuerto MAD', grupo:'ruta' },
-      { id:'lugar_devolucion', label:'Devolución', placeholder:'Aeropuerto MAD', grupo:'ruta' },
+      // "Lugar de…" y no "Recogida" a secas: desde que el alquiler pide horas,
+      // el bloque de fechas de abajo ya tiene una "Recogida" y una "Devolución",
+      // y dos etiquetas iguales, una encima de otra, para el sitio y para la
+      // fecha, hacían dudar de cuál era cuál.
+      { id:'lugar_recogida',   label:'Lugar de recogida',   placeholder:'Aeropuerto MAD', grupo:'ruta' },
+      { id:'lugar_devolucion', label:'Lugar de devolución', placeholder:'Aeropuerto MAD', grupo:'ruta' },
       { id:'compania',   label:'Compañía',         placeholder:'Hertz, Sixt, Goldcar…' },
       { id:'localizador',label:'Localizador',      placeholder:'ABC123' },
       { id:'modelo',     label:'Modelo',           placeholder:'Toyota Aygo' },
@@ -4685,6 +4689,17 @@ const typeDef = (id) => TYPES_PLANNING.find(t => t.id === id) || TYPES_PLANNING[
 // "puntuales" y admiten día de inicio + día de fin (evento de varios días).
 const RANGE_TYPES = ['hotel', 'vuelo', 'transporte', 'coche'];
 const isSpanType = (ty) => !RANGE_TYPES.includes(ty);
+
+// Cómo se llaman los dos extremos de un rango en la FICHA de la parada. Un coche
+// ni sale ni llega: se recoge y se devuelve, y llamar "Salida" a la recogida
+// hacía dudar de a qué hora era qué. El editor tiene sus propias etiquetas
+// (`RANGE_LABELS`) porque ahí se está rellenando un formulario, no leyendo.
+const ETIQ_RANGO = {
+  hotel:      { a:'Entrada',  b:'Salida',     total:'Noches' },
+  coche:      { a:'Recogida', b:'Devolución', total:'Días' },
+  vuelo:      { a:'Salida',   b:'Llegada',    total:'Duración' },
+  transporte: { a:'Salida',   b:'Llegada',    total:'Duración' },
+};
 
 // Categoría de presupuesto a partir del tipo de evento (fuente única de verdad
 // para que un gasto vinculado siempre caiga en la categoría correcta).
@@ -10853,6 +10868,17 @@ const TripDetail = {
         .filter(Boolean).join(' · ');
       return { label:'Transporte', emoji: planEmoji(it), value: route, sub, resvUrl, mapsUrl: null };
     }
+    if (it.type === 'coche') {
+      // La fila de devolución es una copia del mismo registro: lo que interesa
+      // ahí es la otra punta del alquiler, no la recogida de hace ocho días.
+      const esDev = it._virtual === 'return';
+      const hora = (esDev ? it.consultation_planned_t2 : it.consultation_planned_t1) || '';
+      const sitio = (esDev ? md.lugar_devolucion : md.lugar_recogida) || '';
+      const sub = [ hora ? hora + 'h' : '', sitio, md.compania || '', md.matricula || '', ppl ]
+        .filter(Boolean).join(' · ');
+      return { label: esDev ? 'Devolución del coche' : 'Coche de alquiler', emoji:'🚗',
+               value: it.title || md.modelo || 'Coche', sub, resvUrl, mapsUrl: walkUrl };
+    }
     if (it.type === 'actividad') {
       const sub = [ time, md.organizador || '', md.duracion || '', ppl ].filter(Boolean).join(' · ');
       return { label:'Actividad', emoji:'🎫', value: it.place_name || it.title || 'Actividad', sub, resvUrl: null, mapsUrl: null };
@@ -14105,18 +14131,18 @@ const TripDetail = {
       })();
       // Con la hora al lado, la fecha va corta: en largo parte la línea en dos.
       const fechaHora = (d, h) => [d ? fmtDateShort(d) : null, h].filter(Boolean).join(' · ') || null;
+      const _eq = ETIQ_RANGO[iti.type] || { a:'Salida', b:'Llegada', total:'Duración' };
+      const _rd1 = iti.consultation_planned_d1, _rd2 = iti.consultation_planned_d2;
       const cuando = esRango
         ? [
-            fila(iti.type === 'hotel' ? 'Entrada' : 'Salida',
-              fechaHora(iti.consultation_planned_d1, iti.consultation_planned_t1)),
-            fila(iti.type === 'hotel' ? 'Salida' : 'Llegada',
-              fechaHora(iti.consultation_planned_d2, iti.consultation_planned_t2)),
-            fila(iti.type === 'hotel' ? 'Noches' : 'Duración',
-              iti.type === 'hotel'
-                ? (iti.consultation_planned_d1 && iti.consultation_planned_d2
-                    ? String(Math.max(1, daysBetween(iti.consultation_planned_d1, iti.consultation_planned_d2)))
-                    : null)
-                : dur),
+            fila(_eq.a, fechaHora(_rd1, iti.consultation_planned_t1)),
+            fila(_eq.b, fechaHora(_rd2, iti.consultation_planned_t2)),
+            fila(_eq.total,
+              // Un hotel se cuenta por noches (la del check-out ya no cuenta) y un
+              // coche por días, contando el de recogerlo y el de devolverlo.
+              iti.type === 'hotel' ? ((_rd1 && _rd2) ? String(Math.max(1, daysBetween(_rd1, _rd2))) : null)
+              : iti.type === 'coche' ? ((_rd1 && _rd2) ? String(Math.max(1, daysBetween(_rd1, _rd2) + 1)) : null)
+              : dur),
           ]
         : [
             fila('Fecha', iti.day_date ? fmtDayLong(iti.day_date) : 'Sin fecha'),
