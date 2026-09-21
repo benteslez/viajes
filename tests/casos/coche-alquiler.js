@@ -50,13 +50,17 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     await sleep(p, 1500);
     return p.evaluate((x) => {
       const pag = document.querySelector(`.plan-page[data-day="${x}"]`);
-      return [...pag.querySelectorAll('.timeline-item')].map((n) => ({
-        tit: n.querySelector('.li-title-text')?.textContent || null,
+      const caja = (n) => Math.round(n.getBoundingClientRect().height);
+      return [...pag.querySelectorAll('.timeline-item')].map((n, i) => ({
+        i,
+        tit: (n.querySelector('.li-title-text, .dr-t')?.textContent) || null,
         kick: n.querySelector('.mk-t')?.textContent || null,
-        sub: (n.querySelector('.li-sub, .li-subrow')?.textContent || '').trim(),
+        sub: (n.querySelector('.li-sub, .li-subrow, .dr-s')?.textContent || '').trim(),
         hora: n.querySelector('.li-time-a')?.textContent || null,
-        emoji: (n.querySelector('.item-emoji, .li-out span')?.textContent || '').trim(),
+        emoji: (n.querySelector('.item-emoji, .li-out span, .dr-ic')?.textContent || '').trim(),
         virtual: n.classList.contains('virtual'),
+        banda: n.classList.contains('li-drive'),
+        alto: caja(n),
         arrastrable: n.getAttribute('draggable'),
       }));
     }, dia);
@@ -70,6 +74,22 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(coche.virtual && coche.arrastrable === 'false',
     'es una fila derivada: ni se arrastra ni se toca (las fechas las pone el registro)', coche);
   await p.screenshot({ path: captura('coche-medio.png') });
+
+  titulo('ES UNA BANDA, NO UNA PARADA');
+  // Hermana de la franja del hotel al pie del día, pero arriba y en una sola
+  // línea: no es algo que hacer, solo el recordatorio de que hoy tienes coche.
+  ok(coche.banda, 'se dibuja como banda (.li-drive), no como tarjeta', coche.banda);
+  ok(coche.i === 0, 'la primera del día, pegada a la cabecera', `posición ${coche.i}`);
+  const otras = filas.filter((f) => !f.banda).map((f) => f.alto);
+  ok(coche.alto < 45 && otras.every((h) => h > coche.alto),
+    'y más fina que cualquier parada de verdad', { banda: coche.alto, resto: otras });
+  const unaLinea = await p.evaluate(() => {
+    const b = document.querySelector('.li-drive');
+    const t = b.querySelector('.dr-t').getBoundingClientRect();
+    const sb = b.querySelector('.dr-s').getBoundingClientRect();
+    return Math.abs(t.bottom - sb.bottom) < 2;
+  });
+  ok(unaLinea, 'el título y el detalle van en la misma línea', String(unaLinea));
 
   titulo('NO REPITE LOS DATOS DEL COCHE');
   // El repaso de metadata del tipo (compañía, modelo, matrícula) es para la fila

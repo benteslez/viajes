@@ -4,34 +4,64 @@
 -- Pégalo en el SQL editor de Supabase y pulsa "Run".
 -- Es seguro re-ejecutarlo: no borra datos.
 --
--- Es autosuficiente: crea también las funciones auxiliares que usa
--- (app_profile, app_can_read, touch_updated_at) por si tu DB se montó
--- con una versión antigua de schema.sql que no las tenía. Todas las
--- funciones van con CREATE OR REPLACE, así que no rompen nada si ya existen.
+-- Es autosuficiente: si alguna de las funciones auxiliares que usa
+-- (app_profile, app_can_read, touch_updated_at) no existe, la crea.
 -- ============================================================
 
--- 0) Funciones auxiliares (idempotentes) ---------------------
-create or replace function app_profile() returns text
-language sql stable as $$
-  select coalesce(
-    current_setting('request.headers', true)::jsonb ->> 'x-app-profile',
-    'invitado'
-  );
-$$;
+-- 0) Funciones auxiliares -------------------------------------
+-- SOLO SI NO EXISTEN, nunca `create or replace`.
+--
+-- Aquí ponía `create or replace` "porque no rompe nada si ya existen", y sí
+-- rompía: `schema-auth.sql` y `schema-perms.sql` redefinen `app_profile()` y
+-- `app_can_read()` con otra lógica —el perfil sale de la sesión, no de una
+-- cabecera que elige el cliente—, así que reejecutar esto las devolvía a la
+-- versión vieja. `app_profile()` empezaba a responder 'invitado' y la RLS
+-- rechazaba TODA escritura: "new row violates row-level security policy".
+-- Pasó de verdad, con `schema-ui-prefs.sql`, que copió esto mismo de aquí.
+-- El arreglo está en `schema-arreglo-funciones.sql`.
+--
+-- Una migración pequeña no tiene por qué saber cuál es la versión buena de una
+-- función que no es suya. Si falta, se crea lo mínimo; si está, no se toca.
 
-create or replace function app_can_read(owner text) returns boolean
-language sql stable as $$
-  select owner = app_profile()
-      or (app_profile() in ('sergio','invitado') and owner = 'ruben');
-$$;
-
-create or replace function touch_updated_at() returns trigger
-language plpgsql as $$
+do $$
 begin
-  new.updated_at := now();
-  return new;
-end;
-$$;
+  if to_regprocedure('public.app_profile()') is null then
+    execute $f$
+      create function app_profile() returns text
+      language sql stable as $q$
+        select coalesce(
+          current_setting('request.headers', true)::jsonb ->> 'x-app-profile',
+          'invitado'
+        );
+      $q$;
+    $f$;
+    raise notice 'app_profile() no existía: creada la versión mínima. Ejecuta schema-auth.sql.';
+  end if;
+
+  if to_regprocedure('public.app_can_read(text)') is null then
+    execute $f$
+      create function app_can_read(owner text) returns boolean
+      language sql stable as $q$
+        select owner = app_profile()
+            or (app_profile() in ('sergio','invitado') and owner = 'ruben');
+      $q$;
+    $f$;
+    raise notice 'app_can_read() no existía: creada la versión mínima. Ejecuta schema-perms.sql.';
+  end if;
+
+  if to_regprocedure('public.touch_updated_at()') is null then
+    execute $f$
+      create function touch_updated_at() returns trigger
+      language plpgsql as $q$
+      begin
+        new.updated_at := now();
+        return new;
+      end;
+      $q$;
+    $f$;
+    raise notice 'touch_updated_at() no existía: creada.';
+  end if;
+end$$;
 
 -- 1) Tablas ---------------------------------------------------
 create table if not exists wardrobe_items (
