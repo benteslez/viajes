@@ -5,12 +5,18 @@
 
 // Subir el sufijo cuando se quiere forzar la invalidación de la versión cacheada
 // (ej. tras cambios en index.html o en las CDNs declaradas más abajo).
-const CACHE = 'viajes-shell-v121';
+const CACHE = 'viajes-shell-v122';
 
 // Caché SEPARADO para imágenes (portadas de viaje, miniaturas de tarjetas…).
 // No lleva el sufijo del shell a propósito: así las imágenes ya descargadas
 // sobreviven a cada actualización de la app y no hay que volver a bajarlas.
 const IMG_CACHE = 'viajes-img-v1';
+
+// Caché de TESELAS de mapa, también aparte del shell. Antes las teselas caían
+// en CACHE, que se borra entero en cada bump de versión: lo que te habías
+// descargado para el viaje desaparecía en la siguiente actualización de la app,
+// probablemente el día antes de salir.
+const TILE_CACHE = 'viajes-tiles-v1';
 const IMG_MAX = 350;   // tope de imágenes cacheadas (se recortan las más antiguas)
 
 const SHELL = [
@@ -51,7 +57,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((k) => k !== CACHE && k !== IMG_CACHE)
+          .filter((k) => k !== CACHE && k !== IMG_CACHE && k !== TILE_CACHE)
           .map((k) => caches.delete(k))
       )
     )
@@ -146,16 +152,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Tiles de mapa: red preferida, fallback cache.
+  // Teselas de mapa: CACHE PRIMERO. Una tesela no cambia —es un trozo de mapa
+  // dibujado—, así que revalidarla solo gasta datos, que es justo lo que no
+  // sobra en el extranjero. Si está guardada se sirve tal cual; si no, se baja
+  // y se guarda.
   if (isTile(url)) {
     event.respondWith(
-      fetch(req)
-        .then((resp) => {
-          const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
+      caches.open(TILE_CACHE).then((cache) => cache.match(req).then((cached) => {
+        if (cached) return cached;
+        return fetch(req).then((resp) => {
+          // Las opacas (cross-origin sin CORS) también valen: se ven bien
+          // aunque no podamos leer su estado.
+          if (resp && (resp.ok || resp.type === 'opaque')) cache.put(req, resp.clone()).catch(() => {});
           return resp;
-        })
-        .catch(() => caches.match(req))
+        }).catch(() => cached);
+      }))
     );
     return;
   }

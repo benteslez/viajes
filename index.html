@@ -1269,6 +1269,18 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
 
+/* Mapa sin datos — barra bajo el mapa. */
+.mo { border:1px solid var(--line); border-radius:var(--r-md); padding:12px 13px; margin-top:12px; }
+.mo-fila { display:flex; align-items:center; gap:11px; }
+.mo-ic { flex:none; color:var(--text-muted); display:flex; }
+.mo-ic svg { width:20px; height:20px; }
+.mo-txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.mo-txt b { font-size:14px; font-weight:800; letter-spacing:-.01em; }
+.mo-txt span { font-size:12.5px; color:var(--text-muted); font-weight:500; }
+.mo-btns { flex:none; display:flex; gap:6px; }
+.mo-bar { height:5px; border-radius:3px; background:var(--bg-soft); overflow:hidden; margin-top:11px; }
+.mo-bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s linear; }
+
 /* Correr el día — vista previa antes de tocar nada. */
 .cd-min { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .cd-chips { display:flex; gap:6px; flex-wrap:wrap; }
@@ -5690,6 +5702,122 @@ setInterval(() => SYNC.autoPull(), 20000);
    MediaCache — cache de object URLs para fotos locales.
    Recicla URLs revocadas al cambiar de vista para no leak memoria.
    ============================================================ */
+/* ============================================================
+   MAPA SIN DATOS — teselas guardadas por adelantado
+   ============================================================
+   El service worker guarda las teselas que ya has mirado, así que en un viaje
+   sin datos la pestaña Mapa sale en blanco salvo lo que hubieras paneado antes
+   de salir de casa.
+
+   Bajar el rectángulo del viaje entero NO es viable: una región de 150 km a
+   zoom 11-15 son ~25.000 teselas (~450 MB) y un país, ocho gigas. Lo que sí
+   cabe es un radio pequeño ALREDEDOR DE CADA PARADA, que es donde de verdad se
+   mira el mapa: ~60 teselas (~1 MB) por parada, y las de paradas cercanas se
+   repiten, así que un viaje de veinte paradas son unos 20 MB.
+
+   Sobre el servidor de teselas: esto NO es una descarga masiva, pero tampoco
+   es navegar. Se pide de dos en dos, con pausa entre tandas, y hay un tope
+   duro de teselas por descarga. Si alguna vez se quiere subir el radio o el
+   zoom, lo honesto es cambiar antes a un proveedor que lo permita.
+   ============================================================ */
+const MapaOffline = {
+  CACHE: 'viajes-tiles-v1',      // el mismo nombre que usa el service worker
+  RADIO_KM: 1.5,
+  ZOOMS: [13, 14, 15, 16],
+  TOPE: 3000,                    // tope duro por descarga
+  KB_POR_TESELA: 18,             // para la estimación de tamaño
+  _abortar: false,
+
+  _url(z, x, y) { return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`; },
+
+  // Coordenada → número de tesela, en la proyección de siempre (Web Mercator).
+  _xy(lat, lng, z) {
+    const n = 2 ** z;
+    const rad = lat * Math.PI / 180;
+    return {
+      x: Math.floor((lng + 180) / 360 * n),
+      y: Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n),
+    };
+  },
+
+  // Las teselas que hacen falta para cubrir un radio alrededor de cada punto.
+  // Se devuelve un Set: dos paradas de la misma plaza comparten casi todas.
+  teselas(puntos) {
+    const set = new Set();
+    for (const p of puntos) {
+      // Ojo con el null: Number(null) es 0, e isFinite(0) es true. Sin mirarlo
+      // aparte, una parada sin coordenadas se bajaba 60 teselas del golfo de
+      // Guinea, que es donde cae el (0, 0).
+      if (p == null || p.lat == null || p.lng == null) continue;
+      const lat = Number(p.lat), lng = Number(p.lng);
+      if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 85) continue;
+      const dLat = this.RADIO_KM / 111;
+      const dLng = this.RADIO_KM / (111 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
+      for (const z of this.ZOOMS) {
+        const a = this._xy(lat + dLat, lng - dLng, z);
+        const b = this._xy(lat - dLat, lng + dLng, z);
+        for (let x = Math.min(a.x, b.x); x <= Math.max(a.x, b.x); x++) {
+          for (let y = Math.min(a.y, b.y); y <= Math.max(a.y, b.y); y++) {
+            set.add(`${z}/${x}/${y}`);
+          }
+        }
+      }
+    }
+    return set;
+  },
+
+  // Cuántas de esas faltan por bajar (las ya guardadas no se vuelven a pedir).
+  async pendientes(claves) {
+    const cache = await caches.open(this.CACHE);
+    const fuera = [];
+    for (const k of claves) {
+      const [z, x, y] = k.split('/');
+      const hay = await cache.match(this._url(z, x, y));
+      if (!hay) fuera.push(k);
+    }
+    return fuera;
+  },
+
+  // Baja y guarda. `alAvanzar(hechas, total)` se llama para pintar el progreso.
+  // De dos en dos y con pausa: no es navegar, pero tampoco hay que machacar.
+  async descargar(claves, alAvanzar) {
+    this._abortar = false;
+    const cache = await caches.open(this.CACHE);
+    const lista = [...claves].slice(0, this.TOPE);
+    let hechas = 0, fallos = 0;
+    for (let i = 0; i < lista.length; i += 2) {
+      if (this._abortar) break;
+      await Promise.all(lista.slice(i, i + 2).map(async (k) => {
+        const [z, x, y] = k.split('/');
+        const url = this._url(z, x, y);
+        try {
+          const r = await fetch(url);
+          if (r && (r.ok || r.type === 'opaque')) await cache.put(url, r.clone());
+          else fallos++;
+        } catch (_) { fallos++; }
+        hechas++;
+      }));
+      if (alAvanzar) alAvanzar(hechas, lista.length);
+      await new Promise(r => setTimeout(r, 120));      // respiro entre tandas
+    }
+    return { hechas, fallos, abortado: this._abortar, total: lista.length };
+  },
+
+  parar() { this._abortar = true; },
+
+  // Cuántas teselas hay guardadas y cuánto ocupan, más o menos.
+  async guardadas() {
+    try {
+      const cache = await caches.open(this.CACHE);
+      return (await cache.keys()).length;
+    } catch (_) { return 0; }
+  },
+
+  async borrar() { try { await caches.delete(this.CACHE); } catch (_) {} },
+
+  mb(n) { return (n * this.KB_POR_TESELA) / 1024; },
+};
+
 const MediaCache = {
   _byId: new Map(),  // id → { url, blob }
   async urlFor(id) {
@@ -15492,6 +15620,69 @@ const TripDetail = {
     root.appendChild(list);
   },
 
+  // Barra de "guardar el mapa". Se pinta con lo que ya se sabe (cuántas teselas
+  // hacen falta y cuántas hay) y se rehace sola tras descargar o borrar.
+  _barraMapaOffline(puntos) {
+    const caja = el('div', { class:'mo' });
+    const pintar = async () => {
+      caja.innerHTML = '';
+      const claves = MapaOffline.teselas(puntos);
+      const faltan = await MapaOffline.pendientes(claves);
+      const guardadas = await MapaOffline.guardadas();
+      const listo = faltan.length === 0;
+
+      const estado = el('div', { class:'mo-txt' }, [
+        el('b', { text: listo ? 'Mapa guardado para verlo sin datos' : 'Guardar el mapa de este viaje' }),
+        el('span', { text: (() => {
+          const n = puntos.length;
+          const paradas = n === 1 ? 'tu única parada' : `tus ${n} paradas`;
+          return listo
+            ? `${claves.length} teselas alrededor de ${paradas} · ${guardadas} guardadas en total`
+            : `${faltan.length} teselas ≈ ${Math.max(1, Math.round(MapaOffline.mb(faltan.length)))} MB, alrededor de ${paradas}`;
+        })() }),
+      ]);
+
+      const barra = el('div', { class:'mo-bar' }, [ el('i') ]);
+      barra.style.display = 'none';
+      const parar = el('button', { class:'btn btn-sm btn-ghost', onclick: () => MapaOffline.parar() }, 'Parar');
+      parar.style.display = 'none';
+
+      const bajar = el('button', { class:'btn btn-sm btn-primary', onclick: async () => {
+        if (!navigator.onLine) { UI.toast('Hace falta conexión para guardarlo'); return; }
+        if (faltan.length > MapaOffline.TOPE) {
+          const ok = await UI.confirm(`Son ${faltan.length} teselas y solo se bajarán las primeras ${MapaOffline.TOPE}. ¿Sigo?`);
+          if (!ok) return;
+        }
+        bajar.style.display = 'none'; parar.style.display = ''; barra.style.display = '';
+        const r = await MapaOffline.descargar(faltan, (hechas, total) => {
+          barra.firstChild.style.width = Math.round(hechas / total * 100) + '%';
+          estado.lastChild.textContent = `${hechas} de ${total}…`;
+        });
+        UI.toast(r.abortado ? `Parado: ${r.hechas} teselas guardadas`
+          : r.fallos ? `${r.hechas - r.fallos} guardadas, ${r.fallos} fallaron`
+          : `Mapa guardado (${r.hechas} teselas)`);
+        pintar();
+      } }, listo ? 'Actualizar' : 'Guardar');
+
+      const borrar = guardadas ? el('button', { class:'btn btn-sm btn-ghost', onclick: async () => {
+        const ok = await UI.confirm(`¿Borrar las ${guardadas} teselas guardadas? Se vuelven a bajar solas al mirar el mapa con red.`);
+        if (!ok) return;
+        await MapaOffline.borrar(); UI.toast('Mapa borrado'); pintar();
+      } }, 'Borrar') : null;
+
+      caja.appendChild(el('div', { class:'mo-fila' }, [
+        el('span', { class:'mo-ic', html: svg('map'), 'aria-hidden':'true' }),
+        estado,
+        el('div', { class:'mo-btns' }, [ bajar, parar, borrar ].filter(Boolean)),
+      ]));
+      caja.appendChild(barra);
+      caja.appendChild(el('p', { class:'field-hint', style:{ margin:'8px 0 0' },
+        text:`Un radio de ${MapaOffline.RADIO_KM} km alrededor de cada parada, con zoom para llegar a la calle. Fuera de ese radio el mapa seguirá necesitando datos.` }));
+    };
+    pintar();
+    return caja;
+  },
+
   // "Planeado 12:00 · hecho 13:40 (+1 h 40)". Solo cuando hay las dos horas y
   // son del mismo día: marcar una parada al día siguiente no es un retraso, es
   // que se marcó tarde, y dar "+22 h" solo confundiría.
@@ -16754,6 +16945,9 @@ const TripDetail = {
 
     const container = el('div', { class:'map-container', id:'mapa-container' });
     root.appendChild(container);
+
+    // Guardar el mapa de las paradas para verlo sin datos.
+    if (planPts.length) root.appendChild(TripDetail._barraMapaOffline(planPts));
     if (!hasAny) {
       root.appendChild(el('p', { class:'muted', style:{marginTop:'12px'}, text: ciudadDias.size
         ? 'Ninguna parada tiene coordenadas todavía: el mapa sitúa la ciudad del título de cada día. Para los puntos exactos, pasa la revisión de ubicaciones del viaje.'
