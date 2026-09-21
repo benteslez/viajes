@@ -276,6 +276,25 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(repes === 2, 'las zonas horarias ya no vuelven a llamarse Origen y Destino', String(repes));
   await p.evaluate(() => UI.closeSheet()); await sleep(p, 400);
 
+  titulo('SHUTTLE');
+  await abrirNueva(); await sleep(p, 800);
+  await celda('Otro transporte'); await sleep(p, 800);
+  ok(await celda('Shuttle'), 'el shuttle está entre los transportes');
+  await sleep(p, 900);
+  fm = await forma();
+  const sh = await p.evaluate(() => ({
+    tipo: document.getElementById('f-type')?.value,
+    chip: document.querySelector('.wz-chip b')?.textContent,
+    tz: !!document.getElementById('tz-block')?.checkVisibility(),
+  }));
+  ok(sh.chip === 'Shuttle', 'la pastilla dice que es un shuttle', sh);
+  ok(fm.etiquetas.join(' → ') === 'Origen → Destino', 'con su ruta, como cualquier traslado', fm.etiquetas);
+  ok(JSON.stringify(fm.filas[0]) === '["Compañía","Localizador"]',
+    'pide compañía y localizador (un shuttle se reserva)', fm.filas);
+  ok(!fm.filas.flat().includes('Coche / Vagón'), 'pero no vagón, que no tiene', fm.filas);
+  ok(!sh.tz, 'ni zonas horarias: es un traslado local', String(sh.tz));
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 400);
+
   titulo('EL ALOJAMIENTO EMPIEZA POR SU NOMBRE');
   await abrirNueva(); await sleep(p, 800);
   await celda('Alojamiento'); await sleep(p, 900);
