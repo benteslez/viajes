@@ -72,6 +72,19 @@ del registro real, con el mismo `id`.
 > de verdad: `await DB.get('planning_items', it.id)`. Escribir la copia pierde
 > los datos que la copia no traía.
 
+### La ficha también escribe
+
+`openPlanningDetail` no es solo de lectura: las notas, el teléfono, el WhatsApp
+y la dirección se escriben ahí y se guardan al salir del campo. Dos cosas que
+hay que respetar si tocas eso:
+
+- Los guardados van **en fila** (`colaGuardado`). Cada uno relee el registro
+  entero; dos a la vez leían la misma versión y el segundo pisaba al primero.
+- El teléfono y el WhatsApp viven en `metadata` pero **no** están declarados en
+  `PLANNING_METADATA`, y `collect()` reconstruye `metadata` desde los campos del
+  tipo. Por eso existe `CAMPOS_CONTACTO`: sin conservarlos a mano, guardar desde
+  el editor los borraba. Si añades otro campo que solo pida la ficha, mételo ahí.
+
 ### Estilo de los comentarios
 
 Los comentarios del código explican **por qué**, no qué. Suelen contar la

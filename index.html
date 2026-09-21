@@ -1471,6 +1471,16 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   box-shadow:0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.05);
 }
 :root[data-tema="oscuro"] .day-group { box-shadow:0 1px 2px rgba(0,0,0,.3); }
+/* En escritorio el día se estiraba a los 1100 px de `main` y el billete salía
+   como una plancha de mil píxeles con cuatro datos flotando en el centro: el
+   contenido de la tarjeta está pensado para el ancho de un móvil y no crece
+   con ella. Un planning se lee en columna, así que por encima de 900 px se
+   centra y se queda en el mismo ancho que la ficha de una parada. */
+@media (min-width: 900px) {
+  .day-group { max-width:620px; margin-inline:auto; }
+  /* La tira de días se queda a lo ancho a propósito: su línea inferior separa
+     la cabecera del viaje del plan, y las pastillas ya van centradas. */
+}
 .day-group .day-head {
   padding:14px 15px 13px; margin:0;
   background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, var(--bg-elev)) 0%,
@@ -1669,6 +1679,15 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   padding:10px 16px 66px;
 }
 .plan-page .day-group { margin:0; }
+/* El carrusel, en escritorio, con la columna del día (ver `.day-group`): cada
+   página mide el 100% del pager, así que sin esto el día seguiría ocupando los
+   1100 px de `main` aunque la tarjeta de dentro no. Sus 16 px de acolchado
+   dejan la tarjeta justo en los 620 de allí. Va aquí y no arriba porque el
+   `margin:0 -16px` del pager —que lo saca a sangre en el móvil— se declara
+   después y se comía el `margin-inline:auto`. */
+@media (min-width: 900px) {
+  .plan-pager { max-width:652px; margin-inline:auto; }
+}
 /* Con el carrusel el hueco de abajo sobra: la página acaba donde acaba el día,
    justo lo necesario para que la tira pueda quedarse pegada arriba del todo. */
 main:has(.plan-pager) { padding-bottom:0; }
@@ -2538,6 +2557,36 @@ main:has(.plan-pager) { padding-bottom:0; }
   background:var(--line-soft); color:var(--text);
 }
 .dv-notes { margin:2px 0 6px; font-size:15px; line-height:1.55; color:var(--text); white-space:pre-wrap; }
+/* Campos que se escriben en la propia ficha (notas, teléfono, dirección). Se
+   pintan como el valor que sustituyen —sin caja, alineados con el resto— para
+   que la ficha siga pareciendo una ficha y no un formulario. El recuadro sale
+   al enfocarlos, que es cuando hace falta saber dónde se está escribiendo. */
+.dv-in, .dv-ta {
+  width:100%; font:inherit; font-size:15px; font-weight:700; color:var(--text);
+  background:transparent; border:1px solid transparent; border-radius:10px;
+  padding:5px 8px; margin:-5px -8px; transition:border-color .15s var(--ease), background .15s var(--ease);
+}
+.dv-in::placeholder, .dv-ta::placeholder { font-weight:600; color:var(--text-muted); }
+.dv-in:hover, .dv-ta:hover { border-color:var(--line-soft); }
+.dv-in:focus, .dv-ta:focus { outline:none; border-color:var(--accent); background:var(--bg); }
+.dv-ta {
+  font-size:15px; font-weight:500; line-height:1.55; resize:vertical; min-height:76px;
+  margin:2px 0 6px; padding:8px 10px; border-color:var(--line-soft);
+}
+/* El teléfono, con su botón de llamar al lado. La base de 150 px hace que el
+   botón baje a su línea en vez de estrujar el número: con la etiqueta a la
+   izquierda quedaban 100 px y un "+34 600 11 22 33" se cortaba por la mitad. */
+.dv-v-con { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dv-v-con .dv-in { flex:1 1 150px; min-width:0; }
+.dv-ir {
+  flex:none; display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  height:32px; padding:0 11px; border-radius:var(--r-pill); border:1px solid var(--line);
+  background:var(--bg-elev); color:var(--text); font:inherit; font-size:12.5px; font-weight:800;
+  text-decoration:none; cursor:pointer; white-space:nowrap;
+}
+.dv-ir:hover { background:var(--line-soft); }
+.dv-ir svg { width:14px; height:14px; }
+.dv-ir.wa { background:#25d366; border-color:transparent; color:#04310f; }
 
 .flashview {
   position:fixed; inset:0; z-index:80; background:var(--bg);
@@ -4370,6 +4419,7 @@ const PLANNING_METADATA = {
       taxi:  ['modo','origen','destino','compania'],
       metro: ['modo','origen','destino','numero'],
       teleferico: ['modo','origen','destino','compania','url'],
+      shuttle:    ['modo','origen','destino','compania','localizador','asientos','url'],
     },
     fields: [
       { id:'modo',       label:'Tipo de transporte', type:'select', ancho:'todo', options:[
@@ -4382,6 +4432,7 @@ const PLANNING_METADATA = {
         { value:'ferry', label:'Ferry' },
         { value:'barco', label:'Barco' },
         { value:'teleferico', label:'Teleférico' },
+        { value:'shuttle', label:'Shuttle' },
       ] },
       { id:'origen',     label:'Origen',           placeholder:'Madrid Atocha',      grupo:'ruta' },
       { id:'destino',    label:'Destino',          placeholder:'Sevilla Sta. Justa', grupo:'ruta' },
@@ -4426,6 +4477,14 @@ const DAY_COLORS = [
   { id:'ambar',   label:'Ámbar' },
   { id:'gris',    label:'Gris' },
 ];
+
+// Contacto: viven en `metadata` como el resto, pero NO se declaran en
+// PLANNING_METADATA. Se escriben desde la ficha de la parada —que es donde los
+// buscas: el teléfono del hotel se llama, no se rellena en un formulario— y el
+// editor no los pide, para no volver a engordarlo. Como `collect()` reconstruye
+// `metadata` a partir de los campos del tipo, hay que conservarlos a mano: si
+// no, editar y guardar la parada los borraría.
+const CAMPOS_CONTACTO = ['telefono', 'whatsapp'];
 
 // Zonas horarias IANA más comunes para vuelos. El usuario puede escribir cualquier
 // otra (es un datalist, no un select cerrado).
@@ -4475,7 +4534,7 @@ const tripSettings = (t) => (t && t.settings && typeof t.settings === 'object' &
 const tripSettingsMut = (t) => { if (!t.settings || typeof t.settings !== 'object' || Array.isArray(t.settings)) t.settings = {}; return t.settings; };
 
 // Modos de transporte → emoji. El icono del evento cambia según metadata.modo.
-const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢', teleferico:'🚡' };
+const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢', teleferico:'🚡', shuttle:'🚐' };
 // Emoji efectivo de un planning item (transporte varía con su modo).
 const planEmoji = (it) => {
   if (it && it.type === 'transporte') {
@@ -6241,6 +6300,8 @@ const ICONS = {
   heart:   '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
   grip:    '<circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
   clock:   '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  phone:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.3a2 2 0 0 1 2.1-.5c.9.4 1.8.6 2.7.8a2 2 0 0 1 1.7 2z"/>',
+  chat:    '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-5a8.3 8.3 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.5-8.4h.5a8.4 8.4 0 0 1 8 8z"/>',
   expand:  '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>',
   copy:    '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
@@ -11860,7 +11921,8 @@ const TripDetail = {
       const modoLbl = (it.type === 'vuelo') ? 'Vuelo'
         : (it.type === 'coche') ? 'Coche de alquiler'
         : ({ tren:'Tren', bus:'Autobús', coche:'Coche', ferry:'Ferry', metro:'Metro',
-             taxi:'Taxi', barco:'Barco', teleferico:'Teleférico' }[_mdMove.modo] || 'Transporte');
+             taxi:'Taxi', barco:'Barco', teleferico:'Teleférico',
+             shuttle:'Shuttle' }[_mdMove.modo] || 'Transporte');
       const comp = _mdMove.aerolinea || _mdMove.compania || '';
       return {
         o: _ruta.o, d: _ruta.d, t1: bt1, t2: bt2, otroDia,
@@ -12800,6 +12862,20 @@ const TripDetail = {
     } catch (_) { return u.length > 40 ? u.slice(0,40)+'…' : u; }
   },
 
+  // `tel:` acepta el número tal cual se escribe: espacios y guiones sobran, pero
+  // el `+` del prefijo es justo lo que hace que marque bien desde el extranjero.
+  _telHref(v) {
+    const n = String(v || '').replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
+    return n.replace(/\D/g, '').length >= 3 ? `tel:${n}` : null;
+  },
+  // wa.me quiere el número internacional en dígitos y SIN el `+`. Sin prefijo de
+  // país abriría un chat con un número de otro sitio, así que se exige que sea
+  // largo: nueve dígitos son un móvil español sin prefijo y no valen.
+  _waHref(v) {
+    const n = String(v || '').replace(/\D/g, '');
+    return n.length >= 10 ? `https://wa.me/${n}` : null;
+  },
+
   // Genera un título por defecto inteligente cuando el usuario no lo rellena.
   // Lee los campos visibles del editor (place_name, TZ, ciudades del trip)
   // y compone algo como "Vuelo Madrid - Tokyo" / "Hotel Tokio" / "Coche Tokio".
@@ -13376,6 +13452,17 @@ const TripDetail = {
       dejarElGiro();
       if (TripDetail._detailRefresh === refrescar) TripDetail._detailRefresh = null;
       overlay.remove();
+      // Si se ha escrito algo en la ficha, la lista de debajo está vieja (la nota
+      // sale en la tarjeta). Se repinta sin mover la página: cerrar una ficha no
+      // puede además devolverte al principio del planning.
+      if (huboCambios) {
+        huboCambios = false;
+        const sy = window.scrollY;
+        Router.render().then(() => {
+          requestAnimationFrame(() => window.scrollTo(0, sy));
+          setTimeout(() => window.scrollTo(0, sy), 90);
+        });
+      }
     };
 
     // --- Cerrar: el mismo vuelo, al revés -------------------------------
@@ -13414,7 +13501,15 @@ const TripDetail = {
         setTimeout(() => clon.remove(), 420);
       }));
     };
-    const onKey = (e) => { if (e.key === 'Escape') cerrar(); };
+    // Escape cierra la ficha, salvo si se está escribiendo en ella: perder la
+    // nota a medias por pulsar Escape sería un regalo envenenado. Ahí solo
+    // suelta el campo, y el segundo Escape ya cierra.
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      const f = document.activeElement;
+      if (f && overlay.contains(f) && (f.tagName === 'TEXTAREA' || f.tagName === 'INPUT')) { f.blur(); return; }
+      cerrar();
+    };
 
     const editar = () => TripDetail.openPlanningEditor(t, actual);
 
@@ -13434,6 +13529,37 @@ const TripDetail = {
         time: base._virtual ? base.time : fresco.time,
       });
       pintar();
+    };
+
+    // Lo que se escribe en la ficha (notas, teléfono, WhatsApp, dirección) se
+    // guarda al salir del campo: una ficha no tiene botón de Guardar.
+    let huboCambios = false;
+    // En fila de uno: cada guardado relee el registro, lo modifica y lo escribe.
+    // Dos a la vez (al pasar de un campo a otro con el tabulador, o al salir de
+    // la ficha con varios sin guardar) leían los dos la versión de antes y el
+    // segundo pisaba al primero.
+    let colaGuardado = Promise.resolve();
+    const guardarEnFicha = (patch) => {
+      colaGuardado = colaGuardado.then(() => _guardarEnFicha(patch)).catch((e) => console.error(e));
+      return colaGuardado;
+    };
+    const _guardarEnFicha = async ({ campo, meta }) => {
+      // Una parada virtual —la noche de un hotel, la llegada de un vuelo— es una
+      // COPIA del registro real con su mismo id. Escribir sobre la copia perdería
+      // todo lo que la copia no traía, así que se relee el de verdad.
+      let real = null;
+      try { real = await DB.get('planning_items', base.id); } catch (_) {}
+      if (!real || real.deleted_at) return;
+      if (campo) Object.assign(real, campo);
+      if (meta) {
+        const m = Object.assign({}, real.metadata || {});
+        Object.entries(meta).forEach(([k, v]) => { if (v) m[k] = v; else delete m[k]; });
+        real.metadata = m;
+      }
+      try { await DB.put('planning_items', real); } catch (e) { console.error(e); UI.toast('Error al guardar'); return; }
+      if (campo) Object.assign(actual, campo);
+      if (meta) actual.metadata = real.metadata;
+      huboCambios = true;
     };
 
     const pintar = () => {
@@ -13463,6 +13589,37 @@ const TripDetail = {
       };
       const enlace = (u) => el('a', { class:'dv-link', href:u, target:'_blank', rel:'noopener',
         text: TripDetail._shortUrl(u) });
+      // Fila con un campo que se escribe aquí mismo. `accion` recibe el input y
+      // devuelve el botón que lo acompaña (llamar, abrir WhatsApp), para que ese
+      // botón se entere de lo que se va tecleando sin repintar la ficha entera.
+      const filaEdit = (lbl, valor, alSalir, opc = {}) => {
+        const inp = el('input', {
+          class:'dv-in', type: opc.tipo || 'text', value: valor || '',
+          placeholder: opc.placeholder || 'Añadir…',
+          inputmode: opc.inputmode || null, autocomplete: opc.autocomplete || null,
+          onchange: (e) => alSalir(e.target.value.trim()),
+        });
+        const extra = opc.accion ? opc.accion(inp) : null;
+        return el('div', { class:'dv-row' }, [
+          el('span', { class:'dv-l', text: lbl }),
+          el('span', { class:'dv-v' }, [ extra ? el('span', { class:'dv-v-con' }, [inp, extra]) : inp ]),
+        ]);
+      };
+      // El botón se esconde mientras el número no sirva para nada: un "tel:" vacío
+      // abre la app de teléfono sin nadie a quien llamar.
+      const botonContacto = (tipo) => (inp) => {
+        const a = el('a', { class: 'dv-ir' + (tipo === 'wa' ? ' wa' : ''), target:'_blank', rel:'noopener' }, [
+          el('span', { html: svg(tipo === 'wa' ? 'chat' : 'phone') }),
+          tipo === 'wa' ? 'WhatsApp' : 'Llamar',
+        ]);
+        const refrescarBoton = () => {
+          const h = tipo === 'wa' ? TripDetail._waHref(inp.value) : TripDetail._telHref(inp.value);
+          if (h) { a.href = h; a.style.display = ''; } else { a.removeAttribute('href'); a.style.display = 'none'; }
+        };
+        inp.addEventListener('input', refrescarBoton);
+        refrescarBoton();
+        return a;
+      };
 
       // --- Portada: el billete o la llave, tal cual salen en la lista ---
       const pase = (() => {
@@ -13551,16 +13708,31 @@ const TripDetail = {
         dirUrl ? el('a', { class:'btn btn-sm', href:dirUrl, target:'_blank', rel:'noopener' },
           [el('span', { html: svg('map') }), 'Cómo llegar']) : null,
       ].filter(Boolean)) : null;
+      // La dirección se escribe aquí: los tipos de traslado (vuelo, taxi, coche)
+      // no tienen dónde ponerla en el editor y es justo donde más falta hace,
+      // porque es la que le enseñas al conductor.
       cuerpo.appendChild(bloque('Dónde', [
         fila('Lugar', iti.place_name || null),
-        fila('Dirección', iti.address || null),
+        filaEdit('Dirección', iti.address, (v) => guardarEnFicha({ campo:{ address: v || null } }),
+          { placeholder:'Calle, número, ciudad…', autocomplete:'street-address' }),
         fila('Zona', iti.area || null),
         botonesMapa,
       ]) || el('span'));
 
+      // --- Contacto ---
+      cuerpo.appendChild(bloque('Contacto', [
+        filaEdit('Teléfono', md.telefono, (v) => guardarEnFicha({ meta:{ telefono: v } }),
+          { tipo:'tel', inputmode:'tel', placeholder:'+34 600 00 00 00', accion: botonContacto('tel') }),
+        filaEdit('WhatsApp', md.whatsapp, (v) => guardarEnFicha({ meta:{ whatsapp: v } }),
+          { tipo:'tel', inputmode:'tel', placeholder:'+34 600 00 00 00', accion: botonContacto('wa') }),
+        el('div', { class:'field-hint', text:'WhatsApp necesita el prefijo del país (+34, +57…) para abrir el chat.' }),
+      ]));
+
       // --- Datos propios del tipo (los mismos campos que pide el editor) ---
       const def = PLANNING_METADATA[iti.type];
-      const vistos = new Set(['end_date']);
+      // El contacto ya tiene su bloque arriba; sin esto volvería a salir en el
+      // repaso de claves sueltas de metadata.
+      const vistos = new Set(['end_date', ...CAMPOS_CONTACTO]);
       const datos = [];
       if (def) {
         const modo = md.modo || '';
@@ -13614,9 +13786,14 @@ const TripDetail = {
       ]) || el('span'));
 
       // --- Notas ---
+      // Editables: la nota se escribe cuando estás delante de la parada (el
+      // camarero, el horario que te han dicho, el número de la habitación), no
+      // cuando abres el editor a planificar.
       cuerpo.appendChild(bloque('Notas', [
-        (iti.notes && iti.notes.trim()) ? el('p', { class:'dv-notes', text: iti.notes.trim() }) : null,
-      ]) || el('span'));
+        el('textarea', { class:'dv-ta', rows:'3', placeholder:'Apunta aquí lo que sea…',
+          text: iti.notes || '',
+          onchange: (e) => guardarEnFicha({ campo:{ notes: e.target.value.trim() || null } }) }),
+      ]));
 
       titulo.textContent = iti.title || td.label;
     };
@@ -14158,7 +14335,7 @@ const TripDetail = {
     ]);
     // Zonas horarias: solo donde cambian de verdad (vuelo o transporte de largo
     // recorrido). En coche/taxi/metro/teleférico son ruido.
-    const NO_TZ_MODES = ['coche', 'taxi', 'metro', 'teleferico'];
+    const NO_TZ_MODES = ['coche', 'taxi', 'metro', 'teleferico', 'shuttle'];
     const refreshTzVisibility = () => {
       const type = $('#f-type')?.value || it.type;
       const modo = (it.metadata || {}).modo || '';
@@ -14722,6 +14899,7 @@ const TripDetail = {
       { id:'transporte', modo:'metro',      label:'Metro',     emoji:TRANSPORT_EMOJI.metro },
       { id:'transporte', modo:'ferry',      label:'Ferry',     emoji:TRANSPORT_EMOJI.ferry },
       { id:'transporte', modo:'barco',      label:'Barco',     emoji:TRANSPORT_EMOJI.barco },
+      { id:'transporte', modo:'shuttle',    label:'Shuttle',   emoji:TRANSPORT_EMOJI.shuttle },
       { id:'transporte', modo:'teleferico', label:'Teleférico',emoji:TRANSPORT_EMOJI.teleferico },
       { id:'coche',      label:'Coche de alquiler', emoji:TRANSPORT_EMOJI.coche },
     ];
@@ -15090,6 +15268,9 @@ const TripDetail = {
 
     const collect = () => {
       const type = $('#f-type').value;
+      // Foto de la metadata ANTES de reconstruirla: de aquí salen los campos que
+      // el editor no pinta y aun así no se pueden perder (ver CAMPOS_CONTACTO).
+      const metaAntes = it.metadata || {};
       let title = ($('#f-title').value || '').trim();
       // Si no hay título, generar uno por defecto según el tipo y los datos disponibles
       if (!title) {
@@ -15171,6 +15352,9 @@ const TripDetail = {
       } else {
         it.metadata = {};
       }
+      // Lo que la ficha escribe y el editor no pide (teléfono, WhatsApp) sobrevive
+      // a este guardado; sin esto, tocar cualquier campo del editor lo perdería.
+      CAMPOS_CONTACTO.forEach(k => { if (metaAntes[k]) it.metadata[k] = metaAntes[k]; });
       // Duración de visita + modo de llegada (se guardan en metadata jsonb, que sí
       // sincroniza). Solo para tipos que son "visitas".
       const VISIT_TYPES_SAVE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro', 'gestion'];

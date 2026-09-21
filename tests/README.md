@@ -41,15 +41,25 @@ tests/
 ├── seed.js      ← el viaje de demo (se inyecta en la página)
 ├── run.js       ← lanza todos los casos y devuelve el código de salida
 └── casos/
-    ├── barrido.js        pulsa TODOS los botones de todas las pestañas
-    ├── carrusel.js       un día por pantalla, deslizar, saltar, teclado
-    ├── dias-pasados.js   días pasados apagados pero accesibles; abrir en hoy
-    ├── fechas-viaje.js   tira de días y el editor de fechas ("Sin fecha")
-    ├── ficha.js          la ficha de una parada: abrir, cerrar, cambiar tipo
-    ├── fotos-copia.js    la copia en JSON y el ZIP de fotos
-    ├── marcar-visto.js   marcar paradas y el resumen con pestañas deslizables
-    ├── menu-parada.js    el menú único (••• y pulsación larga)
-    └── tarjetas.js       billete, llave del hotel y postal de playa
+    ├── adjuntos.js          adjuntar la confirmación a una parada; el ZIP
+    ├── barrido.js           pulsa TODOS los botones de todas las pestañas
+    ├── calendario.js        exportar el viaje a .ics
+    ├── carrusel.js          un día por pantalla, deslizar, saltar, teclado
+    ├── carrusel-perezoso.js los días de al lado no se pintan hasta que hacen falta
+    ├── correr-dia.js        correr las horas de un día y la hora real vs. planeada
+    ├── dias-pasados.js      días pasados apagados pero accesibles; abrir en hoy
+    ├── editor-parada.js     el asistente de dos pasos y el orden del formulario
+    ├── escritorio.js        en pantalla ancha el día se queda en una columna
+    ├── fechas-viaje.js      tira de días y el editor de fechas ("Sin fecha")
+    ├── ficha.js             la ficha de una parada: abrir, cerrar, cambiar tipo
+    ├── ficha-contacto.js    notas, teléfono, WhatsApp y dirección desde la ficha
+    ├── fotos-copia.js       la copia en JSON y el ZIP de fotos
+    ├── gasto-rapido.js      apuntar un gasto en dos toques y el conversor
+    ├── llego.js             cuánto queda hasta la próxima parada, con GPS
+    ├── mapa-offline.js      guardar las teselas del mapa para verlo sin datos
+    ├── marcar-visto.js      marcar paradas y el resumen con pestañas deslizables
+    ├── menu-parada.js       el menú único (••• y pulsación larga)
+    └── tarjetas.js          billete, llave del hotel y postal de playa
 ```
 
 ## Cómo se escribe un caso
@@ -70,6 +80,9 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
 `abrir()` deja la app con un perfil elegido y el viaje de demo creado, ya en el
 planning. `abrir({ abrir: 'resumen' })` entra por otra pestaña y
 `abrir({ abrir: false })` se queda en el listado de viajes.
+`abrir({ escritorio: true })` cambia el móvil por una ventana de 1280×900, y
+`abrir({ contexto: { permissions, geolocation } })` pasa opciones al contexto de
+Playwright (el permiso de ubicación, por ejemplo).
 
 Dos reglas que conviene no saltarse:
 
