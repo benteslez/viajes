@@ -713,6 +713,10 @@ Si la app se queda en una pantalla vacía o "Abriendo base de datos…":
 - [ ] Multi-destino completo (UI de gestión de `trip_legs`).
 - [ ] Mapa de países visitados con SVG world map.
 - [ ] Self-host de Manrope + librerías para offline puro desde el primer arranque.
-- [ ] Notificaciones de cuenta atrás (caducidad pasaporte / inicio viaje) con `Notification API`.
+- [x] ~~Notificaciones de cuenta atrás con `Notification API`~~ — **descartado**. Se programaban
+      con `setTimeout` dentro de la página, así que morían al descargarla y solo saltaban con la
+      app delante, que es justo cuando no hacen falta. Hacerlo de verdad pide Web Push y un
+      servidor. En su lugar, «Añadir al calendario» exporta el viaje en `.ics` y avisa el
+      calendario del móvil, que sí funciona con la app cerrada.
 - [ ] Fotos locales en cover (Blob en IndexedDB en lugar de URL externa).
 - [ ] Calendario unificado mensual con todos los viajes.

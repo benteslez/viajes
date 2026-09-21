@@ -1174,9 +1174,6 @@ h2.section-title {
 .card-next { flex-basis:100%; width:100%; display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
 .card-next-tag { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
 .card-next .ne-count { font-size:13px; font-weight:700; color:var(--accent); background:var(--bg-elev); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); border-radius:999px; padding:2px 10px; white-space:nowrap; font-feature-settings:"tnum","ss01"; }
-.card-next .ne-bell { margin-left:auto; }
-.card-next .ne-bell { width:30px; height:30px; flex-shrink:0; border:1px solid var(--line); border-radius:50%; background:var(--bg-elev); display:flex; align-items:center; justify-content:center; cursor:pointer; }
-.card-next .ne-bell svg { width:16px; height:16px; }
 .timeline-item.status-confirmado.type-transporte,
 .timeline-item.status-confirmado.type-vuelo,
 .timeline-item.status-confirmado.type-coche,
@@ -1505,11 +1502,9 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   background:rgba(255,255,255,.18); color:#fff;
   border-color:rgba(255,255,255,.4);
 }
-.li-beach .card-next .ne-bell { background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.4); color:#fff; }
 .timeline-item.visited .li-beach .card-next { border-top-color:var(--line); }
 .timeline-item.visited .li-beach .card-next .card-next-tag { color:var(--text-muted); }
 .timeline-item.visited .li-beach .card-next .ne-count { background:var(--bg-soft); color:var(--text); border-color:var(--line); }
-.timeline-item.visited .li-beach .card-next .ne-bell { background:var(--bg-elev); border-color:var(--line); color:var(--accent); }
 .timeline-item.visited .bh-arena .wx-chip { color:var(--text-muted); }
 /* ======================================================================
    CARRUSEL DE DÍAS — el planning es un día por pantalla. El scroll vertical
@@ -1832,8 +1827,6 @@ main:has(.plan-pager) { padding-bottom:0; }
 .li-ticket .card-next .ne-count {
   background:rgba(255,255,255,.16); border-color:transparent; color:#fff; font-size:12px; padding:2px 10px;
 }
-.li-ticket .card-next .ne-bell { background:rgba(255,255,255,.16); border-color:transparent; color:#fff; }
-.li-ticket .card-next .ne-bell svg { color:#fff; }
 /* Aviso de gasto pendiente, dentro de la cabecera del billete */
 .tk-warn { flex:none; font-size:12px; line-height:1; }
 
@@ -3012,14 +3005,6 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
   border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   padding:3px 9px; border-radius:var(--r-pill);
 }
-.next-event .ne-bell {
-  flex-shrink:0; display:inline-flex; align-items:center; justify-content:center;
-  width:34px; height:34px; border-radius:50%;
-  background:var(--bg-elev); border:1px solid var(--line); color:var(--accent);
-  cursor:pointer; transition:background .15s var(--ease);
-}
-.next-event .ne-bell:hover { background:var(--bg-soft); }
-.next-event .ne-bell svg { width:17px; height:17px; }
 
 
 /* ======================================================================
@@ -5911,7 +5896,6 @@ const ICONS = {
   heart:   '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
   grip:    '<circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
   clock:   '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-  bell:    '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   expand:  '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>',
   copy:    '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
@@ -8154,6 +8138,10 @@ const TripDetail = {
     // Las fotos del día solo están aquí: ni se sincronizan ni entran en la copia
     // de seguridad en JSON. Este es el único sitio desde el que salen.
     items.push({
+      icon: svg('cal'), label: 'Añadir al calendario',
+      onclick: () => { UI.closeSheet(); Exporter.ics(t); }
+    });
+    items.push({
       icon: svg('imagen'), label: 'Descargar las fotos (ZIP)',
       onclick: () => { UI.closeSheet(); Exporter.fotosZip(t); }
     });
@@ -9862,13 +9850,11 @@ const TripDetail = {
     // día" (abajo); si esa tarjeta no está visible, se pinta una barra "Próximo".
     const nextEv = nextTimedEvent(planning);
     let nextShown = false;
-    const canNotify = nextEv && ('Notification' in window) && Notification.permission !== 'granted' && canEdit();
-    const _neBell = () => canNotify ? el('button', { class:'ne-bell', title:'Activar avisos', 'aria-label':'Activar avisos',
-      onclick: async (e) => {
-        e.stopPropagation();
-        try { const p = await Notification.requestPermission(); if (p === 'granted') { Notifications.scheduleAll(); UI.toast('Avisos activados'); Router.render(); } else UI.toast('Permiso de notificaciones denegado'); }
-        catch (_) { UI.toast('No se pudieron activar'); }
-      } }, el('span', { html: svg('bell') })) : null;
+    // (Aquí había una campanita para activar avisos. Los avisos se programaban
+    //  con setTimeout dentro de la página, así que morían al descargarla y solo
+    //  saltaban con la app delante: justo cuando no hacen falta. Ahora el viaje
+    //  se exporta al calendario del móvil, que sí avisa con la app cerrada.)
+    const _neBell = () => null;
     const _startNeTimer = () => {
       if (!nextEv || !nextEv._ts) return;   // evento sin hora → texto estático ("hoy"), sin cuenta atrás
       TripDetail._neTimer = setInterval(() => {
@@ -11076,18 +11062,10 @@ const TripDetail = {
   _wireNextCard(card, it, nextEv) {
     if (!nextEv || it._virtual || it.id !== nextEv.id || (it.day_date || '') !== (nextEv.day_date || '') || (it.time || '') !== (nextEv.time || '')) return false;
     card.classList.add('is-next');
-    const canNotify = ('Notification' in window) && Notification.permission !== 'granted' && canEdit();
-    const bell = canNotify ? el('button', { class:'ne-bell', title:'Activar avisos', 'aria-label':'Activar avisos',
-      onclick: async (e) => {
-        e.stopPropagation();
-        try { const p = await Notification.requestPermission(); if (p === 'granted') { Notifications.scheduleAll(); UI.toast('Avisos activados'); Router.render(); } else UI.toast('Permiso de notificaciones denegado'); }
-        catch (_) { UI.toast('No se pudieron activar'); }
-      } }, el('span', { html: svg('bell') })) : null;
     const nextBlock = el('div', { class:'card-next' }, [
       el('span', { class:'card-next-tag', text:'Próximo' }),
       el('span', { class:'ne-count', id:'ne-count', text: nextEventText(nextEv) }),
-      bell,
-    ].filter(Boolean));
+    ]);
     // En los traslados, el aviso vive DENTRO del billete: si no, quedaba una
     // segunda caja azul alrededor de la tarjeta.
     const tkMain = card.querySelector('.li-ticket .tk-main, .li-beach .bh-mar');
@@ -14802,7 +14780,6 @@ const TripDetail = {
           }
         }
         UI.toast('Guardado');
-        try { Notifications.scheduleAll(); } catch (_) {}
       } catch (err) { console.error(err); UI.toast('Error al guardar'); }
       finally {
         const sy = window.scrollY;
@@ -18019,27 +17996,6 @@ const PerfilView = {
       }
     }}, [ el('span', { html: svg('refresh') }), 'Buscar actualizaciones' ]));
 
-    // === Notificaciones ===
-    if ('Notification' in window) {
-      root.appendChild(el('h2', { class:'section-title', text:'Notificaciones' }));
-      const perm = Notification.permission;
-      root.appendChild(el('p', { class:'muted', style:{marginBottom:'8px'},
-        text: perm === 'granted' ? 'Activadas. Te avisaré antes de cada viaje (30/7/1 días), de tus eventos del planning (vuelos, hoteles, comidas…) y de la caducidad de tus documentos. Nota: los avisos solo saltan con la app abierta o recién minimizada (ver más abajo).'
-            : perm === 'denied' ? 'Bloqueadas en el navegador. Cámbialo en los permisos del sitio.'
-            : 'No activadas. Pulsa el botón para concederlas.' }));
-      if (perm !== 'granted') {
-        root.appendChild(el('button', { class:'btn btn-sm', onclick: async () => {
-          const p = await Notification.requestPermission();
-          if (p === 'granted') { Notifications.scheduleAll(); UI.toast('Activadas'); Router.render(); }
-          else UI.toast('Permiso denegado');
-        }}, [ el('span',{html:svg('plane')}), 'Activar notificaciones' ]));
-      } else {
-        root.appendChild(el('button', { class:'btn btn-sm', onclick: () => {
-          new Notification('Viajes', { body:'Notificaciones funcionando correctamente.', icon:'icons/icon-192.png' });
-        }}, 'Enviar test'));
-      }
-    }
-
     // === Calendario unificado ===
     root.appendChild(el('h2', { class:'section-title', text:'Calendario unificado' }));
     root.appendChild(el('p', { class:'muted', style:{marginBottom:'8px'},
@@ -21002,6 +20958,135 @@ ${viewerScript}
     }
   },
 
+  // ---------------------------------------------------------------------
+  // Calendario (.ics)
+  // ---------------------------------------------------------------------
+  // El calendario del móvil avisa con la app cerrada, en la pantalla de
+  // bloqueo y en el reloj. La app no puede: un aviso programado con setTimeout
+  // muere al descargar la página (por eso se quitaron las notificaciones).
+  // Así que el viaje se exporta y que avise quien sabe hacerlo.
+  //
+  // El UID sale del id de la parada, que es estable: reimportar el archivo
+  // ACTUALIZA los eventos en vez de duplicarlos.
+  async ics(t) {
+    const items = (await DB.listByTrip('planning_items', t.id)).filter(i => !i.deleted_at);
+    const eventos = [];
+    for (const it of items) {
+      const ev = this._icsEvento(t, it);
+      if (ev) eventos.push(ev);
+    }
+    if (!eventos.length) { UI.toast('Este viaje no tiene nada con fecha'); return; }
+    const lineas = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Viajes//ES', 'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH', ...this._icsTexto('X-WR-CALNAME', t.name),
+      ...eventos.flat(), 'END:VCALENDAR',
+    ];
+    // El formato pide CRLF, y hay lectores tiquismiquis que sin eso no abren.
+    this._descargar(new Blob([lineas.join('\r\n') + '\r\n'], { type:'text/calendar;charset=utf-8' }),
+      `${nombreSeguro(t.name, 'viaje')}.ics`);
+    UI.toast(`${eventos.length} eventos al calendario`);
+  },
+
+  // Una parada → las líneas de su VEVENT, o null si no hay nada que poner en
+  // una agenda (sin fecha no hay evento).
+  _icsEvento(t, it) {
+    const td = typeDef(it.type);
+    const esRango = RANGE_TYPES.includes(it.type);
+    const d1 = (esRango ? it.consultation_planned_d1 : it.day_date) || it.day_date;
+    if (!d1) return null;
+    const t1 = esRango ? it.consultation_planned_t1 : it.time;
+    const d2 = esRango ? (it.consultation_planned_d2 || d1) : ((it.metadata || {}).end_date || d1);
+    const t2 = esRango ? it.consultation_planned_t2 : it.end_time;
+
+    const md = it.metadata || {};
+    const ruta = (md.origen && md.destino) ? `${md.origen} → ${md.destino}` : '';
+    const titulo = `${td.emoji || ''} ${it.title || ruta || td.label}`.trim();
+    // Lo que de verdad se busca en el calendario a las 6 de la mañana:
+    // localizador, número de vuelo, terminal y con quién.
+    const detalle = [
+      ruta && ruta !== it.title ? ruta : null,
+      md.aerolinea || md.compania ? `${md.aerolinea || md.compania}${md.numero ? ' ' + md.numero : ''}` : null,
+      md.localizador ? `Localizador: ${md.localizador}` : null,
+      md.terminal ? `Terminal ${md.terminal}${md.puerta ? ' · puerta ' + md.puerta : ''}` : null,
+      md.habitacion ? `Habitación ${md.habitacion}` : null,
+      (Array.isArray(it.people) && it.people.length) ? `Con ${fmtList(it.people)}` : null,
+      it.notes || null,
+      `— ${t.name}`,
+    ].filter(Boolean).join('\n');
+
+    const L = ['BEGIN:VEVENT'];
+    L.push(`UID:${it.id}@viajes`);
+    L.push(`DTSTAMP:${this._icsUtc(new Date())}`);
+    if (t1) {
+      // Con hora: se escribe en hora LOCAL flotante (sin zona). El calendario
+      // la enseña tal cual, que es lo que se quiere de un vuelo: "sale a las
+      // 6:30" significa las 6:30 de donde sale, no las de casa.
+      L.push(`DTSTART:${this._icsLocal(d1, t1)}`);
+      // Sin hora de fin, una hora por defecto: un evento de duración cero se
+      // pinta como una rayita y se pierde.
+      L.push(`DTEND:${t2 ? this._icsLocal(d2, t2) : this._icsLocal(d1, this._icsMasUnaHora(t1))}`);
+    } else {
+      // Sin hora: evento de día completo. DTEND es EXCLUSIVO, así que va al
+      // día siguiente del último; si no, el último día se queda fuera.
+      L.push(`DTSTART;VALUE=DATE:${d1.replace(/-/g, '')}`);
+      L.push(`DTEND;VALUE=DATE:${this._icsDiaSiguiente(d2 || d1)}`);
+    }
+    L.push(...this._icsTexto('SUMMARY', titulo));
+    L.push(...this._icsTexto('DESCRIPTION', detalle));
+    const donde = it.place_name || it.address || (esRango ? md.origen : '') || '';
+    if (donde) L.push(...this._icsTexto('LOCATION', donde));
+    if (it.lat != null && it.lng != null) L.push(`GEO:${Number(it.lat).toFixed(6)};${Number(it.lng).toFixed(6)}`);
+    if (it.status === 'cancelado') L.push('STATUS:CANCELLED');
+    else if (it.status === 'en_consulta' || it.status === 'por_iniciar') L.push('STATUS:TENTATIVE');
+    else L.push('STATUS:CONFIRMED');
+    // Aviso: dos horas antes en un vuelo, media hora en el resto.
+    const antes = (it.type === 'vuelo') ? 120 : 30;
+    if (t1) L.push('BEGIN:VALARM', `TRIGGER:-PT${antes}M`, 'ACTION:DISPLAY',
+      ...this._icsTexto('DESCRIPTION', titulo), 'END:VALARM');
+    L.push('END:VEVENT');
+    return L;
+  },
+
+  _icsUtc(d) {
+    const z = (n) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}${z(d.getUTCMonth()+1)}${z(d.getUTCDate())}T${z(d.getUTCHours())}${z(d.getUTCMinutes())}${z(d.getUTCSeconds())}Z`;
+  },
+  _icsLocal(dia, hora) {
+    const [h, m] = String(hora || '00:00').split(':');
+    return `${dia.replace(/-/g, '')}T${String(h).padStart(2,'0')}${String(m || '00').padStart(2,'0')}00`;
+  },
+  _icsMasUnaHora(hora) {
+    const [h, m] = String(hora).split(':').map(Number);
+    return `${String((h + 1) % 24).padStart(2,'0')}:${String(m || 0).padStart(2,'0')}`;
+  },
+  _icsDiaSiguiente(dia) {
+    const d = parseDate(dia); d.setDate(d.getDate() + 1);
+    return isoLocal(d).replace(/-/g, '');
+  },
+  // Escapa el texto y dobla la línea a 75 OCTETOS, que es lo que manda el
+  // formato. Por octetos y no por caracteres a propósito: los emojis de los
+  // tipos ocupan cuatro bytes, así que cortar por longitud de cadena se pasaría
+  // del límite y, peor, partiría un carácter por la mitad y dejaría el UTF-8
+  // roto. Se recorre por puntos de código (Array.from mantiene juntos los pares
+  // suplentes) y se mide cada uno antes de meterlo.
+  _icsTexto(clave, valor) {
+    const v = String(valor || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;')
+      .replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+    const enc = new TextEncoder();
+    const out = [];
+    let linea = '', octetos = 0, tope = 75;
+    for (const c of Array.from(`${clave}:${v}`)) {
+      const n = enc.encode(c).length;
+      if (octetos + n > tope) {
+        out.push(linea);
+        linea = ' '; octetos = 1; tope = 75;   // la continuación empieza por espacio
+      }
+      linea += c; octetos += n;
+    }
+    out.push(linea);
+    return out;
+  },
+
   _descargar(blob, nombre) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -21560,87 +21645,6 @@ async function drainFootQueue() {
   _footBusy = false;
 }
 
-/* ============================================================
-   Notificaciones — solo mientras la app está abierta (sin backend).
-   Programa setTimeout para los siguientes umbrales: 30 / 7 / 1 días.
-   ============================================================ */
-const Notifications = {
-  _timers: [],
-  _clearAll() {
-    this._timers.forEach(id => clearTimeout(id));
-    this._timers = [];
-  },
-  async scheduleAll() {
-    if (!('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
-    this._clearAll();
-    const profile = dataProfile();
-    if (!profile) return;
-    const now = Date.now();
-    const MAX_MS = 2_147_000_000; // ~24 días — máximo razonable de setTimeout
-
-    // Viajes que empiezan en el futuro
-    const trips = await DB.listByProfile('trips', profile);
-    for (const t of trips) {
-      if (!t.start_date) continue;
-      const start = new Date(t.start_date + 'T08:00:00').getTime();
-      for (const d of [30, 7, 1]) {
-        const when = start - d * 24 * 3600 * 1000;
-        const delay = when - now;
-        if (delay > 0 && delay < MAX_MS) {
-          this._timers.push(setTimeout(() => {
-            try { new Notification('Viajes', { body:`Faltan ${d} día${d>1?'s':''} para ${t.name}.`, icon:'icons/icon-192.png', tag:`trip-${t.id}-${d}` }); } catch (_) {}
-          }, delay));
-        }
-      }
-    }
-
-    // Documentos próximos a caducar (pasaporte/visado)
-    const docs = await DB.listByProfile('travel_docs', STATE.profile);
-    for (const doc of docs) {
-      if (!doc.expiry_date) continue;
-      const exp = new Date(doc.expiry_date + 'T08:00:00').getTime();
-      for (const d of [30, 7, 1]) {
-        const when = exp - d * 24 * 3600 * 1000;
-        const delay = when - now;
-        if (delay > 0 && delay < MAX_MS) {
-          this._timers.push(setTimeout(() => {
-            try { new Notification('Viajes — caducidad', { body:`Tu ${doc.type} caduca en ${d} día${d>1?'s':''}.`, icon:'icons/icon-192.png', tag:`doc-${doc.id}-${d}` }); } catch (_) {}
-          }, delay));
-        }
-      }
-    }
-
-    // Eventos del planning (vuelos, hoteles, comidas, actividades…) próximos.
-    // Minutos de antelación por tipo. Solo se programan si la app sigue abierta.
-    const REMIND_MIN = {
-      vuelo:[1440,180,60], transporte:[1440,180,60], coche:[180,60],
-      hotel:[180,60], actividad:[120,30], comida:[60,15], compras:[60],
-    };
-    for (const t of trips) {
-      let items = [];
-      try { items = await DB.listByTrip('planning_items', t.id); } catch (_) {}
-      for (const it of items) {
-        if (itemStatus(it) === 'cancelado') continue;     // no avisar de algo cancelado
-        const dt = itemDateTime(it); if (!dt) continue;
-        const mins = REMIND_MIN[it.type]; if (!mins) continue;
-        const ts = dt.getTime();
-        const s = TripDetail._reservationSummary(it);
-        const emoji = (s && s.emoji) || typeDef(it.type).emoji || '📌';
-        const label = s ? `${s.label}${s.value ? ' · ' + s.value : ''}` : (it.title || typeDef(it.type).label);
-        for (const m of mins) {
-          const delay = (ts - m * 60000) - now;
-          if (delay > 0 && delay < MAX_MS) {
-            this._timers.push(setTimeout(() => {
-              try { new Notification('Viajes', { body:`${emoji} ${label} · ${fmtCountdown(m * 60000)}`, icon:'icons/icon-192.png', tag:`pi-${it.id}-${m}` }); } catch (_) {}
-            }, delay));
-          }
-        }
-      }
-    }
-    console.log(`Notificaciones: ${this._timers.length} programadas.`);
-  },
-};
 
 /* ============================================================
    CalendarView — vista mensual unificada de todos los viajes
@@ -21797,13 +21801,6 @@ async function boot() {
         Router.render();
       }
     } catch (e) { console.error('auto-login', e); }
-
-    // Programar notificaciones si el usuario ya ha concedido permiso
-    try {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        Notifications.scheduleAll();
-      }
-    } catch (_) {}
 
     // Si veníamos de explorar.html con "Añadir como viaje", procesarlo ahora
     try { await PendingImport.checkAndProcess(); } catch (e) { console.warn(e); }
