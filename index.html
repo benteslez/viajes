@@ -1269,6 +1269,27 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
 
+/* "¿Llego?" — bajo la barra de próximo evento. */
+.llego {
+  display:flex; align-items:center; gap:11px; margin:4px 0 18px;
+  padding:11px 13px; border:1px solid var(--line); border-radius:var(--r-md);
+  background:var(--bg-elev);
+}
+.llego-ic { flex:none; color:var(--text-muted); display:flex; }
+.llego-ic svg { width:19px; height:19px; }
+.llego-txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.llego-txt b { font-size:14px; font-weight:800; letter-spacing:-.01em; }
+.llego-txt span { font-size:12.5px; color:var(--text-muted); font-weight:500; }
+.llego .btn { flex:none; }
+/* Pegada a la barra de "Próximo" cuando esa barra sí se pinta. */
+#next-event-bar + .llego { margin-top:-8px; }
+.llego.bien  { border-color:color-mix(in srgb, var(--status-curso) 45%, var(--line)); }
+.llego.bien  .llego-txt b, .llego.bien  .llego-ic { color:var(--status-curso); }
+.llego.justo { border-color:color-mix(in srgb, var(--status-prep) 50%, var(--line)); }
+.llego.justo .llego-txt b, .llego.justo .llego-ic { color:var(--status-prep); }
+.llego.mal   { border-color:color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.llego.mal   .llego-txt b, .llego.mal   .llego-ic { color:var(--danger); }
+
 /* Adjuntos de una parada. */
 .adj-lista { border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; margin-bottom:9px; }
 .adj-fila { display:flex; align-items:center; gap:9px; padding:9px 10px; }
@@ -10343,6 +10364,18 @@ const TripDetail = {
       _startNeTimer();
     }
 
+    // "¿Llego?" — lo único que le faltaba a la app para cerrar el círculo con
+    // los tiempos de tramo que ya calcula era saber dónde estás.
+    //
+    // Va FUERA del `if` de arriba a propósito: esa barra solo se pinta cuando
+    // la tarjeta del próximo evento NO está ya resaltada en el plan del día,
+    // que es justo el caso más habitual estando de viaje. Colgando de ella,
+    // "¿llego?" no habría aparecido casi nunca.
+    if (nextEv) {
+      const llego = TripDetail._barraLlego(nextEv);
+      if (llego) root.appendChild(llego);
+    }
+
     // Reservas de hoy — debajo del planning del día.
     renderReservasHoy();
 
@@ -15781,6 +15814,61 @@ const TripDetail = {
       ]));
     });
     root.appendChild(list);
+  },
+
+  // "¿Llego?" — distancia y tiempo hasta la próxima parada desde donde estás.
+  //
+  // La app ya sabe estimar un tramo entre dos puntos (legBetween: distancia por
+  // carretera ≈ línea recta × 1,35, y a pie o en coche según la distancia). Lo
+  // único que le faltaba era el primero de esos dos puntos.
+  //
+  // La ubicación NO se pide al entrar: solo al pulsar, y no se guarda ni se
+  // manda a ningún sitio. Se queda en memoria hasta cerrar la app.
+  _barraLlego(nextEv) {
+    if (!nextEv || nextEv.lat == null || nextEv.lng == null) return null;   // sin destino no hay nada que medir
+    if (!('geolocation' in navigator)) return null;
+
+    const caja = el('div', { class:'llego' });
+    const texto = el('div', { class:'llego-txt' });
+    const boton = el('button', { class:'btn btn-sm', type:'button' }, [
+      el('span', { html: svg('compass'), 'aria-hidden':'true' }), '¿Llego?',
+    ]);
+
+    const pintar = (pos) => {
+      const tramo = legBetween({ lat: pos.coords.latitude, lng: pos.coords.longitude },
+        { lat: nextEv.lat, lng: nextEv.lng });
+      const quedan = nextEv._ts ? Math.round((nextEv._ts - Date.now()) / 60000) : null;
+      // Sin hora no hay veredicto posible: solo la distancia.
+      const margen = (quedan == null) ? null : quedan - tramo.min;
+      const clase = (margen == null) ? '' : margen < 0 ? ' mal' : margen < 10 ? ' justo' : ' bien';
+      caja.className = 'llego' + clase;
+      texto.innerHTML = '';
+      texto.appendChild(el('b', { text: (margen == null) ? `A ${fmtKm(tramo.km)}`
+        : margen < 0 ? `Vas ${fmtDur(-margen)} tarde`
+        : margen < 10 ? `Justo: ${fmtDur(margen)} de margen`
+        : `Holgado: ${fmtDur(margen)} de margen` }));
+      texto.appendChild(el('span', { text:
+        `${MODE_EMOJI[tramo.mode] || '🚗'} ${fmtKm(tramo.km)} · ~${fmtDur(tramo.min)}`
+        + (quedan != null ? ` · quedan ${fmtDur(Math.max(0, quedan))}` : '') }));
+      boton.lastChild.textContent = 'Actualizar';
+    };
+
+    boton.addEventListener('click', () => {
+      texto.innerHTML = '';
+      texto.appendChild(el('span', { text:'Buscando dónde estás…' }));
+      navigator.geolocation.getCurrentPosition(pintar, (err) => {
+        texto.innerHTML = '';
+        texto.appendChild(el('span', { text: err && err.code === 1
+          ? 'Sin permiso de ubicación. Se pide en los ajustes del navegador.'
+          : 'No se ha podido saber dónde estás.' }));
+      }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
+    });
+
+    texto.appendChild(el('span', { text:'Cuánto te queda hasta la próxima parada.' }));
+    caja.appendChild(el('span', { class:'llego-ic', html: svg('pin'), 'aria-hidden':'true' }));
+    caja.appendChild(texto);
+    caja.appendChild(boton);
+    return caja;
   },
 
   // Barra de "guardar el mapa". Se pinta con lo que ya se sabe (cuántas teselas
