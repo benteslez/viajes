@@ -1269,6 +1269,26 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
 
+/* Adjuntos de una parada. */
+.adj-lista { border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; margin-bottom:9px; }
+.adj-fila { display:flex; align-items:center; gap:9px; padding:9px 10px; }
+.adj-fila + .adj-fila { border-top:1px solid var(--line-soft); }
+.adj-ext {
+  flex:none; font-size:9.5px; font-weight:800; letter-spacing:.06em;
+  padding:3px 6px; border-radius:5px; background:var(--bg-soft); color:var(--text-muted);
+}
+.adj-nombre {
+  flex:1; min-width:0; text-align:left; border:0; background:none; cursor:pointer;
+  font-family:inherit; font-size:13.5px; font-weight:600; color:var(--accent);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0;
+}
+.adj-kb { flex:none; font-size:11.5px; color:var(--text-muted); font-feature-settings:"tnum"; }
+.adj-x {
+  flex:none; border:0; background:none; cursor:pointer; color:var(--text-muted);
+  font-size:15px; line-height:1; padding:4px 2px;
+}
+.adj-add { display:flex; align-items:center; gap:10px; }
+
 /* Mapa sin datos — barra bajo el mapa. */
 .mo { border:1px solid var(--line); border-radius:var(--r-md); padding:12px 13px; margin-top:12px; }
 .mo-fila { display:flex; align-items:center; gap:11px; }
@@ -5096,8 +5116,9 @@ const DB = {
     // Versión 5: añade store 'media' para fotos locales (cover, etc.).
     // Race contra timeout: si openDB tarda más de 10s (otra pestaña bloqueando, migración colgada…),
     // rechazamos para no dejar el spinner para siempre.
-    const openPromise = window.idb.openDB('viajes', 6, {
-      upgrade(db, oldVersion) {
+    // Versión 7: índice `by_item` en `media`, para colgar adjuntos de una parada.
+    const openPromise = window.idb.openDB('viajes', 7, {
+      upgrade(db, oldVersion, newVersion, tx) {
         for (const name of STORES) {
           if (!db.objectStoreNames.contains(name)) {
             const store = db.createObjectStore(name, { keyPath: 'id' });
@@ -5117,6 +5138,13 @@ const DB = {
           const s = db.createObjectStore('_pending', { keyPath: 'id', autoIncrement: true });
           s.createIndex('by_table', 'table');
         }
+        // Los adjuntos de una parada cuelgan de `planning_item_id` dentro del
+        // store `media`, que ya existía: hay que añadirle el índice sobre la
+        // transacción del upgrade, no crear nada nuevo.
+        try {
+          const media = tx.objectStore('media');
+          if (!media.indexNames.contains('by_item')) media.createIndex('by_item', 'planning_item_id');
+        } catch (e) { console.warn('índice by_item', e); }
       },
       blocked() {
         console.warn('IDB: bloqueado por otra pestaña con versión anterior');
@@ -5884,7 +5912,7 @@ const DayPhotos = {
   },
   async list(tripId, fecha) {
     return (await this.delViaje(tripId))
-      .filter(m => m && m.blob && m.day_date === fecha)
+      .filter(m => m && m.blob && m.day_date === fecha && !m.planning_item_id)
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0)
         || String(a.created_at || '').localeCompare(String(b.created_at || '')));
   },
@@ -5908,10 +5936,84 @@ const DayPhotos = {
   // Todas las fotos de un viaje, ordenadas por día y por posición dentro del día.
   async todasDelViaje(tripId) {
     return (await this.delViaje(tripId))
-      .filter(m => m && m.blob && m.day_date)
+      .filter(m => m && m.blob && m.day_date && !m.planning_item_id)
       .sort((a, b) => String(a.day_date).localeCompare(String(b.day_date))
         || (a.order_index || 0) - (b.order_index || 0)
         || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  },
+};
+
+/* ============================================================
+   Adjuntos de una parada
+   ============================================================
+   La confirmación del hotel, el billete en PDF, la captura del correo. Viven
+   en el mismo store `media` que las fotos, colgando de `planning_item_id` en
+   vez de `day_date`, así que heredan sus dos reglas: son LOCALES (no se
+   sincronizan) y no caben en la copia en JSON. Por eso entran desde el primer
+   día en el ZIP de descarga; si no, sería repetir el agujero que ya costó una
+   pérdida de datos con las fotos.
+
+   Solo se pueden adjuntar a una parada YA GUARDADA. Si se pudiera antes, y
+   luego se cancelara el editor, el archivo quedaría colgando de una parada que
+   nunca existió.
+   ============================================================ */
+const Adjuntos = {
+  MAX_MB: 10,
+
+  async list(itemId) {
+    if (!itemId) return [];
+    try {
+      const todos = await DB.db.getAllFromIndex('media', 'by_item', itemId);
+      return (todos || []).filter(m => m && m.blob)
+        .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    } catch (_) { return []; }
+  },
+
+  async delViaje(tripId) {
+    try {
+      const todos = await DB.db.getAllFromIndex('media', 'by_trip', tripId);
+      return (todos || []).filter(m => m && m.blob && m.planning_item_id);
+    } catch (_) { return []; }
+  },
+
+  async add(tripId, itemId, file) {
+    if (file.size > this.MAX_MB * 1024 * 1024) throw new Error('demasiado grande');
+    // Una captura del correo se comprime como una foto; un PDF se guarda tal
+    // cual, que recomprimirlo no se puede y recortarlo lo rompería.
+    const esImagen = /^image\//.test(file.type);
+    const blob = esImagen ? await comprimirImagen(file, 1600, 0.82) : file;
+    const id = uuid();
+    // DB.db.put y no DB.put: igual que las fotos, esto no sube a Supabase.
+    await DB.db.put('media', {
+      id, profile: STATE.profile, trip_id: tripId, planning_item_id: itemId,
+      nombre: file.name || 'adjunto', blob,
+      mime: esImagen ? 'image/jpeg' : (file.type || 'application/octet-stream'),
+      created_at: nowIso(),
+    });
+    return id;
+  },
+
+  async remove(id) {
+    MediaCache.olvidar(id);
+    try { await DB.db.delete('media', id); } catch (_) {}
+  },
+
+  // Abrir un adjunto: se saca una URL del blob y se manda a una pestaña nueva,
+  // que es donde el navegador sabe enseñar un PDF o una imagen.
+  async abrir(id) {
+    const url = await MediaCache.urlFor(id);
+    if (!url) { UI.toast('No se pudo abrir'); return; }
+    window.open(url, '_blank', 'noopener');
+  },
+
+  extension(m) {
+    const n = String(m.nombre || '');
+    const punto = n.lastIndexOf('.');
+    if (punto > 0 && punto > n.length - 7) return n.slice(punto + 1).toLowerCase();
+    if (/pdf/.test(m.mime || '')) return 'pdf';
+    if (/png/.test(m.mime || '')) return 'png';
+    if (/^image\//.test(m.mime || '')) return 'jpg';
+    return 'bin';
   },
 };
 
@@ -8333,7 +8435,7 @@ const TripDetail = {
       onclick: () => { UI.closeSheet(); Exporter.ics(t); }
     });
     items.push({
-      icon: svg('imagen'), label: 'Descargar las fotos (ZIP)',
+      icon: svg('imagen'), label: 'Descargar fotos y adjuntos (ZIP)',
       onclick: () => { UI.closeSheet(); Exporter.fotosZip(t); }
     });
     const list = el('div', { class:'action-menu' });
@@ -13991,6 +14093,67 @@ const TripDetail = {
     };
 
     // Bloque de metadata específica por tipo (aerolínea, asiento, modelo coche…)
+    // --- Adjuntos (la confirmación, el billete en PDF, la captura del correo) ---
+    // Se guardan y se borran AL MOMENTO, como las fotos del día: son binarios y
+    // no cuelgan de lo que escribes en el formulario. Por eso solo se ofrecen
+    // en una parada YA guardada: si no, cancelar el editor dejaría el archivo
+    // colgando de una parada que nunca existió.
+    const adjBlock = el('div', { class:'form-row', id:'adj-block' });
+    const pintarAdjuntos = async () => {
+      adjBlock.innerHTML = '';
+      adjBlock.appendChild(el('label', { text:'Adjuntos' }));
+      if (!existing) {
+        adjBlock.appendChild(el('p', { class:'field-hint', style:{ margin:0 },
+          text:'Guarda la parada y podrás adjuntarle la confirmación, el billete o una captura.' }));
+        return;
+      }
+      const lista = await Adjuntos.list(it.id);
+      if (lista.length) {
+        const ul = el('div', { class:'adj-lista' });
+        lista.forEach(a => ul.appendChild(el('div', { class:'adj-fila' }, [
+          el('span', { class:'adj-ext', text: Adjuntos.extension(a).toUpperCase() }),
+          el('button', { type:'button', class:'adj-nombre', title:'Abrir',
+            onclick: () => Adjuntos.abrir(a.id) }, a.nombre || 'adjunto'),
+          el('span', { class:'adj-kb', text: `${Math.max(1, Math.round((a.blob.size || 0) / 1024))} KB` }),
+          el('button', { type:'button', class:'adj-x', title:'Quitar', 'aria-label':'Quitar adjunto',
+            onclick: async () => {
+              const ok = await UI.confirm(`¿Quitar "${a.nombre || 'este adjunto'}"? No se puede deshacer.`);
+              if (!ok) return;
+              await Adjuntos.remove(a.id); pintarAdjuntos();
+            } }, '✕'),
+        ])));
+        adjBlock.appendChild(ul);
+      }
+      const aviso = el('span', { class:'field-hint', style:{ margin:0 } });
+      const input = el('input', { type:'file', accept:'application/pdf,image/*', multiple:true,
+        style:{ display:'none' }, id:'adj-file' });
+      input.addEventListener('change', async (e) => {
+        const files = [...(e.target.files || [])];
+        e.target.value = '';
+        if (!files.length) return;
+        aviso.textContent = 'Guardando…';
+        let n = 0;
+        for (const f of files) {
+          try { await Adjuntos.add(t.id, it.id, f); n++; }
+          catch (err) {
+            console.warn('adjunto', err);
+            UI.toast(/grande/.test(String(err.message)) ? `"${f.name}" pasa de ${Adjuntos.MAX_MB} MB` : 'No se pudo adjuntar');
+          }
+        }
+        aviso.textContent = '';
+        if (n) UI.toast(n === 1 ? 'Adjunto guardado' : `${n} adjuntos guardados`);
+        pintarAdjuntos();
+      });
+      adjBlock.appendChild(el('div', { class:'adj-add' }, [
+        el('button', { type:'button', class:'btn btn-sm', onclick: () => input.click() },
+          [ el('span', { html: svg('upload') }), lista.length ? 'Añadir otro' : 'Adjuntar archivo' ]),
+        aviso,
+      ]));
+      adjBlock.appendChild(input);
+      adjBlock.appendChild(el('p', { class:'field-hint', style:{ margin:'6px 0 0' },
+        text:`PDF o imagen, hasta ${Adjuntos.MAX_MB} MB. Se quedan en este dispositivo: no se sincronizan, pero sí entran en «Descargar fotos y adjuntos».` }));
+    };
+
     const metadataBlock = el('div', { id:'metadata-block', class:'form-row' });
     const renderMetadata = () => {
       const type = $('#f-type')?.value || it.type;
@@ -14762,7 +14925,7 @@ const TripDetail = {
           placeBlock, travelBlock,
           modeExtra, importBlock, metadataBlock, returnFlightWrap, tzBlock,
           titleRow,
-          plegable('Reserva y gasto', subReserva, [ statusRow, consultaBlock, amountRow ], hayReserva),
+          plegable('Reserva y gasto', subReserva, [ statusRow, consultaBlock, adjBlock, amountRow ], hayReserva),
           plegable('Más', subMas, [ peopleSlotBottom, notesRow, colorRow ], hayMas),
           wzSummary,
         ]),
@@ -14817,7 +14980,7 @@ const TripDetail = {
       refreshTimeVisibility(); refreshHotelDatesVisibility(); refreshTzVisibility();
       renderMetadata(); refreshPlaceVisibility(); refreshTravelVisibility(); refreshStandaloneTime();
       renderBorderPicker(); refreshSelectedPlace(); renderPeople(); placePeopleBlock();
-      refreshImportVisibility(); renderModeExtra(); renderTypeGrid();
+      refreshImportVisibility(); renderModeExtra(); renderTypeGrid(); pintarAdjuntos();
       wzRender();
     }, 0);
 
@@ -18611,7 +18774,7 @@ const PerfilView = {
     // Decirlo aquí y no en un sitio donde nadie mire: la copia lleva los viajes
     // enteros pero NO las fotos, que salen en ZIP desde el menú de cada viaje.
     root.appendChild(el('p', { class:'field-hint', style:{ marginTop:'10px' },
-      text:'La copia en JSON lleva todos los datos de los viajes, pero no las fotos: esas se descargan aparte, desde «Descargar las fotos» en el menú de cada viaje.' }));
+      text:'La copia en JSON lleva todos los datos de los viajes, pero no las fotos ni los adjuntos: esos se descargan aparte, desde «Descargar fotos y adjuntos» en el menú de cada viaje.' }));
 
     if (AdminView.disponible()) {
       root.appendChild(el('h2', { class:'section-title', text:'Administración' }));
@@ -21501,24 +21664,51 @@ ${viewerScript}
   // Dentro van por carpetas de día: "Colombia/2026-10-10/1.jpg".
   async fotosZip(t) {
     const fotos = await DayPhotos.todasDelViaje(t.id);
-    if (!fotos.length) { UI.toast('Este viaje no tiene fotos'); return; }
-    UI.toast(fotos.length === 1 ? 'Preparando 1 foto…' : `Preparando ${fotos.length} fotos…`);
+    const adjuntos = await Adjuntos.delViaje(t.id);
+    if (!fotos.length && !adjuntos.length) { UI.toast('Este viaje no tiene fotos ni adjuntos'); return; }
+    const total = fotos.length + adjuntos.length;
+    UI.toast(`Preparando ${total} ${total === 1 ? 'archivo' : 'archivos'}…`);
     const carpeta = nombreSeguro(t.name, 'viaje');
-    const porDia = {};
     const archivos = [];
+
+    // Fotos: una carpeta por día.
+    const porDia = {};
     for (const f of fotos) {
       const dia = nombreSeguro(f.day_date, 'sin-fecha');
       porDia[dia] = (porDia[dia] || 0) + 1;
       const ext = (f.mime === 'image/png') ? 'png' : 'jpg';
-      archivos.push({ nombre: `${carpeta}/${dia}/${porDia[dia]}.${ext}`, blob: f.blob, fecha: f.created_at });
+      archivos.push({ nombre: `${carpeta}/Fotos/${dia}/${porDia[dia]}.${ext}`, blob: f.blob, fecha: f.created_at });
     }
+
+    // Adjuntos: una carpeta por parada, con su nombre, para que el billete del
+    // vuelo se encuentre por el vuelo y no por un número.
+    if (adjuntos.length) {
+      const paradas = {};
+      try {
+        for (const it of await DB.listByTrip('planning_items', t.id)) paradas[it.id] = it;
+      } catch (_) {}
+      const usados = {};
+      for (const a of adjuntos) {
+        const it = paradas[a.planning_item_id];
+        const etiqueta = it
+          ? nombreSeguro(`${it.day_date || 'sin-fecha'} ${it.title || typeDef(it.type).label}`, 'parada')
+          : 'parada-borrada';
+        const base = nombreSeguro(a.nombre || `adjunto.${Adjuntos.extension(a)}`, 'adjunto');
+        // Dos archivos con el mismo nombre en la misma carpeta romperían el ZIP.
+        const clave = `${etiqueta}/${base}`;
+        usados[clave] = (usados[clave] || 0) + 1;
+        const nombre = usados[clave] > 1 ? `${usados[clave]}-${base}` : base;
+        archivos.push({ nombre: `${carpeta}/Adjuntos/${etiqueta}/${nombre}`, blob: a.blob, fecha: a.created_at });
+      }
+    }
+
     try {
       const zip = await zipStore(archivos);
-      this._descargar(zip, `fotos_${nombreSeguro(t.name, 'viaje')}_${todayIso()}.zip`);
-      UI.toast(`${fotos.length} fotos descargadas`);
+      this._descargar(zip, `viaje_${nombreSeguro(t.name, 'viaje')}_${todayIso()}.zip`);
+      UI.toast(`${fotos.length} fotos y ${adjuntos.length} adjuntos descargados`);
     } catch (e) {
       console.warn('fotosZip', e);
-      UI.toast('No se pudieron empaquetar las fotos');
+      UI.toast('No se pudieron empaquetar los archivos');
     }
   },
 

@@ -69,7 +69,8 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   const ruta = captura('fotos.zip');
   await d.saveAs(ruta);
   const bytes = fs.statSync(ruta).size;
-  ok(/^fotos_.*\.zip$/.test(d.suggestedFilename()), 'se descarga con nombre de viaje y fecha', d.suggestedFilename());
+  // El ZIP lleva fotos Y adjuntos desde que existen los segundos, de ahí el nombre.
+  ok(/^viaje_.*\.zip$/.test(d.suggestedFilename()), 'se descarga con nombre de viaje y fecha', d.suggestedFilename());
   ok(bytes > sembradas.f1 + sembradas.f2, 'y pesa lo que pesan las fotos', `${bytes} bytes`);
 
   // Cabeceras del ZIP: firma local, directorio central y cierre.
