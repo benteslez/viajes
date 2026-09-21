@@ -2573,6 +2573,58 @@ main:has(.plan-pager) { padding-bottom:0; }
   font-size:15px; font-weight:500; line-height:1.55; resize:vertical; min-height:76px;
   margin:2px 0 6px; padding:8px 10px; border-color:var(--line-soft);
 }
+
+/* --- La nota con formato --- */
+.dv-rt-wrap { margin:2px 0 6px; }
+.dv-rt-bar { display:flex; gap:4px; margin-bottom:6px; }
+.dv-rt-b {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:32px; height:30px; padding:0; border-radius:9px;
+  border:1px solid var(--line); background:var(--bg-elev); color:var(--text);
+  font-family:var(--font-titulo); font-size:14px; cursor:pointer;
+}
+.dv-rt-b:hover { background:var(--line-soft); }
+.dv-rt-b svg { width:15px; height:15px; }
+/* La caja crece con el texto: nunca hay scroll dentro de ella, que era justo
+   lo molesto del <textarea> —leer una nota larga a través de una ventanita—. */
+.dv-rt {
+  min-height:64px; padding:9px 11px; border:1px solid var(--line-soft); border-radius:12px;
+  background:transparent; font-size:15px; font-weight:500; line-height:1.55; color:var(--text);
+  white-space:pre-wrap; overflow-wrap:anywhere; outline:none;
+  transition:border-color .15s var(--ease), background .15s var(--ease);
+}
+.dv-rt:focus { border-color:var(--accent); background:var(--bg); }
+.dv-rt:empty::before { content:attr(data-ph); color:var(--text-muted); font-weight:600; }
+.dv-rt a { color:var(--accent); font-weight:700; }
+.dv-rt-url { display:flex; gap:6px; margin-top:6px; }
+.dv-rt-url input {
+  flex:1; min-width:0; font:inherit; font-size:14px; padding:7px 10px;
+  border:1px solid var(--line); border-radius:10px; background:var(--bg-elev); color:var(--text);
+}
+
+/* --- Ordenar los bloques de la ficha --- */
+.dv-ord-btn.on { background:var(--accent); color:#fff; border-color:transparent; }
+.dv-ord-hint {
+  display:flex; align-items:center; gap:12px;
+  padding:11px 14px; border-radius:16px;
+  background:color-mix(in srgb, var(--accent) 10%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  font-size:13px; line-height:1.4; color:var(--text);
+}
+.dv-ord-hint span { flex:1; min-width:0; }
+.dv-ord-hint .btn { flex:none; }
+.dv-ord { margin-left:auto; display:flex; gap:4px; }
+.dv-ord .icon-btn { width:30px; height:30px; }
+.dv-ord .icon-btn svg { width:15px; height:15px; }
+.dv-ord .icon-btn:disabled { opacity:.32; cursor:default; }
+.detailview.dv-ordenando .dv-h { display:flex; align-items:center; gap:8px; }
+/* Mientras se ordena, el contenido sigue a la vista —hace falta para saber qué
+   estás moviendo— pero no se puede tocar: si no, la flecha compite con el
+   cursor del editor de notas y con los campos de contacto. */
+.detailview.dv-ordenando .dv-block > *:not(.dv-h) { pointer-events:none; opacity:.5; }
+.detailview.dv-ordenando .dv-block {
+  border:1px dashed var(--accent); border-radius:20px;
+}
 /* El teléfono, con su botón de llamar al lado. La base de 150 px hace que el
    botón baje a su línea en vez de estrujar el número: con la etiqueta a la
    izquierda quedaban 100 px y un "+34 600 11 22 33" se cortaba por la mitad. */
@@ -4486,6 +4538,120 @@ const DAY_COLORS = [
 // no, editar y guardar la parada los borraría.
 const CAMPOS_CONTACTO = ['telefono', 'whatsapp'];
 
+// La nota con formato (negrita, cursiva, subrayado, enlaces) vive AQUÍ y no en
+// `notes`, que se queda en texto plano. Media app lee `notes` —el buscador, el
+// PDF, la guía, el subtítulo de la tarjeta, el .ics— y ninguna de esas sabe
+// pintar HTML: guardarlo ahí habría sacado `<b>` por todas partes.
+const CAMPOS_FICHA = [...CAMPOS_CONTACTO, 'notes_html'];
+
+// --- Nota con formato ------------------------------------------------------
+// Lista blanca cerrada. Lo que llega puede venir de un `contenteditable`, de un
+// pegado (Word, Gmail, una web) o de otro dispositivo por Supabase, así que no
+// se pinta nada sin pasar por aquí: ni al guardar ni al leer.
+const NOTA_TAGS = { B:'b', STRONG:'b', I:'i', EM:'i', U:'u', A:'a', BR:'br', DIV:'div', P:'div' };
+const NOTA_PROTOCOLOS = /^(https?:|mailto:|tel:)/i;
+// Estas no se desenvuelven: se tiran con todo lo que lleven dentro. Un <script>
+// desenvuelto no se ejecuta, pero deja su código escrito como si fuera la nota.
+const NOTA_FUERA = new Set(['SCRIPT', 'STYLE', 'HEAD', 'TITLE', 'NOSCRIPT', 'TEMPLATE', 'IFRAME', 'OBJECT', 'EMBED']);
+
+const notaSanear = (html) => {
+  // `template` es inerte: ni ejecuta scripts ni pide imágenes al analizarlo.
+  const tpl = document.createElement('template');
+  tpl.innerHTML = String(html || '');
+  const salida = document.createElement('div');
+  const copiar = (origen, destino) => {
+    origen.childNodes.forEach(n => {
+      if (n.nodeType === 3) { destino.appendChild(document.createTextNode(n.nodeValue)); return; }
+      if (n.nodeType !== 1) return;
+      if (NOTA_FUERA.has(n.tagName)) return;
+      let tag = NOTA_TAGS[n.tagName];
+      // Lo pegado de un procesador de textos no trae <b>, trae <span style>.
+      // Se traduce en vez de tirarlo: perder la negrita al pegar es peor.
+      if (!tag && n.tagName === 'SPAN') {
+        const st = n.getAttribute('style') || '';
+        if (/font-weight\s*:\s*(bold|[6-9]00)/i.test(st)) tag = 'b';
+        else if (/font-style\s*:\s*italic/i.test(st)) tag = 'i';
+        else if (/text-decoration[^;]*underline/i.test(st)) tag = 'u';
+      }
+      if (!tag) { copiar(n, destino); return; }        // etiqueta desconocida: se desenvuelve
+      if (tag === 'br') { destino.appendChild(document.createElement('br')); return; }
+      if (tag === 'a') {
+        const href = (n.getAttribute('href') || '').trim();
+        if (!NOTA_PROTOCOLOS.test(href)) { copiar(n, destino); return; }   // javascript:, data:… → solo el texto
+        const a = document.createElement('a');
+        a.setAttribute('href', href);
+        a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener noreferrer');
+        copiar(n, a);
+        destino.appendChild(a);
+        return;
+      }
+      const e = document.createElement(tag);
+      copiar(n, e);
+      destino.appendChild(e);
+    });
+  };
+  copiar(tpl.content, salida);
+  return salida.innerHTML;
+};
+
+// El texto plano que se guarda en `notes`. Los saltos los ponen <br> y los
+// bloques que `contenteditable` crea al pulsar Enter.
+const notaTexto = (html) => {
+  const d = document.createElement('div');
+  d.innerHTML = notaSanear(html);
+  // Se recorre en vez de leer `textContent`: un bloque empieza línea nueva, y
+  // metiendo los saltos con replaceWith salían de más o de menos según dónde
+  // cayera el <div> ("uno<br>dos<div>tres</div>" pegaba "dos" con "tres").
+  let out = '';
+  const rec = (nodo) => {
+    nodo.childNodes.forEach(c => {
+      if (c.nodeType === 3) { out += c.nodeValue; return; }
+      if (c.nodeType !== 1) return;
+      if (c.tagName === 'BR') { out += '\n'; return; }
+      if (c.tagName === 'DIV' || c.tagName === 'P') {
+        if (out && !out.endsWith('\n')) out += '\n';
+        rec(c);
+        if (!out.endsWith('\n')) out += '\n';
+        return;
+      }
+      rec(c);
+    });
+  };
+  rec(d);
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+};
+
+const notaDesdeTexto = (txt) => escHtml(txt || '').replace(/\n/g, '<br>');
+
+// ¿Hay algo que se perdería guardando solo el texto? Si no, no se guarda el
+// HTML: el salto de línea ya viaja en el texto plano y tener dos copias de lo
+// mismo solo sirve para que se separen.
+const notaTieneFormato = (html) => /<(b|i|u|a)\b/i.test(String(html || ''));
+
+// --- Bloques de la ficha ---------------------------------------------------
+// El orden se guarda en `Prefs` (una fila por perfil que sincroniza), no en
+// localStorage: cómo quieres ver una parada no es cosa del aparato.
+const BLOQUES_FICHA = [
+  { id:'cuando',   label:'Cuándo' },
+  { id:'donde',    label:'Dónde' },
+  { id:'contacto', label:'Contacto' },
+  { id:'datos',    label:'Datos' },
+  { id:'reserva',  label:'Reserva' },
+  { id:'quien',    label:'Quién' },
+  { id:'notas',    label:'Notas' },
+];
+const ordenFicha = () => {
+  const todos = BLOQUES_FICHA.map(b => b.id);
+  const guardado = Prefs.get('ficha_orden');
+  if (!Array.isArray(guardado)) return todos;
+  // Un bloque que aún no estuviera cuando se guardó el orden se coloca al final
+  // en vez de desaparecer: lo guardado manda sobre lo que conoce, no sobre lo
+  // que no conoce.
+  const orden = guardado.filter(id => todos.includes(id));
+  return [...orden, ...todos.filter(id => !orden.includes(id))];
+};
+
 // Zonas horarias IANA más comunes para vuelos. El usuario puede escribir cualquier
 // otra (es un datalist, no un select cerrado).
 const COMMON_TIMEZONES = [
@@ -4831,6 +4997,22 @@ const fmtCountdown = (ms) => {
   if (m >= 1) return `en ${m} min`;
   return 'en menos de 1 min';
 };
+// ¿Toca avisar del próximo evento en este viaje?
+//
+// El aviso tiene sentido con el viaje encima, no tres meses antes. Una tarjeta
+// que lleva medio año diciendo "PRÓXIMO · en 138 d" deja de querer decir nada, y
+// encima le roba el sitio a los datos del billete. Se enciende a tres días de la
+// salida y sigue encendido mientras dura el viaje.
+//
+// Un viaje sin fechas no entra: no hay cuenta atrás que hacer.
+const DIAS_AVISO_PROXIMO = 3;
+const avisaProximo = (t, hoy = todayIso()) => {
+  if (!t || !t.start_date) return false;
+  if (hoy > (t.end_date || t.start_date)) return false;     // ya pasó
+  if (hoy >= t.start_date) return true;                     // en marcha
+  return daysBetween(hoy, t.start_date) <= DIAS_AVISO_PROXIMO;
+};
+
 // Texto del "Próximo": cuenta atrás si tiene hora; si no, "hoy" o la fecha del evento.
 const nextEventText = (ev) => {
   if (!ev) return '';
@@ -5125,6 +5307,7 @@ const DB = {
     'emergency_contacts', 'phrases', 'shared_expenses', 'diary',
     'travel_docs', 'visited_countries',
     'wardrobe_items', 'wardrobe_catalog',
+    'ui_prefs',
     'media',
   ],
 
@@ -5234,12 +5417,13 @@ const DB = {
     // Race contra timeout: si openDB tarda más de 10s (otra pestaña bloqueando, migración colgada…),
     // rechazamos para no dejar el spinner para siempre.
     // Versión 7: índice `by_item` en `media`, para colgar adjuntos de una parada.
-    const openPromise = window.idb.openDB('viajes', 7, {
+    // Versión 8: store 'ui_prefs', las preferencias de la interfaz por perfil.
+    const openPromise = window.idb.openDB('viajes', 8, {
       upgrade(db, oldVersion, newVersion, tx) {
         for (const name of STORES) {
           if (!db.objectStoreNames.contains(name)) {
             const store = db.createObjectStore(name, { keyPath: 'id' });
-            if (['trips','packing_templates','travel_docs','visited_countries'].includes(name)) {
+            if (['trips','packing_templates','travel_docs','visited_countries','ui_prefs'].includes(name)) {
               store.createIndex('by_profile', 'profile');
             } else {
               store.createIndex('by_trip', 'trip_id');
@@ -5571,6 +5755,53 @@ const AUTH = {
 };
 
 /* ============================================================
+   Prefs — preferencias de interfaz del perfil, sincronizadas
+   ============================================================
+   Todo lo demás que la app recuerda vive en localStorage y, por tanto, en un
+   solo dispositivo: el tema, el último perfil, el orden de la administración.
+   Eso vale para lo que es del aparato, no para cómo quieres ver la app.
+
+   Una fila por perfil en `ui_prefs`, con un jsonb dentro. Se lee en memoria al
+   entrar y se escribe con DB.put, o sea que viaja por la misma cola que el
+   resto: si el móvil está sin cobertura, el cambio espera y sube luego.
+
+   Ojo: la tabla `ui_prefs` de Supabase la crea `schema-ui-prefs.sql`. Sin
+   ejecutarlo, esto sigue funcionando en local y las filas se quedan en cola
+   hasta que exista (ver `_isPermanentRowError`). */
+const Prefs = {
+  _fila: null,
+  DEFECTO: {},
+
+  _id() { return `prefs-${STATE.profile || 'anon'}`; },
+
+  async cargar() {
+    this._fila = null;
+    try { this._fila = (await DB.db.get('ui_prefs', this._id())) || null; } catch (_) {}
+    return this.datos();
+  },
+
+  datos() {
+    const d = this._fila && this._fila.data;
+    return (d && typeof d === 'object' && !Array.isArray(d)) ? d : this.DEFECTO;
+  },
+
+  get(clave, porDefecto = null) {
+    const v = this.datos()[clave];
+    return v === undefined ? porDefecto : v;
+  },
+
+  async set(clave, valor) {
+    const fila = this._fila || { id: this._id(), profile: STATE.profile, data: {} };
+    if (!fila.data || typeof fila.data !== 'object' || Array.isArray(fila.data)) fila.data = {};
+    if (valor == null) delete fila.data[clave]; else fila.data[clave] = valor;
+    fila.updated_at = nowIso();
+    this._fila = fila;
+    try { await DB.put('ui_prefs', fila); } catch (e) { console.warn('Prefs.set', e); }
+    return fila.data;
+  },
+};
+
+/* ============================================================
    SYNC — Supabase + cola
    ============================================================ */
 const SYNC = {
@@ -5685,7 +5916,14 @@ const SYNC = {
   _isPermanentRowError(e) {
     const code = String((e && (e.code || e.error_code)) || '');
     if (/^(22|23)/.test(code)) return true;          // data exception / integrity constraint (Postgres)
+    // La tabla no existe en esta instancia porque falta su `schema-*.sql`. No es
+    // un fallo de red: reintentarlo cada minuto no lo arregla, y tratarlo como
+    // transitorio paraba la cola ENTERA —una tabla nueva sin migrar dejaba de
+    // subir el viaje, el presupuesto y todo lo demás—. La fila se queda en cola
+    // y sube sola el día que se cree la tabla.
+    if (code === 'PGRST205' || code === '42P01') return true;
     const msg = String(e?.message || e?.error_description || '').toLowerCase();
+    if (/could not find the table|does not exist|schema cache/.test(msg)) return true;
     return /violates|check constraint|invalid input|foreign key|not-null|out of range|value too long|duplicate key/.test(msg);
   },
 
@@ -5756,6 +5994,10 @@ const SYNC = {
         if (['trips','packing_templates','travel_docs','visited_countries'].includes(t)) {
           q = q.eq('profile', ownerForRead);
         }
+        // `ui_prefs` es la excepción: no son datos del viaje, son de quien mira.
+        // Por eso va por STATE.profile y no por el dueño: Sergio no hereda la
+        // disposición de la ficha de Rubén.
+        if (t === 'ui_prefs') q = q.eq('profile', STATE.profile);
         const { data, error } = await q;
         if (error) throw error;
         if (data) for (const r of data) { if (await this._mergeRow(t, r)) changed++; }
@@ -5809,6 +6051,10 @@ const SYNC = {
     const local = await DB.db.get(table, remote.id);
     if (!local || (local.updated_at || '') < (remote.updated_at || '')) {
       await DB.db.put(table, remote);
+      // Las preferencias viven en memoria mientras la app está abierta: si no se
+      // relee aquí, la disposición que acabas de cambiar en el móvil no se ve en
+      // el portátil hasta recargar la página.
+      if (table === 'ui_prefs' && remote.id === Prefs._id()) { try { await Prefs.cargar(); } catch (_) {} }
       return true;
     }
     return false;
@@ -6513,7 +6759,7 @@ const UI = {
         UI.toast('Subiendo todos los datos locales…');
         let count = 0;
         // Tablas con profile: solo las del perfil activo
-        for (const tbl of ['trips','packing_templates','travel_docs','visited_countries']) {
+        for (const tbl of ['trips','packing_templates','travel_docs','visited_countries','ui_prefs']) {
           const rows = await DB.db.getAll(tbl).catch(() => []);
           for (const r of rows) {
             if (r.profile !== STATE.profile) continue;
@@ -7099,6 +7345,9 @@ const ProfilePicker = {
     }
     STATE.profile = profileId;
     localStorage.setItem('viajes_profile', profileId);
+    // Antes de pintar nada: la disposición de la ficha se lee de aquí y pintar
+    // primero con el orden de fábrica daría un salto en cuanto llegara.
+    try { await Prefs.cargar(); } catch (_) {}
     SYNC.init();
     // Primero la caché (pintado inmediato con los permisos de la última vez) y
     // luego el servidor, que es quien manda.
@@ -8487,6 +8736,10 @@ const TripDetail = {
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
       try {
         it.notes = ($('#qn-text')?.value || '').trim();
+        // Esta hoja escribe en plano; si el texto ya no es el del HTML con
+        // formato, ese HTML sobra (ver `collect()`).
+        const mdQn = it.metadata || {};
+        if (mdQn.notes_html && notaTexto(mdQn.notes_html) !== it.notes) delete mdQn.notes_html;
         await DB.put('planning_items', it);
         UI.toast('Nota guardada');
       } catch (e) { console.error('quick note', e); UI.toast('No se pudo guardar'); }
@@ -8495,7 +8748,11 @@ const TripDetail = {
     const clear = (it.notes && it.notes.trim()) ? el('button', { class:'btn btn-danger', onclick: async () => {
       const ok = await UI.confirm('¿Borrar la nota de esta parada?');
       if (!ok) return;
-      try { it.notes = ''; await DB.put('planning_items', it); UI.toast('Nota borrada'); }
+      try {
+        it.notes = '';
+        if (it.metadata) delete it.metadata.notes_html;   // borrar la nota la borra entera
+        await DB.put('planning_items', it); UI.toast('Nota borrada');
+      }
       catch (e) { console.error('quick note', e); }
       finally { UI.closeSheet(); Router.renderKeepScroll(); }
     }}, 'Borrar') : null;
@@ -10260,7 +10517,7 @@ const TripDetail = {
 
     // Próximo evento (con hora) aún por venir. Se resalta su TARJETA en el "Planning del
     // día" (abajo); si esa tarjeta no está visible, se pinta una barra "Próximo".
-    const nextEv = nextTimedEvent(planning);
+    const nextEv = avisaProximo(t) ? nextTimedEvent(planning) : null;
     let nextShown = false;
     // (Aquí había una campanita para activar avisos. Los avisos se programaban
     //  con setTimeout dentro de la página, así que morían al descargarla y solo
@@ -10511,6 +10768,26 @@ const TripDetail = {
           d.setDate(d.getDate() + 1);
         }
         items.push({ ...it, _virtual:'checkout', day_date:d2, time: it.consultation_planned_t2 || null });
+      } else if (it.type === 'coche' && d1 && d2 && d1 < d2) {
+        // Un coche de alquiler dura días, como un hotel, pero solo aparecía el
+        // de la recogida: los catorce siguientes no sabías que lo tenías, y el
+        // día de devolverlo no lo ponía en ninguna parte.
+        //
+        // La recogida se queda en su día (es el registro de verdad, el que se
+        // edita). En medio, una fila discreta "Coche alquilado". Y el último
+        // día, la devolución con su hora y su sitio.
+        items.push(it);
+        const _dias = Math.max(1, daysBetween(d1, d2));
+        let d = parseDate(d1); d.setDate(d.getDate() + 1);
+        const fin = parseDate(d2);
+        let _n = 0;
+        while (d < fin) {
+          items.push({ ...it, _virtual:'rental', day_date: isoLocal(d), time:null,
+                       _rentalN: ++_n, _rentalTotal: _dias, _rentalStart: d1, _rentalEnd: d2 });
+          d.setDate(d.getDate() + 1);
+        }
+        items.push({ ...it, _virtual:'return', day_date: d2, time: it.consultation_planned_t2 || null,
+                     _rentalTotal: _dias, _rentalStart: d1, _rentalEnd: d2 });
       } else if ((it.type === 'vuelo' || it.type === 'transporte') && d1 && d2 && d2 > d1) {
         // Vuelo/transporte que llega otro día: la salida queda en su día y añadimos
         // una "llegada" virtual el día de llegada con su hora.
@@ -10961,7 +11238,7 @@ const TripDetail = {
       if (!it._virtual && it.time) _prevTimed = it;
       if (it._virtual === 'night' && !nightCard) nightCard = card;
       // Las "noches" de hotel y las copias 'span' no cuentan como parada para rutas.
-      const skipLeg = (x) => x._virtual === 'night' || x._virtual === 'span';
+      const skipLeg = (x) => x._virtual === 'night' || x._virtual === 'span' || x._virtual === 'rental';
       if (it.lat != null && it.lng != null && !skipLeg(it)) {
         waypoints.push({ lat: it.lat, lng: it.lng });
         lastStopCoords = { lat: it.lat, lng: it.lng };
@@ -11112,7 +11389,7 @@ const TripDetail = {
     // dos fechas, o son el mismo día, el item se muestra normal.
     const items = this._expandHotels(rawItems);
     // Próximo evento con hora (para resaltar su tarjeta en azul, como en el Resumen).
-    const nextEv = nextTimedEvent(rawItems);
+    const nextEv = avisaProximo(t) ? nextTimedEvent(rawItems) : null;
 
     // Orden global: por día asc, luego virtuales/hoteles según planningCompare.
     items.sort((a,b) => (a.day_date || '').localeCompare(b.day_date || '') || planningCompare(a, b));
@@ -11825,6 +12102,8 @@ const TripDetail = {
     const isCheckout = it._virtual === 'checkout';
     const isNight = it._virtual === 'night';
     const isArrival = it._virtual === 'arrival';
+    const isRental = it._virtual === 'rental';     // un día de los de en medio
+    const isReturn = it._virtual === 'return';     // el día de devolverlo
     // Marcar "ya visto" desde la propia pieza de la fila: el número de la ruta,
     // la pastilla de la hora, el disco de la comida o el aro del billete. Es el
     // gesto que se hace sobre la marcha, andando; el menú de acciones era un
@@ -11864,6 +12143,11 @@ const TripDetail = {
       const dest = (it.metadata?.destino) || (it.dest_tz ? it.dest_tz.split('/').pop().replace(/_/g,' ') : '');
       displayTitle = `Llegada${dest ? ' · ' + dest : ''}`;
     }
+    // "Coche alquilado" a secas: los días de en medio no son una parada, solo
+    // te recuerdan que lo tienes ahí aparcado. El nombre del coche y la
+    // compañía van debajo, en el subtítulo.
+    else if (isRental) displayTitle = 'Coche alquilado';
+    else if (isReturn) displayTitle = it.title || 'Devolución del coche';
     // Tipo "personas": el título lista a TODAS las personas seleccionadas
     // (p. ej. "Noelia y María" o "Noelia, María y Belén").
     else if (it.type === 'personas' && Array.isArray(it.people) && it.people.length) {
@@ -11961,6 +12245,17 @@ const TripDetail = {
       // Sin nombre ni hora → sin subtítulo (solo el título, p. ej. "Madrid").
     } else if (isCheckout) {
       // sub claro y corto
+    } else if (isRental) {
+      // Igual que las noches de hotel: se arranca limpio y solo se dice lo justo.
+      subParts.length = 0;
+      const _quien = it.title || (it.metadata || {}).compania || '';
+      // `_rentalTotal` son los días que va de la recogida a la devolución, así
+      // que el total contando los dos extremos es uno más.
+      subParts.push(`Día ${it._rentalN + 1} de ${it._rentalTotal + 1}${_quien ? ' · ' + _quien : ''}`);
+    } else if (isReturn) {
+      subParts.length = 0;
+      const mdR = it.metadata || {};
+      [ mdR.lugar_devolucion, mdR.compania, mdR.matricula ].filter(Boolean).forEach(x => subParts.push(x));
     } else if (it.type === 'hotel' && (it.consultation_planned_d1 || it.consultation_planned_d2)) {
       const ci = it.consultation_planned_d1 ? `Check-in ${fmtDateShort(it.consultation_planned_d1)}${it.consultation_planned_t1 ? ' ' + it.consultation_planned_t1 : ''}` : null;
       const co = it.consultation_planned_d2 ? `Check-out ${fmtDateShort(it.consultation_planned_d2)}${it.consultation_planned_t2 ? ' ' + it.consultation_planned_t2 : ''}` : null;
@@ -11985,7 +12280,7 @@ const TripDetail = {
         ? md.asientos.map(s => [s.nombre, s.asiento].filter(Boolean).join(' ')).filter(Boolean).join(' · ')
         : (md.asiento || '');
       if (seatsStr) subParts.push(seatsStr);
-    } else if (it.type === 'coche') {
+    } else if (it.type === 'coche' && !isVirtual) {
       if (md.compania && !it.title.includes(md.compania)) subParts.push(md.compania);
       if (md.modelo && !it.title.includes(md.modelo)) subParts.push(md.modelo);
       if (md.matricula) subParts.push(md.matricula);
@@ -12042,7 +12337,7 @@ const TripDetail = {
     // Mostrar hora SOLO si:
     //  - el tipo no la oculta (hotel la oculta normalmente) Y hay hora
     //  - O es el check-out virtual (sí mostramos hora ahí)
-    const showTime = (isCheckout && it.time) || (!td.hideTime && it.time);
+    const showTime = ((isCheckout || isReturn) && it.time) || (!td.hideTime && it.time);
     // Para lugar/playa permitimos rango "10:00 – 14:00" si end_time está informado.
     // Si solo hay start_time, mostramos esa. Si solo hay end_time (raro), no mostramos pill.
     const timeRangeText = (() => {
@@ -12160,7 +12455,9 @@ const TripDetail = {
     // versalitas, nombre grande y debajo la hora con los datos.
     const isMeal = (!isVirtual && it.type === 'comida');
     // Check-out: disco gris con la puerta. Cerrar no es lo mismo que llegar.
-    const isOut = isCheckout;
+    // El check-out de un hotel y la devolución del coche son lo mismo: el final
+    // de algo que duraba días. Misma fila, mismo disco, distinto rótulo.
+    const isOut = isCheckout || isReturn;
 
     // Billete: se monta aquí porque necesita el subtítulo ya construido
     // (asientos, localizador, personas…) para la línea de abajo.
@@ -12296,7 +12593,7 @@ const TripDetail = {
       // Comidas: pastilla redonda naranja con los cubiertos, a la izquierda.
       (isMeal && !postal) ? _marcable(el('div', { class:'li-meal', 'aria-hidden':'true' }, el('span', { text: planEmoji(it) }))) : null,
       // Check-out: mismo disco, en gris y con la puerta.
-      (isOut) ? el('div', { class:'li-meal li-out', 'aria-hidden':'true' }, el('span', { text:'🚪' })) : null,
+      (isOut) ? el('div', { class:'li-meal li-out', 'aria-hidden':'true' }, el('span', { text: isReturn ? '🔑' : '🚪' })) : null,
       // Lugares: el orden de la ruta, en un círculo ligero.
       (opts.num && !isVirtual && !postal) ? _marcable(el('div', { class:'li-num' }, el('span', { text: String(opts.num) }))) : null,
       (ticket || postal || isMeal || isOut) ? null : (() => {
@@ -12318,7 +12615,7 @@ const TripDetail = {
       (ticket || postal || opts.num || isMeal || isOut) ? null : el('div', { class:'item-emoji', 'aria-hidden':'true', text: planEmoji(it) }),
       el('div', { class:'li-main', onclick: (e) => TripDetail.openPlanningDetail(t, it, e.currentTarget) }, [
         (isMeal || isOut) ? el('div', { class:'meal-kick' + (isOut ? ' mk-out' : '') }, [
-          el('span', { class:'mk-t', text: isOut ? 'Check-out' : typeLabelFor(it) }),
+          el('span', { class:'mk-t', text: isReturn ? 'Devolución' : isOut ? 'Check-out' : typeLabelFor(it) }),
           el('span', { class:'mk-ln' }),
         ]) : null,
         (ticket || postal)
@@ -12446,7 +12743,7 @@ const TripDetail = {
         return _nightMapCards[isoLocal(d)] || _nightMapCards[kk] || null;
       };
       const _tokenCards = (this._flashRenderToken = {});
-      const _nextEvCards = nextTimedEvent(rawItems);
+      const _nextEvCards = avisaProximo(t) ? nextTimedEvent(rawItems) : null;
       keys.forEach(k => {
         const evs = byDay[k];
         const dayNum = (t.start_date && k !== 'sin-fecha') ? (daysBetween(t.start_date, k) + 1) : null;
@@ -13534,6 +13831,10 @@ const TripDetail = {
     // Lo que se escribe en la ficha (notas, teléfono, WhatsApp, dirección) se
     // guarda al salir del campo: una ficha no tiene botón de Guardar.
     let huboCambios = false;
+    // Modo "ordenar": la ficha se queda como está pero cada bloque saca sus
+    // flechas. No es un dato del viaje, es cómo quiere verlo cada uno, así que
+    // vive en Prefs y no en el registro.
+    let ordenando = false;
     // En fila de uno: cada guardado relee el registro, lo modifica y lo escribe.
     // Dos a la vez (al pasar de un campo a otro con el tabulador, o al salir de
     // la ficha con varios sin guardar) leían los dos la versión de antes y el
@@ -13562,6 +13863,136 @@ const TripDetail = {
       huboCambios = true;
     };
 
+    // --- La nota, con formato -------------------------------------------
+    // `contenteditable` + `execCommand`. Sí, `execCommand` está marcado como
+    // obsoleto, y no hay recambio: lo que se propone en su lugar (la Edit
+    // Context API) no está en Safari, que es el navegador de la mitad de los
+    // viajes. Aquí hace falta negrita, cursiva, subrayado y enlaces en una
+    // página sin build, y esto funciona en todos los navegadores de hoy.
+    //
+    // De regalo, la caja crece con el texto: un <textarea> tenía que elegir
+    // entre un alto fijo con scroll dentro o medirse a mano en cada tecla.
+    const editorNotas = (iti) => {
+      const meta0 = iti.metadata || {};
+      const inicial = meta0.notes_html
+        ? notaSanear(meta0.notes_html)
+        : notaDesdeTexto(iti.notes || '');
+
+      const caja = el('div', {
+        class:'dv-rt', contenteditable: ordenando ? 'false' : 'true',
+        role:'textbox', 'aria-multiline':'true', 'aria-label':'Notas',
+        'data-ph':'Apunta aquí lo que sea…', html: inicial,
+      });
+
+      // Al borrarlo todo, Chrome deja un <br> suelto dentro: la caja ya no está
+      // vacía para el CSS y el texto de ayuda no vuelve a salir nunca.
+      const limpiarVacia = () => { if (!caja.textContent.trim() && !caja.querySelector('a')) caja.innerHTML = ''; };
+
+      const guardarNota = () => {
+        limpiarVacia();
+        const html = notaSanear(caja.innerHTML);
+        return guardarEnFicha({
+          campo: { notes: notaTexto(html) || null },
+          meta:  { notes_html: notaTieneFormato(html) ? html : '' },
+        });
+      };
+      caja.addEventListener('input', limpiarVacia);
+      caja.addEventListener('blur', guardarNota);
+
+      // Pegar trae el HTML del sitio de origen entero: estilos, tablas,
+      // imágenes y lo que haya. Pasa por la misma lista blanca que todo lo
+      // demás en vez de dejar que el navegador inserte lo que quiera.
+      caja.addEventListener('paste', (e) => {
+        const cb = e.clipboardData;
+        if (!cb) return;
+        e.preventDefault();
+        const html = cb.getData('text/html');
+        document.execCommand('insertHTML', false,
+          html ? notaSanear(html) : notaDesdeTexto(cb.getData('text/plain')));
+      });
+
+      // Un enlace dentro de un `contenteditable` no se abre al pulsarlo: el
+      // navegador solo pone el cursor. Se abre cuando la caja NO tenía el foco
+      // —o sea, cuando estabas leyendo—; si ya estabas escribiendo, manda el
+      // cursor, que si no no habría forma de editar el texto del enlace.
+      let teniaFoco = false;
+      caja.addEventListener('mousedown', () => { teniaFoco = document.activeElement === caja; });
+      caja.addEventListener('click', (e) => {
+        const a = e.target.closest && e.target.closest('a');
+        if (!a || teniaFoco || ordenando) return;
+        e.preventDefault();
+        window.open(a.href, '_blank', 'noopener');
+      });
+
+      const cmd = (c) => {
+        // Sin esto Chrome envuelve en <span style="font-weight:bold">, que la
+        // lista blanca tendría que traducir en cada guardado.
+        try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
+        document.execCommand(c);
+        caja.focus();
+      };
+      // `mousedown` con preventDefault: pulsar un botón de la barra no puede
+      // quitarle el foco a la caja, porque con el foco se va la selección y no
+      // quedaría nada que poner en negrita.
+      const boton = (etiqueta, titulo, alPulsar) => el('button', {
+        type:'button', class:'dv-rt-b', title: titulo, 'aria-label': titulo,
+        onmousedown: (e) => e.preventDefault(), onclick: alPulsar, html: etiqueta,
+      });
+
+      const filaEnlace = el('div', { class:'dv-rt-url', style:{display:'none'} });
+      const url = el('input', { type:'url', inputmode:'url', placeholder:'https://…',
+        'aria-label':'Dirección del enlace' });
+      let rango = null;
+      const cerrarUrl = () => { filaEnlace.style.display = 'none'; url.value = ''; rango = null; };
+      const ponerEnlace = () => {
+        let v = (url.value || '').trim();
+        if (!v) { cerrarUrl(); return; }
+        if (!/^[a-z][a-z0-9+.-]*:/i.test(v)) v = 'https://' + v;   // "booking.com" también es un enlace
+        if (rango) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rango); }
+        document.execCommand('createLink', false, v);
+        cerrarUrl();
+        caja.focus();
+        guardarNota();
+      };
+      url.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); ponerEnlace(); }
+        if (e.key === 'Escape') { e.preventDefault(); cerrarUrl(); caja.focus(); }
+      });
+      filaEnlace.append(
+        url,
+        el('button', { type:'button', class:'btn btn-sm btn-primary', onclick: ponerEnlace }, 'Enlazar'),
+        el('button', { type:'button', class:'btn btn-sm', onclick: () => { cerrarUrl(); caja.focus(); } }, 'Cancelar'),
+      );
+
+      const dentroDeEnlace = () => {
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return null;
+        let n = sel.getRangeAt(0).startContainer;
+        n = n.nodeType === 1 ? n : n.parentNode;
+        const a = n && n.closest ? n.closest('a') : null;
+        return (a && caja.contains(a)) ? a : null;
+      };
+
+      const barra = el('div', { class:'dv-rt-bar' }, [
+        boton('<b>B</b>', 'Negrita', () => cmd('bold')),
+        boton('<i>I</i>', 'Cursiva', () => cmd('italic')),
+        boton('<u>U</u>', 'Subrayado', () => cmd('underline')),
+        boton(svg('external'), 'Enlace', () => {
+          if (dentroDeEnlace()) { cmd('unlink'); guardarNota(); return; }
+          const sel = window.getSelection();
+          if (!sel || !sel.rangeCount || sel.isCollapsed || !caja.contains(sel.anchorNode)) {
+            UI.toast('Selecciona primero el texto del enlace');
+            return;
+          }
+          rango = sel.getRangeAt(0).cloneRange();
+          filaEnlace.style.display = 'flex';
+          url.focus();
+        }),
+      ]);
+
+      return el('div', { class:'dv-rt-wrap' }, [ barra, caja, filaEnlace ]);
+    };
+
     const pintar = () => {
       const iti = actual;
       const td  = typeDef(iti.type);
@@ -13579,10 +14010,13 @@ const TripDetail = {
           el('span', { class:'dv-v' }, typeof val === 'string' ? [el('span', { text: val })] : [val]),
         ]);
       };
-      const bloque = (titulo, hijos) => {
+      // Cada bloque se guarda por su id en vez de colgarse del cuerpo al vuelo:
+      // el orden lo decide `ordenFicha()` al final, no el orden del código.
+      const secciones = {};
+      const bloque = (id, titulo, hijos) => {
         const kids = hijos.filter(Boolean);
-        if (!kids.length) return null;
-        return el('section', { class:'dv-block' }, [
+        if (!kids.length) return;
+        secciones[id] = el('section', { class:'dv-block', data:{ bloque:id } }, [
           el('h4', { class:'dv-h', text: titulo }),
           ...kids,
         ]);
@@ -13694,7 +14128,7 @@ const TripDetail = {
       // se leía en ningún sitio. Aquí se compara con la hora planeada: es lo
       // que cuenta de verdad cómo fue el día.
       cuando.push(TripDetail._filaHoraReal(iti, fila));
-      cuerpo.appendChild(bloque('Cuándo', cuando) || el('span'));
+      bloque('cuando', 'Cuándo', cuando);
 
       // --- Dónde ---
       const dirUrl = (iti.lat != null && iti.lng != null)
@@ -13711,28 +14145,28 @@ const TripDetail = {
       // La dirección se escribe aquí: los tipos de traslado (vuelo, taxi, coche)
       // no tienen dónde ponerla en el editor y es justo donde más falta hace,
       // porque es la que le enseñas al conductor.
-      cuerpo.appendChild(bloque('Dónde', [
+      bloque('donde', 'Dónde', [
         fila('Lugar', iti.place_name || null),
         filaEdit('Dirección', iti.address, (v) => guardarEnFicha({ campo:{ address: v || null } }),
           { placeholder:'Calle, número, ciudad…', autocomplete:'street-address' }),
         fila('Zona', iti.area || null),
         botonesMapa,
-      ]) || el('span'));
+      ]);
 
       // --- Contacto ---
-      cuerpo.appendChild(bloque('Contacto', [
+      bloque('contacto', 'Contacto', [
         filaEdit('Teléfono', md.telefono, (v) => guardarEnFicha({ meta:{ telefono: v } }),
           { tipo:'tel', inputmode:'tel', placeholder:'+34 600 00 00 00', accion: botonContacto('tel') }),
         filaEdit('WhatsApp', md.whatsapp, (v) => guardarEnFicha({ meta:{ whatsapp: v } }),
           { tipo:'tel', inputmode:'tel', placeholder:'+34 600 00 00 00', accion: botonContacto('wa') }),
         el('div', { class:'field-hint', text:'WhatsApp necesita el prefijo del país (+34, +57…) para abrir el chat.' }),
-      ]));
+      ]);
 
       // --- Datos propios del tipo (los mismos campos que pide el editor) ---
       const def = PLANNING_METADATA[iti.type];
       // El contacto ya tiene su bloque arriba; sin esto volvería a salir en el
       // repaso de claves sueltas de metadata.
-      const vistos = new Set(['end_date', ...CAMPOS_CONTACTO]);
+      const vistos = new Set(['end_date', ...CAMPOS_FICHA]);
       const datos = [];
       if (def) {
         const modo = md.modo || '';
@@ -13765,43 +14199,91 @@ const TripDetail = {
         const lbl = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
         datos.push(fila(lbl, /^https?:\/\//i.test(String(v)) ? enlace(String(v)) : String(v)));
       });
-      cuerpo.appendChild(bloque(def ? def.label : 'Datos', datos) || el('span'));
+      bloque('datos', def ? def.label : 'Datos', datos);
 
       // --- Reserva y dinero ---
       const presu = this._budgetByPlanningId?.[iti.id];
       const importe = presu ? fmtMoney(presu.amount, presu.currency || 'EUR')
         : (iti.consultation_price != null ? fmtMoney(iti.consultation_price, iti.consultation_currency || 'EUR') : null);
-      cuerpo.appendChild(bloque('Reserva', [
+      bloque('reserva', 'Reserva', [
         statusDef ? fila('Estado', el('span', { class:`dv-badge s-${status}`, text: statusDef.label })) : null,
         canSeeMoney() ? fila('Importe', importe) : null,
         (iti.consultation_url && canSeeLinks()) ? fila('Enlace', enlace(iti.consultation_url)) : null,
         iti.expense_reminder ? fila('Aviso', '⚠️ Pendiente de añadir el gasto') : null,
         iti.visited ? fila('Visitado', 'Sí') : null,
-      ]) || el('span'));
+      ]);
 
       // --- Personas ---
       const gente = Array.isArray(iti.people) ? iti.people.filter(Boolean) : [];
-      cuerpo.appendChild(bloque('Quién', [
+      bloque('quien', 'Quién', [
         gente.length ? el('div', { class:'dv-chips' }, gente.map(p => el('span', { class:'dv-chip', text:p }))) : null,
-      ]) || el('span'));
+      ]);
 
       // --- Notas ---
       // Editables: la nota se escribe cuando estás delante de la parada (el
       // camarero, el horario que te han dicho, el número de la habitación), no
       // cuando abres el editor a planificar.
-      cuerpo.appendChild(bloque('Notas', [
-        el('textarea', { class:'dv-ta', rows:'3', placeholder:'Apunta aquí lo que sea…',
-          text: iti.notes || '',
-          onchange: (e) => guardarEnFicha({ campo:{ notes: e.target.value.trim() || null } }) }),
-      ]));
+      bloque('notas', 'Notas', [ editorNotas(iti) ]);
+
+      // --- Y ahora, en el orden que tenga puesto cada uno ---
+      const orden = ordenFicha();
+      const visibles = orden.filter(id => secciones[id]);
+      if (ordenando) {
+        cuerpo.appendChild(el('div', { class:'dv-ord-hint' }, [
+          el('span', { text:'Sube y baja los bloques con las flechas. El orden se guarda para todas las paradas y en todos tus dispositivos.' }),
+          el('button', { class:'btn btn-sm btn-primary', onclick: () => btnOrden.click() }, 'Listo'),
+        ]));
+      }
+      // Se mueve sobre la lista COMPLETA, no sobre la de lo que hoy se ve: en un
+      // vuelo no hay "Quién", y si el orden guardado solo llevara los bloques de
+      // esta parada, el sitio de los demás se perdería al ordenar aquí.
+      const mover = async (id, dir) => {
+        const i = visibles.indexOf(id), j = i + dir;
+        if (i < 0 || j < 0 || j >= visibles.length) return;
+        const completo = orden.slice();
+        const a = completo.indexOf(visibles[i]), b2 = completo.indexOf(visibles[j]);
+        [completo[a], completo[b2]] = [completo[b2], completo[a]];
+        // Repintar tira el DOM entero: si hay una nota a medio guardar, primero
+        // se deja que termine de escribirse.
+        try { await colaGuardado; } catch (_) {}
+        await Prefs.set('ficha_orden', completo);
+        huboCambios = false;                     // es una preferencia, no un dato del viaje
+        pintar();
+      };
+      visibles.forEach((id, i) => {
+        const sec = secciones[id];
+        if (ordenando) {
+          sec.querySelector('.dv-h').appendChild(el('span', { class:'dv-ord' }, [
+            el('button', { class:'icon-btn', title:'Subir', 'aria-label':'Subir este bloque', html: svg('arrup'),
+              disabled: i === 0 ? true : null, onclick: () => mover(id, -1) }),
+            el('button', { class:'icon-btn', title:'Bajar', 'aria-label':'Bajar este bloque', html: svg('arrdown'),
+              disabled: i === visibles.length - 1 ? true : null, onclick: () => mover(id, 1) }),
+          ]));
+        }
+        cuerpo.appendChild(sec);
+      });
 
       titulo.textContent = iti.title || td.label;
     };
 
     const titulo = el('div', { class:'dv-name' });
+    // Ordenar no es editar el viaje: es cómo quiere ver la ficha quien mira,
+    // así que también lo puede hacer quien entra en modo lector.
+    const btnOrden = el('button', { class:'icon-btn dv-ord-btn', title:'Ordenar los bloques',
+      'aria-label':'Ordenar los bloques', 'aria-pressed':'false', html: svg('grip'),
+      onclick: async () => {
+        ordenando = !ordenando;
+        btnOrden.classList.toggle('on', ordenando);
+        btnOrden.setAttribute('aria-pressed', ordenando ? 'true' : 'false');
+        btnOrden.title = ordenando ? 'Listo' : 'Ordenar los bloques';
+        overlay.classList.toggle('dv-ordenando', ordenando);
+        try { await colaGuardado; } catch (_) {}
+        pintar();
+      } });
     overlay.appendChild(el('div', { class:'dv-top' }, [
       el('button', { class:'flash-close', 'aria-label':'Cerrar', onclick: cerrar, html: svg('close') }),
       titulo,
+      btnOrden,
       canEdit() ? el('button', { class:'btn btn-primary btn-sm dv-edit', onclick: editar },
         [el('span', { html: svg('edit') }), 'Editar']) : null,
     ].filter(Boolean)));
@@ -14119,7 +14601,11 @@ const TripDetail = {
       hotel:      { titulo:'Estancia', d1:'Desde',    d2:'Hasta',      withTime:true,  hint:'El alojamiento aparece como noche al final de cada día del rango; la salida (check-out), al inicio del último día.' },
       vuelo:      { titulo:'Horario',  d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
       transporte: { titulo:'Horario',  d1:'Salida',   d2:'Llegada',    withTime:true,  hint:'Si la llegada es en otro día, también se mostrará ese día en el planning.' },
-      coche:      { titulo:'Alquiler', d1:'Recogida', d2:'Devolución', withTime:false, hint:'' },
+      // `withTime:true` desde que el alquiler se reparte por los días: la hora
+      // de devolverlo es justo el dato que hace falta el último día, y hasta
+      // ahora el editor no tenía dónde ponerla.
+      coche:      { titulo:'Alquiler', d1:'Recogida', d2:'Devolución', withTime:true,
+                    hint:'El coche aparece como "Coche alquilado" en los días de en medio, y la devolución —con su hora— el último.' },
     };
     const datesBlock = el('div', { id:'dates-block', class:'form-row' });
     // Input de hora con botón ✕ para vaciarlo (en iOS el time nativo no se puede
@@ -15354,7 +15840,14 @@ const TripDetail = {
       }
       // Lo que la ficha escribe y el editor no pide (teléfono, WhatsApp) sobrevive
       // a este guardado; sin esto, tocar cualquier campo del editor lo perdería.
-      CAMPOS_CONTACTO.forEach(k => { if (metaAntes[k]) it.metadata[k] = metaAntes[k]; });
+      CAMPOS_FICHA.forEach(k => { if (metaAntes[k]) it.metadata[k] = metaAntes[k]; });
+      // …salvo la nota con formato si aquí se ha reescrito el texto: este campo
+      // es un <textarea> en plano, y quedarse con un HTML que ya no dice lo
+      // mismo es peor que perder la negrita. El texto que se acaba de escribir
+      // manda.
+      if (it.metadata.notes_html && notaTexto(it.metadata.notes_html) !== (it.notes || '').trim()) {
+        delete it.metadata.notes_html;
+      }
       // Duración de visita + modo de llegada (se guardan en metadata jsonb, que sí
       // sincroniza). Solo para tipos que son "visitas".
       const VISIT_TYPES_SAVE = ['lugar', 'personas', 'playa', 'comida', 'compras', 'actividad', 'otro', 'gestion'];

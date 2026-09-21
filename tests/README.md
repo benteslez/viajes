@@ -46,6 +46,7 @@ tests/
     ├── calendario.js        exportar el viaje a .ics
     ├── carrusel.js          un día por pantalla, deslizar, saltar, teclado
     ├── carrusel-perezoso.js los días de al lado no se pintan hasta que hacen falta
+    ├── coche-alquiler.js    "Coche alquilado" los días de en medio y la devolución
     ├── correr-dia.js        correr las horas de un día y la hora real vs. planeada
     ├── dias-pasados.js      días pasados apagados pero accesibles; abrir en hoy
     ├── editor-parada.js     el asistente de dos pasos y el orden del formulario
@@ -53,12 +54,15 @@ tests/
     ├── fechas-viaje.js      tira de días y el editor de fechas ("Sin fecha")
     ├── ficha.js             la ficha de una parada: abrir, cerrar, cambiar tipo
     ├── ficha-contacto.js    notas, teléfono, WhatsApp y dirección desde la ficha
+    ├── ficha-orden.js       mover de sitio los bloques de la ficha, sincronizado
     ├── fotos-copia.js       la copia en JSON y el ZIP de fotos
     ├── gasto-rapido.js      apuntar un gasto en dos toques y el conversor
     ├── llego.js             cuánto queda hasta la próxima parada, con GPS
     ├── mapa-offline.js      guardar las teselas del mapa para verlo sin datos
     ├── marcar-visto.js      marcar paradas y el resumen con pestañas deslizables
     ├── menu-parada.js       el menú único (••• y pulsación larga)
+    ├── nota-formato.js      negrita, cursiva, subrayado y enlaces en la nota
+    ├── proximo.js           el cartel "Próximo", solo a tres días del viaje
     └── tarjetas.js          billete, llave del hotel y postal de playa
 ```
 
