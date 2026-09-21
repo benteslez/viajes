@@ -1269,6 +1269,37 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 .timeline-list .gap-chip { margin-left:62px; }
 /* La noche de continuación sigue el mismo patrón de fila */
 
+/* Gasto rápido — el importe manda, en grande y con el teclado numérico. */
+.qe .qe-amount {
+  font-size:34px; font-weight:800; letter-spacing:-.03em; text-align:center;
+  padding:14px 12px; font-feature-settings:"tnum";
+}
+.qe-cats { display:flex; flex-wrap:wrap; gap:7px; }
+.qe-cat {
+  border:1px solid var(--line); background:var(--bg-elev); color:var(--text);
+  border-radius:var(--r-pill); padding:8px 14px; cursor:pointer;
+  font-family:inherit; font-size:13px; font-weight:700;
+}
+.qe-cat.on { background:var(--text); border-color:var(--text); color:var(--text-inv); }
+.qe .qe-mas { width:100%; justify-content:center; margin-top:4px; }
+
+/* Conversor del presupuesto. */
+.conv { border:1px solid var(--line); border-radius:var(--r-md); margin-bottom:18px; }
+.conv > summary {
+  display:flex; align-items:baseline; gap:9px; cursor:pointer; list-style:none;
+  padding:11px 13px; font-size:14px; font-weight:800; letter-spacing:-.01em;
+}
+.conv > summary::-webkit-details-marker { display:none; }
+.conv > summary::after {
+  content:''; margin-left:auto; flex:none; width:7px; height:7px;
+  border-right:2px solid var(--text-muted); border-bottom:2px solid var(--text-muted);
+  transform:rotate(45deg) translate(-2px,-2px); transition:transform .18s var(--ease);
+}
+.conv[open] > summary::after { transform:rotate(-135deg) translate(-2px,-2px); }
+.conv .conv-s { font-size:12px; font-weight:600; color:var(--text-muted); }
+.conv-body { padding:0 13px 13px; }
+.conv-body input { font-size:17px; font-weight:700; font-feature-settings:"tnum"; }
+
 /* ======================================================================
    TIRA DE DÍAS — cuadraditos con la fecha, arrastrables en horizontal.
    Un toque abre la tarjeta de ese día (desplegándose desde el cuadradito).
@@ -8137,6 +8168,12 @@ const TripDetail = {
     }
     // Las fotos del día solo están aquí: ni se sincronizan ni entran en la copia
     // de seguridad en JSON. Este es el único sitio desde el que salen.
+    if (canEdit() && canSeeMoney()) {
+      items.unshift({
+        icon: svg('money'), label: 'Gasto rápido',
+        onclick: () => { UI.closeSheet(); TripDetail.openQuickExpense(t); }
+      });
+    }
     items.push({
       icon: svg('cal'), label: 'Añadir al calendario',
       onclick: () => { UI.closeSheet(); Exporter.ics(t); }
@@ -15180,13 +15217,20 @@ const TripDetail = {
   },
 
   /* ----- Presupuesto ----- */
-  async tabPresupuesto(root, t) {
+  async tabPresupuesto(root, t, fab) {
     const items = (await DB.listByTrip('budget_items', t.id))
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
+    if (fab && canEdit()) {
+      fab.hidden = false;
+      fab.title = 'Gasto rápido';
+      fab.setAttribute('aria-label', 'Añadir un gasto');
+      fab.onclick = () => TripDetail.openQuickExpense(t);
+    }
+
     if (canEdit()) {
       root.appendChild(el('div', { class:'toolbar' }, [
-        el('button', { class:'btn btn-primary', onclick: () => TripDetail.openBudgetEditor(t) }, [
+        el('button', { class:'btn btn-primary', onclick: () => TripDetail.openQuickExpense(t) }, [
           el('span', { html: svg('plus') }), 'Añadir gasto'
         ]),
         el('button', { class:'btn btn-sm', onclick: async () => {
@@ -15194,6 +15238,12 @@ const TripDetail = {
         }}, [ el('span', { html: svg('refresh') }), 'Actualizar tasas' ]),
       ]));
     }
+
+    // Conversor. Las tasas ya se bajan y se cachean 6 h para pasar los gastos a
+    // euros: usarlas también para echar una cuenta en la caja de un mercado
+    // sale gratis, y es lo que más se hace estando fuera.
+    const _conv = TripDetail._conversor(t);
+    if (_conv) root.appendChild(_conv);
 
     // Métricas
     const total = items.reduce((a, b) => a + (Number(b.amount_eur) || 0), 0);
@@ -15404,15 +15454,165 @@ const TripDetail = {
     root.appendChild(list);
   },
 
-  async openBudgetEditor(t, existing = null) {
+  // Conversor de ida y vuelta entre la moneda del viaje y el euro. Sin botón de
+  // "convertir": se escribe en cualquiera de los dos lados y el otro sigue.
+  _conversor(t) {
+    const cur = (t.default_currency || 'EUR').toUpperCase();
+    if (cur === 'EUR') return null;                  // no hay nada que convertir
+    const tasa = FX.rateToEur(cur);
+    if (!tasa) return null;                          // sin tasa para esa moneda
+
+    const izq = el('input', { type:'number', step:'0.01', inputmode:'decimal', placeholder:'0' });
+    const der = el('input', { type:'number', step:'0.01', inputmode:'decimal', placeholder:'0' });
+    const redondo = (n) => (isFinite(n) && n !== 0) ? String(+n.toFixed(2)) : '';
+    // `mudo` evita el ping-pong: al escribir en un lado se rellena el otro, y
+    // ese relleno no debe volver a disparar el cálculo de vuelta.
+    let mudo = false;
+    const atar = (origen, destino, factor) => origen.addEventListener('input', () => {
+      if (mudo) return;
+      mudo = true;
+      const n = parseFloat(origen.value);
+      destino.value = isFinite(n) ? redondo(n * factor) : '';
+      mudo = false;
+    });
+    atar(izq, der, tasa);
+    atar(der, izq, 1 / tasa);
+
+    const campo = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { text: lbl }), inp ]);
+    return el('details', { class:'conv' }, [
+      el('summary', {}, [
+        el('span', { class:'conv-t', text:'Conversor' }),
+        // Al revés a propósito: con una moneda débil, "1 COP ≈ 0,00 €" no dice
+        // nada, y "1 € ≈ 4.000 COP" es justo como se piensa estando allí.
+        el('span', { class:'conv-s', text:`1 € ≈ ${fmtMoney(1 / tasa, cur)}` }),
+      ]),
+      el('div', { class:'conv-body' }, [
+        el('div', { class:'form-grid-2' }, [ campo(cur, izq), campo('EUR', der) ]),
+        el('p', { class:'field-hint', style:{ margin:'2px 0 0' },
+          text:'Tasa de la última vez que hubo red. «Actualizar tasas» la refresca.' }),
+      ]),
+    ]);
+  },
+
+  // Gasto en tres toques. En un viaje se apunta un gasto diez veces al día, y
+  // el editor completo pide concepto, categoría, estado, importe, moneda,
+  // fecha, notas y una casilla: demasiado para un café. Aquí solo el importe,
+  // en grande y con el teclado numérico ya abierto, más el concepto y la
+  // categoría. La fecha es hoy, la moneda la del viaje, el estado "pagado"
+  // (si lo estás apuntando sobre la marcha, ya lo has pagado). Lo demás se
+  // retoca luego desde el editor de siempre.
+  openQuickExpense(t, opts) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
-    const b = existing || {
+    opts = opts || {};
+    const moneda = (opts.currency || t.default_currency || 'EUR').toUpperCase();
+    let categoria = opts.category || 'comida';
+
+    const importe = el('input', { id:'qe-amount', type:'number', step:'0.01', inputmode:'decimal',
+      class:'qe-amount', placeholder:'0', autofocus:true });
+    const concepto = el('input', { id:'qe-concept', type:'text', placeholder:'Café, taxi, entradas…' });
+    const cats = el('div', { class:'qe-cats' });
+    const pintarCats = () => {
+      cats.innerHTML = '';
+      CATS_BUDGET.forEach(c => cats.appendChild(el('button', {
+        type:'button', class:'qe-cat' + (categoria === c.id ? ' on' : ''),
+        'aria-pressed': categoria === c.id ? 'true' : 'false',
+        onclick: () => { categoria = c.id; pintarCats(); },
+      }, c.label)));
+    };
+    pintarCats();
+
+    // Lo que suena a algo ya dice de qué es: si escribes "taxi" no hace falta
+    // que además toques la categoría.
+    const PISTAS = [
+      [/\b(taxi|uber|metro|bus|tren|gasolin|peaje|parking|billete|vuelo)\b/i, 'transporte'],
+      [/\b(hotel|hostal|airbnb|noche|aloj)\b/i, 'alojamiento'],
+      [/\b(caf[eé]|desayuno|comida|cena|almuerzo|restaurante|cerveza|bar|men[uú])\b/i, 'comida'],
+      [/\b(entrada|museo|tour|excursi|guia|guía|ticket)\b/i, 'actividades'],
+      [/\b(souvenir|regalo|tienda|ropa|mercado)\b/i, 'compras'],
+    ];
+    let tocada = false;
+    cats.addEventListener('click', () => { tocada = true; }, true);
+    concepto.addEventListener('input', () => {
+      if (tocada) return;
+      const v = concepto.value;
+      const m = PISTAS.find(([re]) => re.test(v));
+      if (m && categoria !== m[1]) { categoria = m[1]; pintarCats(); }
+    });
+
+    const equiv = el('div', { class:'field-hint', style:{ marginTop:'6px' } });
+    const refrescarEquiv = () => {
+      const n = parseFloat(importe.value);
+      const tasa = FX.rateToEur(moneda);
+      equiv.textContent = (moneda !== 'EUR' && isFinite(n) && n > 0 && tasa)
+        ? `≈ ${fmtMoney(n * tasa, 'EUR')}` : '';
+    };
+    importe.addEventListener('input', refrescarEquiv);
+
+    const guardar = async (seguirAñadiendo) => {
+      const n = parseFloat(importe.value);
+      if (!isFinite(n) || n <= 0) { UI.toast('Pon un importe'); importe.focus(); return; }
+      const texto = (concepto.value || '').trim()
+        || (CATS_BUDGET.find(c => c.id === categoria) || {}).label || 'Gasto';
+      const tasa = FX.rateToEur(moneda) ?? 1;
+      try {
+        await DB.put('budget_items', {
+          id: uuid(), trip_id: t.id, planning_item_id: null,
+          category: categoria, concept: texto, amount: n, currency: moneda,
+          rate_to_eur: tasa, amount_eur: +(n * tasa).toFixed(2),
+          status: 'pagado', date: todayIso(), notes: '',
+        });
+      } catch (e) { console.error(e); UI.toast('No se pudo guardar'); return; }
+      if (seguirAñadiendo) {
+        // Apuntar varios seguidos es lo normal al final del día: se limpia y
+        // se deja el foco puesto, sin cerrar ni repintar la pantalla de detrás.
+        UI.toast(`${fmtMoney(n, moneda)} · ${texto}`);
+        importe.value = ''; concepto.value = ''; tocada = false; refrescarEquiv();
+        importe.focus();
+        return;
+      }
+      UI.closeSheet();
+      UI.toast(`Gasto de ${fmtMoney(n, moneda)} apuntado`);
+      Router.render();
+    };
+
+    UI.openSheet({
+      title: 'Gasto rápido',
+      body: el('div', { class:'qe' }, [
+        el('div', { class:'form-row' }, [
+          el('label', { text:`Importe (${moneda})` }),
+          importe, equiv,
+        ]),
+        el('div', { class:'form-row' }, [ el('label', { text:'Concepto' }), concepto ]),
+        el('div', { class:'form-row' }, [ el('label', { text:'Categoría' }), cats ]),
+        el('button', { type:'button', class:'btn btn-ghost qe-mas', onclick: () => {
+          // Lo que no cabe aquí (fecha, estado, notas, enlazar un evento) vive
+          // en el editor de siempre: se abre con lo que ya se haya escrito.
+          const n = parseFloat(importe.value);
+          UI.closeSheet();
+          setTimeout(() => TripDetail.openBudgetEditor(t, null, {
+            category: categoria, concept: (concepto.value || '').trim(),
+            amount: isFinite(n) ? n : 0, currency: moneda, status: 'pagado',
+          }), 220);
+        } }, 'Más opciones…'),
+      ]),
+      footer: [
+        el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'),
+        el('button', { class:'btn', onclick: () => guardar(true) }, 'Guardar y otro'),
+        el('button', { class:'btn btn-primary', onclick: () => guardar(false) }, 'Guardar'),
+      ],
+    });
+    setTimeout(() => importe.focus(), 260);
+  },
+
+  async openBudgetEditor(t, existing = null, prefill = null) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const b = existing || Object.assign({
       id: uuid(), trip_id: t.id, planning_item_id: null,
       category: 'comida', concept: '', amount: 0,
       currency: t.default_currency || 'EUR',
       rate_to_eur: 1, amount_eur: 0,
       status: 'planeado', date: todayIso(), notes: '',
-    };
+    }, prefill || {});
     // El "modo" de transporte NO se guarda en el gasto (su tabla no tiene esa columna y
     // quedaría local-only). Se lee/escribe en el EVENTO enlazado, que sincroniza por su
     // metadata jsonb. Aquí solo lo precargamos desde ese evento si existe.
