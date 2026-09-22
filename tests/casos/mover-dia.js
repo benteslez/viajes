@@ -21,7 +21,9 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     }, dia);
     await sleep(p, 1000);
   };
-  const filas = () => p.evaluate(() => [...document.querySelectorAll('.cd-lista .cd-fila')].map((f) => ({
+  // Las de un día. Las de varios comparten la clase `.cd-fila` pero se leen
+  // aparte: no tienen casilla, tienen tres opciones.
+  const filas = () => p.evaluate(() => [...document.querySelectorAll('.cd-lista .cd-fila:not(.cd-rango)')].map((f) => ({
     tit: f.querySelector('.cd-tit').textContent,
     de: f.querySelector('.cd-hora s').textContent,
     a: f.querySelector('.cd-hora b').textContent,
@@ -63,30 +65,82 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   pi = await pie();
   ok(/Mover \d+ parada/.test(pi.texto), 'y el botón dice cuántas se mueven', pi.texto);
 
-  titulo('UNA RESERVA DE VARIOS DÍAS SE LLEVA SUS DOS FECHAS');
-  // Si no, mover el día de la recogida dejaría un coche de nueve días
-  // convertido en uno de dos.
+  titulo('UNA RESERVA DE VARIOS DÍAS NO ES UN SÍ O NO');
+  // Moverla arrastra su otra punta, y eso a veces es lo que quieres y a veces
+  // no: el hotel se queda y lo que cambias son las excursiones. Así que se
+  // pregunta, y si hay dos —hotel Y coche— se pregunta por las dos a la vez.
   await p.evaluate(() => UI.closeSheet()); await sleep(p, 500);
-  const rango = await p.evaluate(async (d) => {
+  await p.evaluate(async (d) => {
+    const h = await DB.get('planning_items', 'hotel-demo');
+    h.day_date = d.manana; h.consultation_planned_d1 = d.manana; h.consultation_planned_d2 = d.fin;
+    await DB.put('planning_items', h);
     await DB.put('planning_items', { id:'coche-mv', trip_id:'trip-demo-1', profile:dataProfile(),
       type:'coche', title:'Coche', order_index:0, day_date:d.manana,
       consultation_planned_d1:d.manana, consultation_planned_t1:'10:00',
       consultation_planned_d2:d.fin, consultation_planned_t2:'18:00', metadata:{} });
-    return true;
   }, d);
-  ok(rango, 'sembrado un coche de varios días');
   await abrirHoja(d.manana);
-  await chip('+7'); await sleep(p, 400);
-  const fCoche = (await filas()).find((x) => x.tit === 'Coche');
-  ok(fCoche && / – /.test(fCoche.de) && / – /.test(fCoche.a),
-    'en la lista enseña las dos fechas, antes y después', fCoche);
+  const rangos = () => p.evaluate(() => [...document.querySelectorAll('.cd-rango')].map((r) => ({
+    tit: r.querySelector('.cd-tit').textContent,
+    de: r.querySelector('.md-fechas s').textContent,
+    a: r.querySelector('.md-fechas b').textContent,
+    ops: [...r.querySelectorAll('.md-op')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')),
+    etiquetas: [...r.querySelectorAll('.md-manos span')].map((x) => x.textContent),
+    manos: [...r.querySelectorAll('.md-manos input')].map((i) => i.value),
+    primeroDeLaLista: r === document.querySelector('.cd-lista > *'),
+  })));
+  let rg = await rangos();
+  ok(rg.length === 2, 'las dos reservas preguntan en la misma hoja', rg.map((x) => x.tit));
+  ok(rg.every((x) => JSON.stringify(x.ops) === '["Mover todo*","Dejarla","A mano"]'),
+    'cada una con sus tres opciones, y "mover todo" de salida', rg[0].ops);
+  ok(rg.some((x) => x.primeroDeLaLista),
+    'y arriba del todo: al final de quince paradas no las vería nadie');
+  ok(rg.every((x) => / – /.test(x.de)), 'enseñando el rango entero, no solo el primer día', rg[0].de);
+  ok(!(await filas()).some((x) => /Coche|Hotel Buenos/.test(x.tit)),
+    'y ya no salen como una casilla más', (await filas()).map((x) => x.tit));
 
-  titulo('DESMARCAR DEJA UNA PARADA DONDE ESTABA');
-  await p.evaluate(() => {
-    const f = [...document.querySelectorAll('.cd-lista .cd-fila')].find((x) => x.querySelector('.cd-tit').textContent === 'Coche');
-    f.querySelector('input').click();
-  });
-  await sleep(p, 400);
+  titulo('MOVER TODO ARRASTRA LAS DOS FECHAS');
+  await chip('+7'); await sleep(p, 400);
+  rg = await rangos();
+  ok(rg.every((x) => / – /.test(x.a) && x.a !== x.de),
+    'las dos puntas se mueven juntas: un coche de nueve días sigue siendo de nueve', rg[0]);
+  await p.screenshot({ path: captura('mover-rangos.png') });
+
+  titulo('DEJARLA DONDE ESTÁ');
+  const pulsar = async (quien, op) => {
+    await p.evaluate(([q, o]) => {
+      const r = [...document.querySelectorAll('.cd-rango')].find((x) => new RegExp(q).test(x.querySelector('.cd-tit').textContent));
+      [...r.querySelectorAll('.md-op')].find((b) => b.textContent === o).click();
+    }, [quien, op]);
+    await sleep(p, 400);
+  };
+  await pulsar('Hotel', 'Dejarla');
+  rg = await rangos();
+  const hotel = rg.find((x) => /Hotel/.test(x.tit));
+  ok(hotel.a === 'se queda', 'lo dice en la propia fila, sin tener que adivinarlo', hotel.a);
+
+  titulo('O PONER LAS FECHAS A MANO');
+  await pulsar('Coche', 'A mano');
+  rg = await rangos();
+  const coche0 = rg.find((x) => /Coche/.test(x.tit));
+  ok(JSON.stringify(coche0.etiquetas) === '["Recogida","Devolución"]',
+    'con las palabras del tipo: un coche se recoge y se devuelve', coche0.etiquetas);
+  ok(coche0.manos[0] === destino, 'y ya vienen puestas en la fecha nueva, para retocar', coche0.manos);
+  const finRaro = await mas(d.fin, 18);
+  await p.evaluate(async (fin) => {
+    const r = [...document.querySelectorAll('.cd-rango')].find((x) => /Coche/.test(x.querySelector('.cd-tit').textContent));
+    const ins = r.querySelectorAll('.md-manos input');
+    ins[1].value = fin; ins[1].dispatchEvent(new Event('change'));
+    await new Promise((r2) => setTimeout(r2, 300));
+  }, finRaro);
+  await p.screenshot({ path: captura('mover-rangos-mano.png') });
+
+  titulo('EL BOTÓN NO CUENTA DOS VECES');
+  const pi2 = await pie();
+  const sueltas = (await filas()).filter((x) => x.marcada).length;
+  ok(pi2.texto === `Mover ${sueltas + 1} paradas`,
+    'las sueltas marcadas más la reserva que sí se mueve', `${pi2.texto} · sueltas ${sueltas}`);
+
   const antesOrigen = await enDia(d.manana);
   const antesDestino = await enDia(destino);
   await p.evaluate(() => document.querySelector('#sheet-foot .btn-primary').click());
@@ -95,14 +149,19 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   titulo('LO QUE QUEDA DESPUÉS');
   const trasOrigen = await enDia(d.manana);
   const trasDestino = await enDia(destino);
-  ok(trasOrigen === 1, 'en el origen solo queda lo que se desmarcó', `${antesOrigen} → ${trasOrigen}`);
-  ok(trasDestino === antesDestino + (antesOrigen - 1),
-    'y el resto está en el destino', `${antesDestino} → ${trasDestino}`);
-  const coche = await p.evaluate(async () => {
-    const x = await DB.get('planning_items', 'coche-mv');
-    return { d1: x.consultation_planned_d1, d2: x.consultation_planned_d2 };
+  ok(trasOrigen === 1, 'en el origen solo queda el hotel que se dejó', `${antesOrigen} → ${trasOrigen}`);
+  ok(trasDestino > antesDestino, 'y el resto está en el destino', `${antesDestino} → ${trasDestino}`);
+  const guardado = await p.evaluate(async () => {
+    const g = async (id) => { const x = await DB.get('planning_items', id);
+      return { d1: x.consultation_planned_d1, d2: x.consultation_planned_d2, dia: x.day_date }; };
+    return { hotel: await g('hotel-demo'), coche: await g('coche-mv') };
   });
-  ok(coche.d1 === d.manana, 'el coche desmarcado no se ha movido', coche);
+  ok(guardado.hotel.d1 === d.manana && guardado.hotel.d2 === d.fin,
+    'el hotel no se ha movido ni un día', guardado.hotel);
+  ok(guardado.coche.d1 === destino && guardado.coche.d2 === finRaro,
+    'y el coche tiene exactamente las fechas que se escribieron', guardado.coche);
+  ok(guardado.coche.dia === destino,
+    'con el día de la parada puesto en la recogida, no donde estaba', guardado.coche.dia);
   const restos = await p.evaluate(async () => {
     const its = (await DB.listByTrip('planning_items', 'trip-demo-1')).filter((x) => !x.deleted_at);
     return its.flatMap((x) => Object.keys(x).filter((k) => k.startsWith('_')));
