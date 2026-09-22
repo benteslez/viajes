@@ -114,13 +114,14 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
       return n ? { title: n.getAttribute('title'), aria: n.getAttribute('aria-label') } : null; };
     return { hoy: c(d.hoy), manana: c(d.manana), sinEtiqueta: c(d.pasado) };
   });
-  ok(/Tulum/.test(tira.hoy.title), 'la etiqueta sale en el tooltip del día', tira.hoy.title);
-  ok(/\d/.test(tira.hoy.title) && /Tulum/.test(tira.hoy.title),
-    'sin perder la fecha larga, que es lo que ponía antes', tira.hoy.title);
+  ok(tira.hoy.title === 'Tulum', 'la etiqueta sale en el tooltip del día', tira.hoy.title);
+  // Y solo la etiqueta: la fecha ya está escrita en la propia pastilla y
+  // repetirla no aportaba nada.
+  ok(!/\d/.test(tira.hoy.title), 'sin repetir la fecha, que ya se ve en la pastilla', tira.hoy.title);
   ok(/Tulum/.test(tira.hoy.aria), 'y también para quien va con lector de pantalla', tira.hoy.aria);
   ok(/Playa del Carmen/.test(tira.manana.title), 'cada día con la suya', tira.manana.title);
-  ok(tira.sinEtiqueta && !/·/.test(tira.sinEtiqueta.title.replace(/,/g, '')),
-    'y un día sin etiqueta se queda como estaba', tira.sinEtiqueta.title);
+  ok(tira.sinEtiqueta && /\d/.test(tira.sinEtiqueta.title),
+    'y un día sin etiqueta se queda con la fecha larga: algo tiene que decir', tira.sinEtiqueta.title);
 
   terminar(errs);
   await cerrar();
