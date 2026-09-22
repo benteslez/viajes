@@ -15,6 +15,7 @@ viajes/
 ├── schema-touch-insert.sql ← migración: sellar updated_at también en el INSERT
 ├── schema-ui-prefs.sql ← migración: preferencias de interfaz por perfil (sincronizadas)
 ├── schema-arreglo-funciones.sql ← arreglo: devolver app_profile()/touch_updated_at() a su sitio
+├── schema-autor-al-editar.sql ← migración: sellar `updated_by` también al editar, no solo al crear
 ├── icons/              ← iconos PWA
 ├── imports/            ← viajes en el formato de «Importar JSON» (ver imports/README.md)
 └── README.md
@@ -240,6 +241,17 @@ Ejecuta `schema-arreglo-funciones.sql` y vuelve a la app: la cola sube sola. El 
 hay montado en esa instancia en vez de suponerlo, e imprime al final cómo quedan las dos
 funciones. Las dos migraciones pequeñas ya no pisan nada: si la función falta la crean, y si
 está no la tocan.
+
+### «Editado por» decía quién lo creó, no quién lo editó
+
+`schema-autor-al-editar.sql`. `_ultimaEdicion` (index.html) lee `updated_by`, pero ese campo solo
+se rellenaba en el alta: el trigger que lo sella al editar (`schema-autoria.sql`) hace
+`old.updated_by` a secas, y desde que los `trg_touch_*` son `before insert or update` —hizo falta
+para que el pull incremental no se dejara filas— esa versión reventaría todas las altas, porque en
+un INSERT `old` no existe. Lo que quedó montado es la versión simple, la que no sella autor.
+
+El archivo mira `TG_OP` antes de tocar `old`, que es lo que faltaba para que las dos cosas
+convivan. Requiere `schema-autoria.sql` aplicado (si no, lo dice y no cambia nada).
 
 ### Datos personales (no son de ningún viaje)
 

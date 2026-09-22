@@ -62,6 +62,7 @@ tests/
     ├── mapa-offline.js      guardar las teselas del mapa para verlo sin datos
     ├── marcar-visto.js      marcar paradas y el resumen con pestañas deslizables
     ├── menu-parada.js       el menú único (••• y pulsación larga)
+    ├── mover-dia.js         pasar un día entero a otra fecha
     ├── nota-formato.js      negrita, cursiva, subrayado y enlaces en la nota
     ├── proximo.js           el cartel "Próximo", solo a tres días del viaje
     └── tarjetas.js          billete, llave del hotel y postal de playa

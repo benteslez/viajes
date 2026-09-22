@@ -1361,6 +1361,9 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 .cd-chip.on { background:var(--text); border-color:var(--text); color:var(--text-inv); }
 .cd .cd-num { width:84px; flex:none; text-align:center; font-feature-settings:"tnum"; }
+.cd .md-fecha { flex:1 1 150px; min-width:0; }
+/* En "mover" la columna de la derecha lleva fechas, no horas: necesita más. */
+.cd-fila .cd-hora { font-feature-settings:"tnum"; }
 .cd-lista { border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; }
 .cd-fila {
   display:flex; align-items:center; gap:9px; padding:10px 11px; cursor:pointer;
@@ -11404,7 +11407,10 @@ const TripDetail = {
         type:'button', class: cls.join(' '), data:{ day:k },
         'aria-label': sinFecha ? 'Sin fecha'
           : [fmtDayLong(k), etiq, `${n} ${n === 1 ? 'parada' : 'paradas'}`].filter(Boolean).join(' · '),
-        title: sinFecha ? 'Sin fecha' : [fmtDayLong(k), etiq].filter(Boolean).join(' · '),
+        // Solo la etiqueta: la fecha ya está escrita en la propia pastilla, y
+        // repetirla en el tooltip no aporta nada. Sin etiqueta sí se pone, que
+        // algo tiene que decir.
+        title: sinFecha ? 'Sin fecha' : (etiq || fmtDayLong(k)),
         onclick: () => { if (opts.onPick) opts.onPick(k, pill); },
       }, sinFecha
         ? [ el('i', { text:'SIN' }), el('b', { text:'—' }), el('span', { class:'wd', text:'fecha' }) ]
@@ -11736,6 +11742,14 @@ const TripDetail = {
             onclick: () => TripDetail.openCorrerDia(t, k),
             html: svg('clock'),
             'aria-label':'Correr las horas de este día',
+          }) : null,
+          // Y su hermano: el reloj mueve las horas dentro del día, el
+          // calendario mueve el día entero a otra fecha.
+          (canEdit() && k !== 'sin-fecha' && byDay[k].some(i => !i._virtual)) ? el('button', {
+            class:'icon-btn', title:'Mover el día a otra fecha',
+            onclick: () => TripDetail.openMoverDia(t, k),
+            html: svg('cal'),
+            'aria-label':'Mover este día a otra fecha',
           }) : null,
           canEdit() ? el('button', {
             class:'icon-btn', title:'Añadir evento a este día',
@@ -16959,6 +16973,168 @@ const TripDetail = {
           UI.toast(`${mover.length} ${mover.length === 1 ? 'parada movida' : 'paradas movidas'} ${minutos > 0 ? '+' : '−'}${Math.abs(minutos)} min`);
           Router.render();
         } }, 'Aplicar'),
+      ],
+    });
+  },
+
+  // Mover un día entero a otra fecha. El hermano de "correr las horas": aquello
+  // mueve el reloj dentro del día, esto mueve el día en el calendario. Cuando
+  // un plan se retrasa una semana, hacerlo parada por parada eran veinte
+  // ediciones y un despiste seguro.
+  async openMoverDia(t, dia) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const todas = (await DB.listByTrip('planning_items', t.id)).filter(i => !i.deleted_at);
+    // Solo lo ANCLADO en este día. Las noches de un hotel o los días de en
+    // medio de un coche se ven aquí, pero su registro vive en el día de la
+    // entrada: se mueven desde allí, con toda su reserva, o no se mueven.
+    const delDia = todas
+      .filter(i => (i.day_date || i.consultation_planned_d1) === dia)
+      .sort(planningCompare);
+    if (!delDia.length) { UI.toast('Este día no tiene nada que mover'); return; }
+
+    const notas = (await DB.listByTrip('day_notes', t.id).catch(() => [])).filter(n => !n.deleted_at);
+    const nota = notas.find(n => n.date === dia) || null;
+    const fotos = await DayPhotos.list(t.id, dia).catch(() => []);
+
+    let destino = dia;
+    let llevarNota = !!(nota && (nota.title || (nota.text || '').trim()));
+    const marcadas = new Set(delDia.map(i => i.id));
+
+    const correr = (iso, delta) => {
+      if (!iso) return iso;
+      const d = parseDate(iso); d.setDate(d.getDate() + delta); return isoLocal(d);
+    };
+    const delta = () => daysBetween(dia, destino);
+
+    const campoFecha = el('input', { type:'date', value: dia, class:'md-fecha' });
+    const chips = el('div', { class:'cd-chips' });
+    const lista = el('div', { class:'cd-lista' });
+    const aviso = el('p', { class:'field-hint', style:{ margin:'8px 0 0' } });
+    const filaNota = el('label', { class:'cd-fila' });
+    const aplicar = el('button', { class:'btn btn-primary' }, 'Mover');
+
+    const pintar = () => {
+      const d = delta();
+      // Chips relativos, como en "correr el día": lo normal es una semana
+      // arriba o abajo, no una fecha del calendario.
+      chips.innerHTML = '';
+      [-7, -1, 1, 7].forEach(n => chips.appendChild(el('button', {
+        type:'button', class:'cd-chip' + (d === n ? ' on' : ''),
+        onclick: () => { destino = correr(dia, n); campoFecha.value = destino; pintar(); },
+      }, `${n > 0 ? '+' : '−'}${Math.abs(n)} ${Math.abs(n) === 1 ? 'día' : 'días'}`)));
+
+      lista.innerHTML = '';
+      delDia.forEach(it => {
+        const puesta = marcadas.has(it.id);
+        const chk = el('input', { type:'checkbox', checked: puesta ? true : null });
+        chk.addEventListener('change', () => {
+          if (chk.checked) marcadas.add(it.id); else marcadas.delete(it.id);
+          pintar();
+        });
+        // Una reserva de varios días enseña sus DOS fechas: mover el día de la
+        // entrada se lleva la salida con él, y eso hay que verlo antes de darle.
+        const d2 = it.consultation_planned_d2;
+        const antes = d2 ? `${fmtDateShort(dia)} – ${fmtDateShort(d2)}` : fmtDateShort(dia);
+        const luego = d2 ? `${fmtDateShort(correr(dia, d))} – ${fmtDateShort(correr(d2, d))}`
+                         : fmtDateShort(correr(dia, d));
+        lista.appendChild(el('label', { class:'cd-fila' + (puesta ? '' : ' off') }, [
+          chk,
+          el('span', { class:'cd-em', text: planEmoji(it), 'aria-hidden':'true' }),
+          el('span', { class:'cd-tit', text: it.title || typeDef(it.type).label }),
+          el('span', { class:'cd-hora' }, [
+            el('s', { text: antes }),
+            el('b', { text: d ? luego : antes }),
+          ]),
+        ]));
+      });
+
+      // El título y la nota del día acompañan a lo que había ese día… salvo que
+      // el día de destino ya tenga los suyos: pisarlos sería perderlos.
+      //
+      // `destino !== dia` no sobra: al abrir la hoja el destino ES el día de
+      // ahora, así que su propia nota se encontraba como "la del destino", la
+      // casilla salía desmarcada y ya no se volvía a marcar sola al cambiar de
+      // fecha. `llevarNota` guarda lo que quiere quien mira; si el destino
+      // tiene nota, manda eso y da igual lo que quisiera.
+      const chocaNota = (destino !== dia) &&
+        !!notas.find(n => n.date === destino && (n.title || (n.text || '').trim()));
+      const hayNota = !!(nota && (nota.title || (nota.text || '').trim()));
+      const seLleva = hayNota && llevarNota && !chocaNota;
+      filaNota.innerHTML = '';
+      filaNota.style.display = hayNota ? '' : 'none';
+      if (hayNota) {
+        const chk = el('input', { type:'checkbox', checked: seLleva ? true : null,
+          disabled: chocaNota ? true : null });
+        chk.addEventListener('change', () => { llevarNota = chk.checked; pintar(); });
+        filaNota.className = 'cd-fila' + (seLleva ? '' : ' off');
+        filaNota.append(chk,
+          el('span', { class:'cd-em', text:'🏷️', 'aria-hidden':'true' }),
+          el('span', { class:'cd-tit', text: chocaNota
+            ? `El ${fmtDateShort(destino)} ya tiene su propio título`
+            : `Llevarse "${nota.title || 'la nota del día'}"` }));
+      }
+
+      const yaHay = todas.filter(i => (i.day_date || i.consultation_planned_d1) === destino).length;
+      const fuera = (t.start_date && destino < t.start_date) || (t.end_date && destino > t.end_date);
+      aviso.textContent = [
+        !d ? 'Elige otro día: ese es el de ahora.' : '',
+        (d && yaHay) ? `El ${fmtDateShort(destino)} ya tiene ${yaHay} ${yaHay === 1 ? 'parada' : 'paradas'}: estas se le añaden.` : '',
+        (d && fuera) ? 'Esa fecha queda fuera de las del viaje.' : '',
+        fotos.length ? `Las ${fotos.length === 1 ? 'fotos' : fotos.length + ' fotos'} del día se quedan donde están: son de lo que pasó ese día.` : '',
+      ].filter(Boolean).join(' ');
+
+      aplicar.disabled = (!d || !marcadas.size) ? true : null;
+      aplicar.textContent = (d && marcadas.size)
+        ? `Mover ${marcadas.size} ${marcadas.size === 1 ? 'parada' : 'paradas'}` : 'Mover';
+    };
+
+    campoFecha.addEventListener('change', () => { destino = campoFecha.value || dia; pintar(); });
+    pintar();
+
+    aplicar.onclick = async () => {
+      const d = delta();
+      const mover = delDia.filter(i => marcadas.has(i.id));
+      if (!d || !mover.length) { UI.closeSheet(); return; }
+      try {
+        // Las que ya estaban en el destino mandan en los empates de hora: las
+        // que llegan se ponen detrás.
+        const tope = todas
+          .filter(i => (i.day_date || i.consultation_planned_d1) === destino)
+          .reduce((n, i) => Math.max(n, i.order_index || 0), -1);
+        let k = 0;
+        for (const it of mover) {
+          const base = await DB.get('planning_items', it.id);
+          if (!base || base.deleted_at) continue;
+          if (base.day_date) base.day_date = correr(base.day_date, d);
+          if (base.consultation_planned_d1) base.consultation_planned_d1 = correr(base.consultation_planned_d1, d);
+          if (base.consultation_planned_d2) base.consultation_planned_d2 = correr(base.consultation_planned_d2, d);
+          if (base.metadata && base.metadata.end_date) {
+            base.metadata = { ...base.metadata, end_date: correr(base.metadata.end_date, d) };
+          }
+          base.order_index = tope + 1 + (k++);
+          await DB.put('planning_items', base);
+        }
+        const chocaAhora = notas.some(n => n.date === destino && n.id !== (nota && nota.id)
+                                        && (n.title || (n.text || '').trim()));
+        if (llevarNota && nota && !chocaAhora) { nota.date = destino; await DB.put('day_notes', nota); }
+      } catch (e) { console.error('moverDia', e); UI.toast('No se pudo mover todo'); }
+      UI.closeSheet();
+      UI.toast(`${mover.length} ${mover.length === 1 ? 'parada movida' : 'paradas movidas'} al ${fmtDateShort(destino)}`);
+      Router.render();
+    };
+
+    UI.openSheet({
+      title: `Mover el ${fmtDate(dia, { weekday:'long', day:'numeric', month:'long' })}`,
+      body: el('div', { class:'cd' }, [
+        el('div', { class:'form-row' }, [
+          el('label', { text:'A qué día' }),
+          el('div', { class:'cd-min' }, [ chips, campoFecha ]),
+        ]),
+        el('div', { class:'form-row' }, [ el('label', { text:'Qué se mueve' }), lista, filaNota, aviso ]),
+      ]),
+      footer: [
+        el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'),
+        aplicar,
       ],
     });
   },
