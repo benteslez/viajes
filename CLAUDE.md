@@ -153,6 +153,12 @@ fechas fijas la suite se pudre sola.
 
 - Rama de trabajo, commit, push, PR y **squash-merge**. `main` no se toca
   directamente.
+- **El squash-merge lo haces tú**, sin esperar a que lo mergee nadie: la tanda
+  no está entregada hasta que está en `main`. Un PR abierto no llega a la web
+  —Pages publica desde `main`—, y eso ya pasó una vez: el PR #95 se quedó sin
+  mergear y la app siguió sirviendo el código de la tanda anterior sin que
+  nada pareciera roto. Después del merge, comprueba que el despliegue de Pages
+  («pages build and deployment») termina en `success` contra el commit nuevo.
 - Como los PR se mergean con squash, al empezar uno nuevo se parte de
   `origin/main`, no del commit anterior de la rama.
 - Mensajes de commit en español: un título corto en una línea y, debajo, qué
