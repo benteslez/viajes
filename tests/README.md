@@ -66,6 +66,7 @@ tests/
     ├── nota-formato.js      negrita, cursiva, subrayado y enlaces en la nota
     ├── parada-nueva.js      el día que propone, el nombre del enlace y el trayecto
     ├── proximo.js           el cartel "Próximo", solo a tres días del viaje
+    ├── ruta-guardada.js     la ruta real se guarda con el viaje y manda sin red
     └── tarjetas.js          billete, llave del hotel y postal de playa
 ```
 
