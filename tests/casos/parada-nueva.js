@@ -133,6 +133,99 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(/🚗/.test(despues.texto), 'el resumen del día sigue siendo el de siempre', despues.texto);
   await p.screenshot({ path: captura('parada-nueva-trayecto.png') });
 
+  titulo('EL ENLACE SE PEGA DESDE EL PROPIO CAMPO, Y SE VE QUE SE PUEDE');
+  await abrirDesdeElFab(); await sleep(p, 800);
+  await celda('Coche'); await sleep(p, 1000);
+  const enSeco = await p.evaluate(() => {
+    const bs = [...document.querySelectorAll('.ruta-punto')];
+    return {
+      botones: bs.length,
+      visibles: bs.filter((b) => b.offsetParent && b.getBoundingClientRect().width > 0).length,
+      texto: bs.map((b) => b.textContent.trim()),
+      icono: bs.every((b) => !!b.querySelector('svg')),
+      aviso: document.querySelector('.tramo-aviso')?.textContent || '',
+      etiquetas: [...document.querySelectorAll('#ruta-block label')].map((x) => x.textContent),
+    };
+  });
+  ok(enSeco.botones === 2 && enSeco.visibles === 2,
+    'origen y destino llevan su botón de enlace A LA VISTA, sin punto todavía', enSeco);
+  ok(enSeco.texto.join('/') === 'enlace/enlace' && enSeco.icono,
+    'con el icono del mapa y la palabra, no un emoji escondido', enSeco.texto);
+  ok(/Google Maps/.test(enSeco.aviso), 'y debajo dice para qué sirve', enSeco.aviso);
+  ok(enSeco.etiquetas.join('/') === 'Origen/Destino',
+    'el botón no se cuela en el nombre del campo', enSeco.etiquetas);
+
+  // Pegar de verdad en los dos extremos: Mérida → Chichén Itzá.
+  const pegarEn = (campo, url) => p.evaluate(([c, u]) => {
+    const i = document.getElementById('meta-' + c);
+    i.value = u;
+    i.dispatchEvent(new Event('paste'));
+  }, [campo, url]);
+  await pegarEn('origen', 'https://www.google.com/maps/place/Mérida,+Yuc.,+México/@20.9674,-89.5926,13z/data=!4m2!3m1!1s0x0:0x0!8m2!3d20.9674!4d-89.5926');
+  await sleep(p, 900);
+  await pegarEn('destino', 'https://www.google.com/maps/place/97751+Chichén+Itzá,+Yuc.,+México/@20.6829,-88.5686,17z/data=!4m2!3m1!1s0x0:0x0!8m2!3d20.6829!4d-88.5686');
+  await sleep(p, 1400);
+  const pegados = await p.evaluate(() => ({
+    campos: ['origen', 'destino'].map((c) => document.getElementById('meta-' + c).value),
+    puestos: [...document.querySelectorAll('.ruta-punto.puesto')].length,
+    texto: [...document.querySelectorAll('.ruta-punto')].map((b) => b.textContent.trim()),
+    aviso: document.querySelector('.tramo-aviso')?.textContent || '',
+  }));
+  ok(pegados.campos[0] === 'Mérida' && pegados.campos[1] === 'Chichén Itzá',
+    'en el campo queda el nombre del sitio, no la URL de Google', pegados.campos);
+  ok(pegados.puestos === 2 && pegados.texto.join('/') === 'ubicado/ubicado',
+    'los dos botones dicen que ya tienen ubicación', pegados);
+  ok(/🚗/.test(pegados.aviso) && /cuenta en el total del día/.test(pegados.aviso),
+    'y sale el tiempo del trayecto, diciendo que cuenta en el día', pegados.aviso);
+  await p.screenshot({ path: captura('parada-nueva-coche.png') });
+
+  // El mismo botón quita el punto: es lo único que puede deshacerlo.
+  await p.evaluate(() => document.querySelectorAll('.ruta-punto')[1].click());
+  await sleep(p, 500);
+  const quitado = await p.evaluate(() => ({
+    puestos: [...document.querySelectorAll('.ruta-punto.puesto')].length,
+    aviso: document.querySelector('.tramo-aviso')?.textContent || '',
+    campo: document.getElementById('meta-destino').value,
+  }));
+  ok(quitado.puestos === 1 && /Falta el otro extremo/.test(quitado.aviso),
+    'pulsarlo otra vez quita esa ubicación y lo dice', quitado);
+  ok(quitado.campo === 'Chichén Itzá', 'pero el nombre escrito se queda', quitado.campo);
+  await cerrarHoja();
+
+  titulo('EL HORARIO, UNA LÍNEA POR DATO');
+  await abrirDesdeElFab(); await sleep(p, 800);
+  await celda('Coche'); await sleep(p, 1000);
+  const horario = await p.evaluate(() => {
+    const filas = [...document.querySelectorAll('.fecha-hora')];
+    const y = (n) => { const b = n.getBoundingClientRect(); return Math.round(b.top + b.height / 2); };
+    const r = filas[0];
+    return {
+      filas: filas.length,
+      etiquetas: filas.map((f) => f.querySelector('.sub-lbl').textContent),
+      // Los tres centrados a la misma altura: una línea, no tres. Se compara el
+      // centro y no el borde de arriba, que la etiqueta es más baja que el input
+      // y va centrada dentro de la fila.
+      enLinea: r ? [...r.querySelectorAll('.sub-lbl, input[type=date], input[type=time]')]
+        .map(y).every((v, _, a) => Math.abs(v - a[0]) <= 2) : false,
+      borrarVisible: [...document.querySelectorAll('.time-clear')].filter((b) => b.offsetParent).length,
+      alto: r ? Math.round(r.getBoundingClientRect().height) : 0,
+    };
+  });
+  ok(horario.filas === 2 && horario.etiquetas.join('/') === 'Salida/Llegada',
+    'dos filas y dos etiquetas: se acabó el "Hora" repetido sin decir de qué', horario.etiquetas);
+  ok(horario.enLinea && horario.alto < 60,
+    'etiqueta, fecha y hora en la misma línea', horario.alto + ' px de alto');
+  ok(horario.borrarVisible === 0,
+    'y sin horas puestas, ningún botón de borrar la hora ocupando sitio', horario.borrarVisible);
+  await p.evaluate(() => {
+    const t = document.getElementById('tr-t1');
+    t.value = '09:30'; t.dispatchEvent(new Event('input'));
+  });
+  await sleep(p, 400);
+  ok(await p.evaluate(() => [...document.querySelectorAll('.time-clear')].filter((b) => b.offsetParent).length) === 1,
+    'aparece en cuanto hay una hora que borrar');
+  await cerrarHoja();
+
   titulo('Y LOS PUNTOS SOBREVIVEN A GUARDAR DESDE EL EDITOR');
   await p.evaluate(async () => {
     const t = await DB.get('trips', 'trip-demo-1');
