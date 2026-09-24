@@ -1278,11 +1278,16 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
    flecha entre medias. Antes eran dos campos sueltos en la rejilla de datos y,
    a tres columnas, caían en filas distintas. */
 .ruta { display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:end; }
-.ruta > .form-row { margin-bottom:0; min-width:0; }
+.ruta > .form-row { margin-bottom:0; min-width:0; position:relative; }
 .ruta-flecha {
   font-size:17px; color:var(--text-muted); line-height:1;
-  padding-bottom:13px;            /* a la altura del input, no de la etiqueta */
+  padding-bottom:22px;            /* centrada con el input, no con la etiqueta */
 }
+/* La línea de coordenadas cuelga por debajo del campo, FUERA del flujo: dentro,
+   estiraba la columna y la flecha —que se ancla abajo— se iba a la altura de
+   las coordenadas en vez de quedarse entre los dos campos. El hueco lo reserva
+   la fila entera cuando hay alguna. */
+.ruta.con-prueba { margin-bottom:20px; }
 /* El punto que dejó el enlace pegado, en la propia etiqueta del campo: ahí se ve
    de un vistazo qué extremo tiene ubicación y cuál no, sin robar una fila. */
 .ruta-lbl { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; }
@@ -1304,6 +1309,14 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 :root[data-tema="oscuro"] .ruta-punto.puesto,
 :root:not([data-tema]) .ruta-punto.puesto { color:#6ee7b7; }
+/* La prueba de a dónde apunta el extremo: discreta, debajo de su campo. */
+.ruta-prueba {
+  position:absolute; top:100%; left:0; right:0; margin-top:4px;
+  display:flex; align-items:baseline; gap:5px;
+  font-size:11px; color:var(--text-muted); min-width:0;
+}
+.ruta-prueba .rp-coords { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ruta-prueba .rp-ver { flex-shrink:0; color:var(--accent); text-decoration:underline; }
 .tramo-aviso { margin-top:6px; }
 /* Muy estrecho: la flecha baja a su propia línea y los campos se apilan, que es
    mejor que dos cajas de 110 px donde no cabe ni "Aeropuerto". */
@@ -11119,8 +11132,19 @@ const TripDetail = {
     let warnEl = null, dayArrRef = null, listRef = null, ready = false;
     const self = {
       addLeg(leg) { legs.push(leg); return leg; },
+      // Pone el resumen en su sitio (la fila meta del día) si aún no está.
+      // Vive aquí y no solo en finalize porque la lista se cuelga DESPUÉS de
+      // construirse: cada recálculo vuelve a intentarlo y así no depende de
+      // haber acertado con el momento.
+      colocar() {
+        if (summaryEl.isConnected || !listRef || !listRef.isConnected) return;
+        const metaRow = listRef.closest('.day-group')?.querySelector('.day-meta-row');
+        if (metaRow) metaRow.appendChild(summaryEl);
+        else listRef.insertBefore(summaryEl, listRef.firstChild);
+      },
       recompute() {
         if (!ready) return;
+        self.colocar();
         const travelMin = legs.reduce((s, l) => s + (l.val ? l.val.min : 0), 0);
         const travelKm  = legs.reduce((s, l) => s + (l.val ? l.val.km : 0), 0);
         const realStops = dayArrRef.filter(i => !i._virtual);
@@ -11163,19 +11187,20 @@ const TripDetail = {
       },
       finalize(dayArr, list, waypoints, token) {
         ready = true; dayArrRef = dayArr; listRef = list;
-        // Quien llama construye la lista y la cuelga DESPUÉS, así que aquí puede
-        // estar todavía suelta: ni el resumen encuentra la fila del día ni el
-        // aviso tiene hermano donde insertarse. Se espera un fotograma.
-        const colocar = () => {
-          // Resumen de ruta en la fila meta del día (misma línea que clima y
-          // paradas) para no abrir otra fila; si no la hay, al principio de la lista.
-          const _metaRow = list.closest('.day-group')?.querySelector('.day-meta-row');
-          if (_metaRow) _metaRow.appendChild(summaryEl);
-          else if (!summaryEl.parentNode) list.insertBefore(summaryEl, list.firstChild);
-          self.recompute();
+        // Quien llama construye la lista y la cuelga DESPUÉS, así que aquí está
+        // todavía suelta siempre. Esperar UN fotograma y rendirse era demasiado
+        // optimista: con el carrusel montando páginas y el hilo ocupado —justo
+        // al volver de guardar— la lista tarda más en llegar al documento, y el
+        // resumen del día se quedaba suelto hasta que se recargaba la página.
+        // Se reintenta durante un segundo, y después cada recálculo lo vuelve a
+        // intentar por su cuenta.
+        let intentos = 0;
+        const esperar = () => {
+          if (list.isConnected) { self.recompute(); return; }
+          if (++intentos > 60) return;            // ~1 s: ya no se va a colgar
+          requestAnimationFrame(esperar);
         };
-        if (list.isConnected) colocar();
-        else requestAnimationFrame(() => { if (list.isConnected) colocar(); });
+        esperar();
         if (waypoints.length >= 2 && legs.some(l => !l.online)) {
           legs.forEach(l => { if (!l.online) l.setPending(true); });
           enqueueDayRoute({ pts: waypoints, token, done: () => {
@@ -15195,7 +15220,7 @@ const TripDetail = {
         // el día se lo saltaba como si no se moviera nadie.
         const conPuntos = type === 'transporte' && MODOS_CARRETERA.includes(meta.modo || '');
         const aviso = el('div', { class:'field-hint tramo-aviso' });
-        const botones = {};
+        const botones = {}, pruebas = {};
         let pedido = '';
         const puntoDe = (id) => {
           const md = it.metadata || {};
@@ -15207,12 +15232,23 @@ const TripDetail = {
           // puede pegar un enlace. Escondido hasta tener punto, la función
           // existía y no la encontraba nadie.
           Object.keys(botones).forEach(id => {
-            const b = botones[id], hay = !!puntoDe(id);
+            const b = botones[id], pt = puntoDe(id), hay = !!pt;
             b.classList.toggle('puesto', hay);
             b.lastChild.textContent = hay ? 'ubicado' : 'enlace';
             b.title = hay ? 'Quitar la ubicación de este extremo' : 'Pegar el enlace del mapa de este sitio';
+            // "Ubicado" a secas no dice a dónde: un enlace pegado en el campo
+            // equivocado, o el sitio que no era, se veían igual de verdes. Las
+            // coordenadas y el enlace para abrirlo son la prueba.
+            const pr = pruebas[id];
+            if (!pr) return;
+            pr.style.display = hay ? '' : 'none';
+            if (hay) {
+              pr.firstChild.textContent = `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`;
+              pr.lastChild.href = gmapsUrl(pt.lat, pt.lng, (document.getElementById('meta-' + id) || {}).value || '');
+            }
           });
           const a = puntoDe('origen'), b = puntoDe('destino');
+          rutaBlock.querySelector('.ruta')?.classList.toggle('con-prueba', !!(a || b));
           if (msg) { aviso.textContent = msg; return; }
           if (!a || !b) {
             aviso.textContent = a || b
@@ -15289,11 +15325,18 @@ const TripDetail = {
             el('span', { text:'enlace' }),
           ]);
           botones[f.id] = bt;
+          const prueba = el('div', { class:'ruta-prueba', style:{display:'none'} }, [
+            el('span', { class:'rp-coords' }),
+            el('a', { class:'rp-ver', target:'_blank', rel:'noopener', text:'ver',
+              title:'Abrir este punto en el mapa', onclick: (e) => e.stopPropagation() }),
+          ]);
+          pruebas[f.id] = prueba;
           return el('div', { class:'form-row' }, [
             // El botón va FUERA de la etiqueta: dentro, su texto se colaba en el
             // nombre del campo ("Origen enlace") para cualquiera que lo lea.
             el('div', { class:'ruta-lbl' }, [ etiqueta, bt ]),
             input,
+            prueba,
           ]);
         };
         rutaBlock.style.display = '';
