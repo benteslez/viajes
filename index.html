@@ -807,6 +807,232 @@ h2.section-title {
 }
 
 /* ========================================================================
+   Diálogos al estilo de Apple
+   ------------------------------------------------------------------------
+   Los cuadros de diálogo se veían flojos y desordenados: campos sueltos sobre
+   blanco, etiquetas pequeñas y grises, y todo con el mismo peso. iOS resuelve
+   eso con tres cosas, y son las tres que se copian aquí:
+
+     1. Fondo agrupado (gris) con el contenido en TARJETAS blancas metidas hacia
+        dentro. Lo que va junto se ve junto sin necesidad de marcos.
+     2. Filas de 44 px con separadores capilares que empiezan donde empieza el
+        texto, no en el borde. Ordena sin dibujar cajas.
+     3. Jerarquía por cuerpo de letra, no por color: 17 px el dato, 13 px la
+        cabecera de sección en mayúsculas.
+
+   Los colores son los del sistema (systemGroupedBackground, separator,
+   systemBlue…) y la tipografía la de Apple cuando la hay: en el iPhone sale SF
+   de verdad, y en lo demás cae a la de la app. Se limita al diálogo a
+   propósito: el resto de la app tiene su propia identidad y no se toca.
+   ====================================================================== */
+:root {
+  --font-apple: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', var(--font-ui);
+  --ios-bg:#f2f2f7;          /* systemGroupedBackground */
+  --ios-card:#fff;           /* secondarySystemGroupedBackground */
+  --ios-sep:rgba(60,60,67,.29);
+  --ios-label:#000;
+  --ios-label-2:rgba(60,60,67,.6);
+  --ios-blue:#007aff;
+  --ios-red:#ff3b30;
+  --ios-fill:rgba(118,118,128,.12);
+  --ios-alert-bg:rgba(250,250,250,.82);
+}
+:root[data-tema="oscuro"] {
+  --ios-bg:#000; --ios-card:#1c1c1e;
+  --ios-sep:rgba(84,84,88,.65);
+  --ios-label:#fff; --ios-label-2:rgba(235,235,245,.6);
+  --ios-blue:#0a84ff; --ios-red:#ff453a;
+  --ios-fill:rgba(118,118,128,.24);
+  --ios-alert-bg:rgba(37,37,39,.82);
+}
+/* Oscuro del sistema: SOLO si no hay tema elegido. Sin el @media, esto ponía
+   el diálogo en negro sobre una app en claro. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema]) {
+    --ios-bg:#000; --ios-card:#1c1c1e;
+    --ios-sep:rgba(84,84,88,.65);
+    --ios-label:#fff; --ios-label-2:rgba(235,235,245,.6);
+    --ios-blue:#0a84ff; --ios-red:#ff453a;
+    --ios-fill:rgba(118,118,128,.24);
+    --ios-alert-bg:rgba(37,37,39,.82);
+  }
+}
+
+.sheet {
+  font-family:var(--font-apple);
+  background:var(--ios-bg); color:var(--ios-label);
+  border-top-left-radius:12px; border-top-right-radius:12px;
+  box-shadow:0 -1px 0 var(--ios-sep), 0 -20px 60px rgba(0,0,0,.28);
+}
+.sheet-handle { width:36px; height:5px; background:var(--ios-sep); margin:6px auto 2px; opacity:.6; }
+
+/* Cabecera translúcida: el contenido se ve pasar por debajo al desplazar, que
+   es lo que hace que una hoja de iOS parezca una capa y no un recorte. */
+.sheet-header {
+  position:sticky; top:0; z-index:2;
+  padding:10px 16px 12px;
+  background:color-mix(in srgb, var(--ios-bg) 82%, transparent);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:0.5px solid var(--ios-sep);
+}
+.sheet-title {
+  font-family:var(--font-apple);
+  font-size:17px; font-weight:600; letter-spacing:-.022em;
+  text-align:center; color:var(--ios-label);
+}
+/* La × de iOS: círculo gris relleno y glifo apagado. Con borde y fondo blanco
+   competía con el título, que es lo que hay que leer. El título se centra en la
+   hoja, no en el hueco que deja la ×: se compensa con el mismo ancho a la
+   izquierda. */
+.sheet-header #sheet-close {
+  width:30px; height:30px; flex:0 0 30px; border:0; border-radius:50%;
+  background:var(--ios-fill); color:var(--ios-label-2);
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.sheet-header #sheet-close svg { width:15px; height:15px; }
+.sheet-header::before { content:''; flex:0 0 30px; }
+.sheet-body { padding:16px; background:var(--ios-bg); }
+
+/* Pie: acción principal a todo lo ancho y lo demás en texto, como las hojas de
+   iOS. Apilado, no en fila: dos botones al 50 % dejan el importante enano. */
+.sheet-foot {
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  background:color-mix(in srgb, var(--ios-bg) 82%, transparent);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  backdrop-filter:saturate(180%) blur(20px);
+  border-top:0.5px solid var(--ios-sep);
+  display:flex; align-items:center; gap:8px;
+}
+.sheet-foot > .btn {
+  font-family:var(--font-apple); font-size:17px; font-weight:400;
+  letter-spacing:-.022em; min-height:44px; border-radius:12px;
+  flex:0 0 auto; padding:0 16px;
+}
+/* La acción principal se estira y queda a la derecha; lo secundario, en texto
+   a su lado. Dos botones al 50 % dejan el importante enano. */
+.sheet-foot > .btn-primary, .sheet-foot > .btn-danger { flex:1; }
+.sheet-foot > .btn-primary { font-weight:600; background:var(--ios-blue); border-color:transparent; }
+.sheet-foot > .btn-danger  { font-weight:600; background:var(--ios-red);  border-color:transparent; }
+.sheet-foot > .btn-ghost   { background:transparent; border-color:transparent; color:var(--ios-blue); }
+
+/* Tarjetas agrupadas: cada bloque del formulario es una tarjeta blanca sobre el
+   gris, con las filas separadas por una línea capilar. */
+.sheet-body .form-row:not(.wz-chip-row),
+.sheet-body .wz-sec,
+.sheet-body #ruta-block,
+.sheet-body #place-block,
+.sheet-body .ios-grupo {
+  background:var(--ios-card); border-radius:10px;
+  padding:12px 16px; margin:0 0 16px;
+}
+/* Los bloques con cabecera no son la tarjeta: la tarjeta es su `.ios-grupo` de
+   dentro, y el título queda encima, sobre el gris, como en Ajustes. */
+.sheet-body #metadata-block,
+.sheet-body #dates-block { background:none; padding:0; margin:0 0 16px; }
+/* Una tarjeta dentro de otra sería una caja dentro de una caja: las de dentro
+   se quedan en filas, con su separador. */
+.sheet-body .form-row .form-row,
+.sheet-body .wz-sec .form-row,
+.sheet-body .ios-grupo .form-row,
+.sheet-body #metadata-block .form-row,
+.sheet-body #dates-block .form-row,
+.sheet-body #ruta-block .form-row,
+.sheet-body #place-block .form-row {
+  background:none; border-radius:0; padding:0; margin:0 0 12px;
+}
+.sheet-body .form-row > label,
+.sheet-body .sub-lbl {
+  font-family:var(--font-apple); font-size:15px; font-weight:400;
+  letter-spacing:-.01em; color:var(--ios-label);
+}
+/* Cabecera de sección: 13 px en mayúsculas y FUERA de la tarjeta, como en
+   Ajustes. Dentro parecía la etiqueta de un campo más. */
+.sheet-body .grupo-tit {
+  display:block; font-family:var(--font-apple);
+  font-size:13px; font-weight:400; letter-spacing:.02em; text-transform:uppercase;
+  color:var(--ios-label-2); margin:0 0 8px 4px;
+}
+/* Última fila de una tarjeta: sin el hueco de abajo, que dejaba la tarjeta
+   con más aire por debajo que por encima. */
+.sheet-body .ios-grupo > *:last-child, .sheet-body .wz-sec > *:last-child { margin-bottom:0; }
+/* Origen y destino van UNO AL LADO DEL OTRO: el hueco de abajo de una fila no
+   separa nada ahí, y encima estiraba la columna y descolgaba la flecha, que se
+   ancla al borde de abajo. */
+.sheet-body #ruta-block .ruta > .form-row { margin-bottom:0; }
+
+/* Controles: relleno gris del sistema en vez de borde, 44 px de alto. */
+.sheet-body input:not([type="checkbox"]):not([type="radio"]),
+.sheet-body select,
+.sheet-body textarea {
+  font-family:var(--font-apple); font-size:17px; letter-spacing:-.022em;
+  background:var(--ios-fill); border:0; border-radius:10px;
+  min-height:44px; color:var(--ios-label);
+}
+.sheet-body input::placeholder, .sheet-body textarea::placeholder { color:var(--ios-label-2); }
+.sheet-body input:focus, .sheet-body select:focus, .sheet-body textarea:focus {
+  outline:2px solid var(--ios-blue); outline-offset:-2px; box-shadow:none;
+}
+.sheet-body .field-hint {
+  font-family:var(--font-apple); font-size:13px; letter-spacing:-.01em;
+  color:var(--ios-label-2);
+}
+/* Los avisos que cuelgan de una tarjeta van FUERA, en el gris, como las notas
+   al pie de una sección de Ajustes. */
+.sheet-body > .field-hint { padding:0 4px; margin:-8px 0 16px; }
+
+/* Sección plegable = fila de Ajustes con su chevron. */
+.sheet-body .wz-sec > summary {
+  font-family:var(--font-apple); font-size:17px; letter-spacing:-.022em;
+  min-height:44px; display:flex; align-items:center;
+}
+
+/* ---- Alerta (UIAlertController) ----------------------------------------
+   Confirmar algo abría la hoja entera subiendo desde abajo con el título
+   "Confirmar". Para un sí/no eso es mucho aparato y además tapa lo que estás
+   a punto de borrar. Una alerta de iOS es lo contrario: 270 pt en el centro,
+   fondo desenfocado, y los botones separados por líneas capilares. */
+.ios-alert-back {
+  position:fixed; inset:0; z-index:120;
+  background:rgba(0,0,0,.2);
+  display:flex; align-items:center; justify-content:center; padding:24px;
+  opacity:0; transition:opacity .2s var(--ease);
+}
+.ios-alert-back.show { opacity:1; }
+.ios-alert {
+  width:270px; max-width:100%;
+  font-family:var(--font-apple); color:var(--ios-label); text-align:center;
+  background:var(--ios-alert-bg);
+  -webkit-backdrop-filter:saturate(180%) blur(30px);
+  backdrop-filter:saturate(180%) blur(30px);
+  border-radius:14px; overflow:hidden;
+  transform:scale(1.12); transition:transform .2s var(--ease);
+}
+.ios-alert-back.show .ios-alert { transform:scale(1); }
+.ios-alert-texto { padding:19px 16px 16px; }
+.ios-alert-tit { font-size:17px; font-weight:600; letter-spacing:-.022em; }
+.ios-alert-msg { font-size:13px; letter-spacing:-.01em; margin-top:2px; white-space:pre-wrap; }
+.ios-alert-tit + .ios-alert-msg { margin-top:4px; }
+.ios-alert-btns { display:flex; border-top:0.5px solid var(--ios-sep); }
+.ios-alert-btns.apiladas { flex-direction:column; }
+.ios-alert-btns > button {
+  flex:1; min-height:44px; padding:0 8px;
+  font-family:var(--font-apple); font-size:17px; letter-spacing:-.022em;
+  background:none; border:0; color:var(--ios-blue); cursor:pointer;
+}
+.ios-alert-btns > button + button { border-left:0.5px solid var(--ios-sep); }
+.ios-alert-btns.apiladas > button + button { border-left:0; border-top:0.5px solid var(--ios-sep); }
+.ios-alert-btns > button:active { background:rgba(120,120,128,.2); }
+.ios-alert-btns > .principal { font-weight:600; }
+.ios-alert-btns > .destructiva { color:var(--ios-red); }
+
+@media (min-width:720px) {
+  /* En pantalla ancha la hoja ya va centrada: le toca el redondeo entero. */
+  .sheet { border-radius:14px; }
+}
+
+
+/* ========================================================================
    Status pill (online / sync)
    ====================================================================== */
 .status-pill {
@@ -6841,13 +7067,47 @@ const UI = {
     }, 60);
   },
 
+  // Un sí/no no necesita la hoja entera subiendo desde abajo con el título
+  // "Confirmar": es mucho aparato y además tapa justo lo que vas a borrar. Esto
+  // es la alerta de iOS —centrada, desenfocada, 270 pt— y no toca la hoja, así
+  // que se puede pedir confirmación DESDE un diálogo abierto sin cerrarlo.
   confirm(message, okLabel = 'Sí, borrar') {
     return new Promise(resolve => {
-      const body = el('div', { class:'muted', text: message });
-      const danger = okLabel === 'Sí, borrar';
-      const yes = el('button', { class:'btn ' + (danger ? 'btn-danger' : 'btn-primary'), onclick: () => { UI.closeSheet(); resolve(true); } }, okLabel);
-      const no  = el('button', { class:'btn btn-ghost', onclick: () => { UI.closeSheet(); resolve(false); } }, 'Cancelar');
-      UI.openSheet({ title:'Confirmar', body, footer:[no, yes] });
+      const danger = /borrar|eliminar|descartar|perder/i.test(okLabel);
+      // El texto suele venir como "Titular.\n\nExplicación": lo primero es el
+      // título y el resto el cuerpo, como en una alerta del sistema.
+      const txt = String(message || '').trim();
+      const corte = txt.indexOf('\n\n');
+      const tit = corte > 0 ? txt.slice(0, corte).trim() : txt;
+      const msg = corte > 0 ? txt.slice(corte + 2).trim() : '';
+      // Etiquetas largas no caben una al lado de otra en 270 pt: entonces se
+      // apilan, con la principal arriba, que es lo que hace iOS.
+      const apiladas = (okLabel.length + 'Cancelar'.length) > 20;
+      let cerrar = null;
+      const fin = (v) => { cerrar && cerrar(); resolve(v); };
+      const si = el('button', { class:'principal' + (danger ? ' destructiva' : ''),
+        onclick: () => fin(true) }, okLabel);
+      const no = el('button', { onclick: () => fin(false) }, 'Cancelar');
+      const caja = el('div', { class:'ios-alert', role:'alertdialog', 'aria-modal':'true' }, [
+        el('div', { class:'ios-alert-texto' }, [
+          el('div', { class:'ios-alert-tit', text: tit }),
+          msg ? el('div', { class:'ios-alert-msg', text: msg }) : null,
+        ].filter(Boolean)),
+        el('div', { class:'ios-alert-btns' + (apiladas ? ' apiladas' : '') }, apiladas ? [ si, no ] : [ no, si ]),
+      ]);
+      const fondo = el('div', { class:'ios-alert-back', onclick: (e) => { if (e.target === fondo) fin(false); } }, [ caja ]);
+      const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); fin(false); } };
+      const previo = document.activeElement;
+      cerrar = () => {
+        document.removeEventListener('keydown', esc, true);
+        fondo.classList.remove('show');
+        setTimeout(() => fondo.remove(), 220);
+        try { previo && previo.focus && previo.focus(); } catch (_) {}
+        cerrar = null;
+      };
+      document.body.appendChild(fondo);
+      document.addEventListener('keydown', esc, true);
+      requestAnimationFrame(() => { fondo.classList.add('show'); si.focus(); });
     });
   },
 
@@ -14943,8 +15203,8 @@ const TripDetail = {
         const row1 = R.withTime ? par(R.d1, inD1, 'tr-t1', t1) : cell(R.d1, inD1);
         const row2 = R.withTime ? par(R.d2, inD2, 'tr-t2', t2) : cell(R.d2, inD2);
         datesBlock.appendChild(el('span', { class:'grupo-tit', text: R.titulo || 'Fechas' }));
-        datesBlock.appendChild(row1);
-        datesBlock.appendChild(row2);
+        const grupo = el('div', { class:'ios-grupo' }, [ row1, row2 ]);
+        datesBlock.appendChild(grupo);
         // "Hasta" no puede ser anterior a "Desde", y al fijar "Desde" arranca ahí.
         inD1.addEventListener('change', () => {
           inD2.min = inD1.value || '';
@@ -14957,9 +15217,11 @@ const TripDetail = {
         datesBlock.appendChild(el('span', { class:'grupo-tit', text:'Fecha y hora' }));
         // Día y Hora de inicio, uno al lado del otro (2 columnas).
         const dayInput = el('input', { id:'f-day', type:'date', value: it.day_date || '' });
-        datesBlock.appendChild(el('div', { class:'form-grid-2' }, [
-          cell('Día', dayInput),
-          cell(showEnd ? 'Hora inicio' : 'Hora', timeInput('f-time', it.time)),
+        datesBlock.appendChild(el('div', { class:'ios-grupo' }, [
+          el('div', { class:'form-grid-2' }, [
+            cell('Día', dayInput),
+            cell(showEnd ? 'Hora inicio' : 'Hora', timeInput('f-time', it.time)),
+          ]),
         ]));
         // "Día fin" + "Hora fin": la parada normal empieza y acaba el mismo día,
         // así que van plegados. Se abren solos si ya traen algo, para que al
@@ -15386,8 +15648,10 @@ const TripDetail = {
         if (f.ancho === 'todo') node.classList.add('span-2');
         grid.appendChild(node);
       });
-      if (grid.children.length) metadataBlock.appendChild(grid);
-      if (single.children.length) metadataBlock.appendChild(single);
+      if (grid.children.length || single.children.length) {
+        metadataBlock.appendChild(el('div', { class:'ios-grupo' },
+          [ grid.children.length ? grid : null, single.children.length ? single : null ].filter(Boolean)));
+      }
     };
 
     // Componente repetidor de asientos: cada fila [nombre] [asiento] [×]
