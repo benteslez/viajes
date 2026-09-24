@@ -35,19 +35,10 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
       pie: [...document.querySelectorAll('#sheet-foot button')].filter((x) => x.offsetParent).map((x) => x.textContent.trim()),
     };
   });
-  // Guardar una parada NUEVA sin importe abre el aviso de "no has puesto gasto"
-  // con tres botones; aquí se descarta para seguir.
   const guardar = async () => {
     await p.evaluate(() => [...document.querySelectorAll('#sheet-foot button')]
       .find((x) => /^Guardar$/.test(x.textContent.trim())).click());
-    await sleep(p, 900);
-    const avisando = await p.evaluate(() => {
-      const w = document.getElementById('f-expense-warn');
-      return !!(w && w.style.display === 'block' && w.getBoundingClientRect().height > 0);
-    });
-    if (avisando) { await p.evaluate(() => document.getElementById('ew-discard').click()); }
     await sleep(p, 1400);
-    return avisando;
   };
 
   titulo('CREAR: DOS PASOS');
@@ -119,21 +110,25 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
       `   …y se guarda como ${tipoEsp}${modoEsp ? '/' + modoEsp : ''}`, enBase);
   }
 
-  titulo('EL AVISO DE GASTO SE VE AUNQUE CUELGUE DE UN PLIEGUE');
+  titulo('GUARDAR SIN GASTO GUARDA, SIN PREGUNTAR NADA');
   await abrirNueva(); await sleep(p, 800);
   await celda('Actividad'); await sleep(p, 800);
   await p.evaluate(() => { const n = document.getElementById('f-title'); n.value = 'Sin gasto'; n.dispatchEvent(new Event('change')); });
   await p.evaluate(() => [...document.querySelectorAll('#sheet-foot button')]
     .find((x) => /^Guardar$/.test(x.textContent.trim())).click());
-  await sleep(p, 900);
-  const aviso = await p.evaluate(() => {
-    const w = document.getElementById('f-expense-warn');
-    return { alto: Math.round(w.getBoundingClientRect().height), seccion: !!w.closest('details')?.open };
+  await sleep(p, 1200);
+  const sinGasto = await p.evaluate(async () => {
+    const its = await DB.listByTrip('planning_items', 'trip-demo-1');
+    return {
+      guardada: its.some((i) => i.title === 'Sin gasto' && !i.deleted_at),
+      hoja: !!document.querySelector('#sheet.open'),
+      aviso: !!document.getElementById('f-expense-warn'),
+    };
   });
-  ok(aviso.alto > 0 && aviso.seccion,
-    'guardar sin gasto abre "Reserva y gasto" y enseña el aviso', aviso);
-  await p.evaluate(() => document.getElementById('ew-discard').click());
-  await sleep(p, 1400);
+  ok(sinGasto.guardada, 'una parada sin importe se guarda al primer toque', sinGasto);
+  ok(!sinGasto.hoja, 'y el editor se cierra: no queda ningún paso intermedio');
+  ok(!sinGasto.aviso, 'el aviso de tres botones ya no existe');
+  await sleep(p, 600);
 
   titulo('LOS MEDIOS RAROS, DETRÁS DE "OTRO TRANSPORTE"');
   await abrirNueva(); await sleep(p, 800);

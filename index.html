@@ -1283,6 +1283,16 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
   font-size:17px; color:var(--text-muted); line-height:1;
   padding-bottom:13px;            /* a la altura del input, no de la etiqueta */
 }
+/* El punto que dejó el enlace pegado, en la propia etiqueta del campo: ahí se ve
+   de un vistazo qué extremo tiene ubicación y cuál no, sin robar una fila. */
+.ruta-lbl { display:flex; align-items:center; gap:2px; }
+.ruta-lbl > label { margin:0; }
+.ruta-punto {
+  border:0; background:none; padding:0; cursor:pointer;
+  font-size:12px; line-height:1; opacity:.9;
+}
+.ruta-punto:hover { opacity:1; }
+.tramo-aviso { margin-top:6px; }
 /* Muy estrecho: la flecha baja a su propia línea y los campos se apilan, que es
    mejor que dos cajas de 110 px donde no cabe ni "Aeropuerto". */
 @media (max-width: 359px) {
@@ -2464,13 +2474,6 @@ main:has(.plan-pager) { padding-bottom:0; }
   transition:all .15s var(--ease);
 }
 .expense-remind-btn.on { border-color:#f59e0b; background:color-mix(in srgb, #f59e0b 14%, var(--bg-elev)); color:#b45309; }
-.expense-warn {
-  margin-top:12px; padding:12px 14px; border-radius:var(--r-md);
-  background:color-mix(in srgb, #f59e0b 12%, var(--bg-elev));
-  border:1px solid color-mix(in srgb, #f59e0b 45%, var(--line));
-}
-.expense-warn-msg { display:flex; align-items:center; gap:8px; font-weight:600; font-size:13.5px; margin-bottom:10px; }
-.expense-warn-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .expense-warn-flag { font-size:13px; line-height:1; }
 
 /* Días plegables en el planning */
@@ -4187,6 +4190,7 @@ body.readonly .timeline-item { cursor:default; }
 }
 .place-selected .icon svg { width:18px; height:18px; }
 .place-selected .name { flex:1; font-weight:600; min-width:0; word-break:break-word; }
+.place-selected .name .sub { font-weight:400; font-size:12.5px; color:var(--muted); margin-top:2px; }
 .place-selected .coords {
   font-feature-settings:"tnum","ss01";
   font-size:11.5px; color:var(--text-muted); font-weight:500;
@@ -4649,6 +4653,14 @@ const CAMPOS_CONTACTO = ['telefono', 'whatsapp'];
 // PDF, la guía, el subtítulo de la tarjeta, el .ics— y ninguna de esas sabe
 // pintar HTML: guardarlo ahí habría sacado `<b>` por todas partes.
 const CAMPOS_FICHA = [...CAMPOS_CONTACTO, 'notes_html'];
+
+// Modos de transporte que van por carretera: son los únicos en los que el
+// tiempo entre dos puntos se puede calcular (un tren no sigue la carretera).
+const MODOS_CARRETERA = ['coche', 'taxi', 'shuttle'];
+// Las coordenadas que deja el enlace del mapa pegado en Origen y Destino.
+// Tampoco se declaran como campos —no se escriben, se pegan— así que hay que
+// conservarlas a mano igual que las de la ficha.
+const CAMPOS_TRAMO = ['origen_lat', 'origen_lng', 'destino_lat', 'destino_lng'];
 
 // --- Nota con formato ------------------------------------------------------
 // Lista blanca cerrada. Lo que llega puede venir de un `contenteditable`, de un
@@ -11375,16 +11387,27 @@ const TripDetail = {
       if (it._virtual === 'night' && !nightCard) nightCard = card;
       // Las "noches" de hotel y las copias 'span' no cuentan como parada para rutas.
       const skipLeg = (x) => x._virtual === 'night' || x._virtual === 'span' || x._virtual === 'rental';
+      const tramo = skipLeg(it) ? null : tramoCoche(it);
       if (it.lat != null && it.lng != null && !skipLeg(it)) {
         waypoints.push({ lat: it.lat, lng: it.lng });
         lastStopCoords = { lat: it.lat, lng: it.lng };
         if (!firstStopCard) { firstStopCard = card; firstStopCoords = lastStopCoords; firstStopItem = it; }
       }
+      // El trayecto en coche lleva su propio tramo dentro: el chip va pegado a
+      // su tarjeta y su tiempo entra en el total del día como uno más.
+      if (tramo) {
+        waypoints.push(tramo.a, tramo.b);
+        list.appendChild(this._legChip(tramo.a, tramo.b, route, { forceMode:'car' }));
+        lastStopCoords = tramo.b;
+        if (!firstStopCard) { firstStopCard = card; firstStopCoords = tramo.a; firstStopItem = it; }
+      }
       const nx = dayArr[di + 1];
-      if (nx && it.lat != null && it.lng != null && nx.lat != null && nx.lng != null
-          && !skipLeg(it) && !skipLeg(nx)) {
-        const a = { lat: it.lat, lng: it.lng }, b = { lat: nx.lat, lng: nx.lng };
-        if (legBetween(a, b).km > 0.03) list.appendChild(this._legChip(a, b, route, { forceMode: arriveMode(nx) }));
+      // De dónde sale el siguiente tramo: si esta parada es un trayecto con sus
+      // dos puntos, de donde te deja, no de donde esté marcada la tarjeta.
+      const desde = tramo ? tramo.b : ((it.lat != null && it.lng != null) ? { lat: it.lat, lng: it.lng } : null);
+      if (nx && desde && nx.lat != null && nx.lng != null && !skipLeg(it) && !skipLeg(nx)) {
+        const b = { lat: nx.lat, lng: nx.lng };
+        if (legBetween(desde, b).km > 0.03) list.appendChild(this._legChip(desde, b, route, { forceMode: arriveMode(nx) }));
       }
     }
     // "Ahora" al final si todas las paradas de hoy ya pasaron.
@@ -11544,7 +11567,10 @@ const TripDetail = {
       fab.hidden = false;
       fab.title = 'Añadir parada';
       fab.setAttribute('aria-label', 'Añadir parada');
-      fab.onclick = () => TripDetail.openPlanningEditor(t);
+      // Con el día que se está viendo: sin él, estando en el 26 de diciembre la
+      // parada nueva salía al 22, que es el primero del viaje, y había que
+      // corregir la fecha a mano cada vez.
+      fab.onclick = () => TripDetail.openPlanningEditor(t, null, { day: TripDetail._diaVisible || null });
     }
 
     // Chips de filtro
@@ -14640,7 +14666,14 @@ const TripDetail = {
     let personasDropdownOpen = false;
     const it = existing || {
       id: uuid(), trip_id: t.id, type:'lugar',
-      day_date: (opts && opts.day) || t.start_date || todayIso(), time:'', title:'',
+      // El día de quien lo abre; si no lo dice, el que se esté viendo en el
+      // carrusel; y de último recurso hoy, si cae dentro del viaje, antes que
+      // el primer día del viaje —que es lo que menos se suele querer—. El
+      // filtro de fecha deja fuera el cajón 'sin-fecha', que es un grupo de la
+      // lista, no un día.
+      day_date: [(opts && opts.day), TripDetail._diaVisible,
+        (t.start_date && t.end_date && todayIso() >= t.start_date && todayIso() <= t.end_date) ? todayIso() : null,
+        t.start_date, todayIso()].find(d => /^\d{4}-\d{2}-\d{2}$/.test(d || '')), time:'', title:'',
       place_name:'', lat:null, lng:null, gmaps_url:'', address:'', notes:'', order_index:0,
       status: null,                       // se setea según el tipo al renderizar
       in_consultation: false,             // legacy, derivado de status
@@ -14659,7 +14692,13 @@ const TripDetail = {
     // Coloca un punto en la parada (venga del buscador o de un enlace pegado).
     const usarPunto = ({ lat, lng, nombre, direccion, url }) => {
       it.lat = lat; it.lng = lng;
-      if (nombre) it.place_name = nombre;
+      if (nombre) {
+        const corto = nombreCorto(nombre);
+        // Lo que se le quita al nombre no se pierde: si el enlace no traía
+        // dirección, la dirección es justo eso que sobraba.
+        if (!direccion && corto !== nombre) direccion = nombre;
+        it.place_name = corto;
+      }
       if (direccion) it.address = direccion;
       // Si el enlace es del mapa, se guarda tal cual: es el sitio exacto que
       // eligió el usuario, mejor que uno reconstruido con las coordenadas.
@@ -14668,10 +14707,6 @@ const TripDetail = {
       const fPlace = $('#f-place'); if (fPlace && it.place_name) fPlace.value = it.place_name;
       const fAddr  = $('#f-address'); if (fAddr && it.address) fAddr.value = it.address;
       const fSearch = $('#f-search'); if (fSearch) fSearch.value = '';
-      // Si el buscador acaba de escribir en los campos de a mano, se abren: que
-      // nadie tenga que preguntarse dónde ha ido a parar lo que encontró.
-      const manual = document.getElementById('place-manual');
-      if (manual && (it.place_name || it.address)) manual.open = true;
       refreshSelectedPlace();
     };
 
@@ -14821,7 +14856,10 @@ const TripDetail = {
       if (R) {
         const d1 = it.consultation_planned_d1 || it.day_date || '';
         const t1 = it.consultation_planned_t1 || '';
-        const d2 = it.consultation_planned_d2 || '';
+        // Sin fecha de fin, la misma que la de inicio: un vuelo o un traslado
+        // acaban el mismo día casi siempre, y dejarla vacía obligaba a
+        // rellenarla a mano en todos.
+        const d2 = it.consultation_planned_d2 || d1 || '';
         const t2 = it.consultation_planned_t2 || '';
         const inD1 = el('input', { id:'tr-d1', type:'date', value:d1 });
         const inD2 = el('input', { id:'tr-d2', type:'date', value:d2 });
@@ -15112,16 +15150,96 @@ const TripDetail = {
       // la misma fila.
       const ruta = fields.filter(f => f.grupo === 'ruta');
       if (ruta.length === 2) {
-        const campo = (f) => el('div', { class:'form-row' }, [
-          el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label }),
-          el('input', { id:`meta-${f.id}`, type:'text', value: meta[f.id] || '', placeholder: f.placeholder || '' }),
-        ]);
+        // Trayecto por carretera: origen y destino admiten el enlace del mapa.
+        // Con los dos puntos puestos el tiempo sale solo y cuenta en el total de
+        // trayectos del día; escrito a mano, "Mérida → Chichén Itzá" era texto y
+        // el día se lo saltaba como si no se moviera nadie.
+        const conPuntos = type === 'transporte' && MODOS_CARRETERA.includes(meta.modo || '');
+        const aviso = el('div', { class:'field-hint tramo-aviso' });
+        let pedido = '';
+        const puntoDe = (id) => {
+          const md = it.metadata || {};
+          const la = parseFloat(md[id + '_lat']), ln = parseFloat(md[id + '_lng']);
+          return (Number.isFinite(la) && Number.isFinite(ln)) ? { lat: la, lng: ln } : null;
+        };
+        const pintarTramo = () => {
+          rutaBlock.querySelectorAll('.ruta-punto').forEach(ch => {
+            ch.style.display = puntoDe(ch.dataset.campo) ? '' : 'none';
+          });
+          const a = puntoDe('origen'), b = puntoDe('destino');
+          if (!a || !b) {
+            aviso.textContent = 'Pega el enlace del mapa en origen y destino y el tiempo del trayecto se calcula solo.';
+            return;
+          }
+          const k = routeKey(a, b);
+          const c = _routeCache[k];
+          const real = !!(c && c.km != null);
+          const off = legBetween(a, b);
+          const v = legView(real ? c.km : off.km,
+            real && c.drivingMin != null ? c.drivingMin : off.drivingMin, 'car');
+          aviso.textContent = `🚗 ${fmtDur(v.min)} · ${fmtKm(v.km)} · ${real ? 'por carretera' : 'estimado'}`;
+          // Una petición por par: si OSRM no contesta, `done()` vuelve aquí y sin
+          // este cerrojo se pediría en bucle.
+          if (!real && pedido !== k && navigator.onLine) {
+            pedido = k;
+            enqueueDayRoute({ pts:[a, b], token:null, done: () => { if (aviso.isConnected) pintarTramo(); } });
+          }
+        };
+        // Un enlace pegado aquí no es el nombre del sitio: se le saca el punto y
+        // en el campo queda el nombre corto, no la URL entera de Google.
+        const tomarPunto = async (f, input) => {
+          const v = String(input.value || '').trim();
+          if (!/^(https?:\/\/|geo:)/i.test(v)) return;
+          aviso.textContent = 'Leyendo el enlace…';
+          let pt = parseMapsLink(v);
+          if (pt && pt.lat == null && pt.url) {
+            const largo = await expandirEnlaceMapa(pt.url);
+            const p2 = largo ? parseMapsLink(largo) : null;
+            if (p2 && p2.lat != null) pt = Object.assign({}, p2, { nombre: p2.nombre || pt.nombre });
+          }
+          const nombre = nombreCorto(pt && pt.nombre);
+          if (!pt || pt.lat == null) {
+            input.value = nombre || '';
+            aviso.textContent = 'Ese enlace es de los cortos y el navegador no puede seguirlo: abre el sitio en Google Maps y pega la dirección larga, o sus coordenadas.';
+            return;
+          }
+          it.metadata = it.metadata || {};
+          it.metadata[f.id + '_lat'] = pt.lat;
+          it.metadata[f.id + '_lng'] = pt.lng;
+          input.value = nombre || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`;
+          pintarTramo();
+        };
+        const campo = (f) => {
+          const input = el('input', { id:`meta-${f.id}`, type:'text', value: meta[f.id] || '',
+            placeholder: conPuntos ? 'Nombre o enlace del mapa' : (f.placeholder || '') });
+          // Al pegar y también al salir del campo: hay quien escribe el enlace o
+          // lo suelta con el ratón, y entonces no hay evento de pegado.
+          if (conPuntos) {
+            input.onpaste  = (e) => setTimeout(() => tomarPunto(f, e.target), 0);
+            input.onchange = (e) => tomarPunto(f, e.target);
+          }
+          const chip = conPuntos ? el('button', { type:'button', class:'ruta-punto', data:{ campo: f.id },
+            title:'Quitar el punto de este extremo', 'aria-label':`Quitar el punto de ${f.label}`, text:'📍',
+            onclick: () => {
+              delete (it.metadata || {})[f.id + '_lat'];
+              delete (it.metadata || {})[f.id + '_lng'];
+              pintarTramo();
+            } }) : null;
+          const etiqueta = el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label });
+          return el('div', { class:'form-row' }, [
+            // El chip va FUERA de la etiqueta: dentro, su emoji se colaba en el
+            // texto del campo ("Origen📍") para cualquiera que lo lea.
+            chip ? el('div', { class:'ruta-lbl' }, [ etiqueta, chip ]) : etiqueta,
+            input,
+          ]);
+        };
         rutaBlock.style.display = '';
         rutaBlock.appendChild(el('div', { class:'ruta' }, [
           campo(ruta[0]),
           el('span', { class:'ruta-flecha', 'aria-hidden':'true', text:'→' }),
           campo(ruta[1]),
         ]));
+        if (conPuntos) { rutaBlock.appendChild(aviso); pintarTramo(); }
         fields = fields.filter(f => f.grupo !== 'ruta');
       }
 
@@ -15192,9 +15310,16 @@ const TripDetail = {
     const refreshSelectedPlace = () => {
       selectedPlaceBlock.innerHTML = '';
       if (it.lat == null || it.lng == null) return;
+      // El punto elegido se enseña entero aquí —nombre, dirección y coordenadas—
+      // para no tener que abrir "Escribirlo a mano" solo para comprobar qué ha
+      // cogido el buscador, que era lo que empujaba el resto del diálogo abajo.
+      const dirDistinta = (it.address || '').trim() && it.address.trim() !== (it.place_name || '').trim();
       selectedPlaceBlock.appendChild(el('div', { class:'place-selected' }, [
         el('span', { class:'icon', html: svg('check') }),
-        el('div', { class:'name', text: it.place_name || it.address || 'Lugar seleccionado' }),
+        el('div', { class:'name' }, [
+          el('div', { text: it.place_name || it.address || 'Lugar seleccionado' }),
+          dirDistinta ? el('div', { class:'sub', text: it.address }) : null,
+        ].filter(Boolean)),
         el('div', { class:'coords', text: `${Number(it.lat).toFixed(4)}, ${Number(it.lng).toFixed(4)}` }),
         el('button', { type:'button', class:'clear', title:'Quitar coordenadas',
           'aria-label':'Quitar lugar seleccionado',
@@ -15216,9 +15341,11 @@ const TripDetail = {
         el('div', { class:'field-hint', text:'Si no lo encuentra, pega el enlace del mapa o unas coordenadas.' }),
       ]),
       // Escribirlo a mano es el respaldo de cuando el buscador no acierta. Se
-      // abre solo si ya hay algo escrito, para que al editar no se esconda nada.
+      // abre solo si hay algo escrito que NO se vea ya en la confirmación de
+      // arriba: con el punto puesto, abrirlo repetía el nombre y la dirección y
+      // mandaba el resto del formulario fuera de pantalla.
       el('details', { class:'wz-mini', id:'place-manual',
-        open: (it.place_name || it.address || it.zona) ? true : null }, [
+        open: ((it.lat == null && (it.place_name || it.address)) || it.zona) ? true : null }, [
         el('summary', { text:'Escribirlo a mano' }),
         el('div', { class:'form-row' }, [
           el('label', { text:'Nombre del sitio' }),
@@ -15534,15 +15661,6 @@ const TripDetail = {
           value: linkedBudget ? (linkedBudget.currency || t.default_currency || 'EUR') : (t.default_currency || 'EUR') }),
       ]),
       el('div', { class:'field-hint', text:'Opcional. Si pones importe se crea un gasto vinculado en estado "planeado". Vacíalo a 0 para eliminarlo.' }),
-      // Banner de advertencia (oculto) — aparece al guardar sin gasto en un evento nuevo.
-      el('div', { id:'f-expense-warn', class:'expense-warn', style:{display:'none'} }, [
-        el('div', { class:'expense-warn-msg' }, [ el('span', { text:'⚠️' }), el('span', { text:'No has añadido ningún gasto a este evento.' }) ]),
-        el('div', { class:'expense-warn-actions' }, [
-          el('button', { type:'button', class:'btn btn-sm btn-primary', id:'ew-add' }, 'Añadir gasto'),
-          el('button', { type:'button', class:'btn btn-sm', id:'ew-remind' }, [ el('span',{text:'⚠️'}), 'Recordar más tarde' ]),
-          el('button', { type:'button', class:'btn btn-sm btn-ghost', id:'ew-discard' }, 'Descartar' ),
-        ]),
-      ]),
     ]);
 
     // ======================================================================
@@ -16030,6 +16148,10 @@ const TripDetail = {
             if (v) meta[f.id] = v;
           }
         });
+        // Los puntos del trayecto no son campos del formulario y `meta` se
+        // reconstruye desde los campos: sin traerlos a mano, guardar la parada
+        // los borraba y el trayecto dejaba de contar en el total del día.
+        CAMPOS_TRAMO.forEach(k => { if (prevMeta[k] != null && prevMeta[k] !== '') meta[k] = prevMeta[k]; });
         it.metadata = meta;
       } else {
         it.metadata = {};
@@ -16135,28 +16257,14 @@ const TripDetail = {
       }
     };
 
+    // Guardar guarda. Antes, una parada nueva sin importe abría un aviso de tres
+    // botones —añadir gasto, recordar, descartar— entre el dedo y el guardado.
+    // La mayoría de las paradas no tienen gasto que apuntar, así que era un paso
+    // de más en el camino corto para proteger el caso raro. Quien quiera el
+    // recordatorio lo tiene en su botón, dentro de "Reserva y gasto".
     const save = el('button', { class:'btn btn-primary', id:'wz-save-proxy', onclick: async () => {
       if (!collect()) return;
-      const amtRaw = ($('#f-amount')?.value || '').trim();
-      const hasAmount = amtRaw !== '' && !isNaN(parseFloat(amtRaw)) && parseFloat(amtRaw) > 0;
-      // Con importe, ya marcado "recordar", o editando un evento existente → guardar directo.
-      if (hasAmount || currentExpenseReminder || existing) return persistAndClose();
-      // Evento NUEVO sin gasto → avisar con 3 opciones.
-      const warn = document.getElementById('f-expense-warn');
-      if (!warn) return persistAndClose();
-      // En el asistente el aviso vive en el formulario: hay que llevar ahí al usuario.
-      if (isWizard) wzGo(99);
-      warn.style.display = 'block';
-      // Y el aviso cuelga de "Reserva y gasto", que va plegado: sin abrirlo, al
-      // pulsar Guardar no pasaba nada de nada.
-      warn.closest('details')?.setAttribute('open', '');
-      warn.scrollIntoView({ behavior:'smooth', block:'center' });
-      document.getElementById('ew-add').onclick = () => {
-        warn.style.display = 'none';
-        const a = document.getElementById('f-amount'); a?.scrollIntoView({ behavior:'smooth', block:'center' }); a?.focus();
-      };
-      document.getElementById('ew-remind').onclick = () => { currentExpenseReminder = true; persistAndClose(); };
-      document.getElementById('ew-discard').onclick = () => { currentExpenseReminder = false; persistAndClose(); };
+      return persistAndClose();
     }}, 'Guardar');
 
     // El botón Confirmar aparece si existe y su estado es por_iniciar o en_consulta
@@ -23251,6 +23359,20 @@ const MODE_EMOJI = { walk:'🚶', car:'🚗', bike:'🚴', transit:'🚇' };
 // Velocidad de coche por tramos para que la estimación offline sea creíble (evita
 // avisos falsos en traslados largos): ciudad < nacional < autovía.
 function carSpeedKmh(km) { return km < 25 ? 32 : km < 120 ? 70 : 95; }
+// Los dos puntos de un trayecto por carretera, si se han pegado sus enlaces del
+// mapa. Es lo que hace que el trayecto cuente en el total del día: un
+// "Madrid → Toledo" escrito a mano es texto, y el día se lo saltaba.
+function tramoCoche(it) {
+  if (!it || it.type !== 'transporte' || it._virtual) return null;
+  const md = it.metadata || {};
+  if (!MODOS_CARRETERA.includes(md.modo || '')) return null;
+  const n = (x) => { const v = parseFloat(x); return Number.isFinite(v) ? v : null; };
+  const a = { lat: n(md.origen_lat), lng: n(md.origen_lng) };
+  const b = { lat: n(md.destino_lat), lng: n(md.destino_lng) };
+  if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) return null;
+  if (haversineKm(a, b) < 0.03) return null;       // el mismo sitio dos veces
+  return { a, b };
+}
 function legBetween(a, b) {
   const km = haversineKm(a, b) * 1.35;
   const drivingMin = Math.max(1, Math.round(km / carSpeedKmh(km) * 60)); // tiempo en coche estimado
@@ -23379,6 +23501,24 @@ let _geoLast = 0;
 // sin portal, un sitio que en OSM no existe. Pegar el enlace del mapa lo
 // arregla de raíz, porque el punto ya viene dentro del enlace.
 // Devuelve { lat, lng, nombre, direccion, url, corto } o null si no hay nada.
+// Google Maps devuelve el sitio entero en una línea: "97751 Chichén Itzá, Yuc.,
+// México". Como nombre de la parada eso no vale —el título de la tarjeta se va
+// a tres líneas y el primero que sobra es el código postal—: el nombre es lo
+// que va antes de la primera coma, sin el postal delante. El resto no se tira,
+// se queda en "Dirección".
+function nombreCorto(txt) {
+  const full = String(txt || '').trim();
+  if (!full) return '';
+  // Unas coordenadas pegadas no son un nombre: no hay nada que recortar.
+  if (/^-?\d{1,3}(\.\d+)?\s*,\s*-?\d{1,3}(\.\d+)?$/.test(full)) return full;
+  let s = full.split(',')[0].trim();
+  // Código postal delante (4-6 cifras) solo si detrás queda nombre: "7 Eleven"
+  // no lo es y "28013 Madrid" sí.
+  const m = s.match(/^\d{4,6}\s+(.{2,})$/);
+  if (m) s = m[1].trim();
+  return s || full;
+}
+
 const _mapNum = (x) => { const n = parseFloat(x); return Number.isFinite(n) ? n : null; };
 const _mapCoordOk = (la, ln) => la != null && ln != null &&
   Math.abs(la) <= 90 && Math.abs(ln) <= 180 && !(la === 0 && ln === 0);
