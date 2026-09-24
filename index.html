@@ -11127,6 +11127,10 @@ const TripDetail = {
   // Controlador de la ruta de un día: agrupa sus tramos, pinta el resumen y el aviso
   // de "quizá no dé tiempo", y lanza el recálculo online en lote.
   _dayRoute(t, dayKey) {
+    // Lo que el viaje ya trae calculado con conexión entra en la caché ANTES de
+    // pintar nada: así el primer dibujo ya sale con el tiempo bueno y no se ve
+    // la estimación en línea recta un momento antes de que la sustituyan.
+    sembrarRutasDelViaje(t);
     const legs = [];
     const summaryEl = el('span', { class:'day-route-summary' });
     let warnEl = null, dayArrRef = null, listRef = null, ready = false;
@@ -11201,9 +11205,11 @@ const TripDetail = {
           requestAnimationFrame(esperar);
         };
         esperar();
-        if (waypoints.length >= 2 && legs.some(l => !l.online)) {
+        // Se pide el día si falta alguna ruta real o si alguna ya ha caducado:
+        // con conexión se refresca, sin ella no se toca y manda la guardada.
+        if (waypoints.length >= 2 && legs.some(l => !l.online || l.caduca)) {
           legs.forEach(l => { if (!l.online) l.setPending(true); });
-          enqueueDayRoute({ pts: waypoints, token, done: () => {
+          enqueueDayRoute({ pts: waypoints, token, trip: t.id, done: () => {
             // Si la lista ya no está en pantalla (se repintó o se cambió de día),
             // no hay nada que actualizar.
             if (!listRef || !listRef.isConnected) return;
@@ -11233,7 +11239,7 @@ const TripDetail = {
     const dot = el('span', { class:'leg-src' });
     const chip = el('a', { class:'leg-chip' + (isHotel ? ' leg-hotel' : ''), target:'_blank', rel:'noopener', title: isHotel ? 'Alojamiento' : 'Cómo llegar', onclick: (e) => e.stopPropagation() }, [ info, dot ]);
     const travel = (m) => m === 'walk' ? 'walking' : (m === 'bike' ? 'bicycling' : (m === 'transit' ? 'transit' : 'driving'));
-    const leg = { key, val: null, online: false, _last: null };
+    const leg = { key, val: null, online: false, caduca: false, _last: null };
     // Pide la ruta peatonal real si el tramo se muestra a pie y aún no la tenemos.
     const maybeFetchFoot = () => {
       if (!leg.val || leg.val.mode !== 'walk') return;
@@ -11255,6 +11261,7 @@ const TripDetail = {
       const mode = v.mode, min = v.min, dispKm = v.km;
       // "Real" (verde) según el modo: a pie ⇒ ruta de pie; resto ⇒ ruta de coche.
       const online = (mode === 'walk') ? !!walk : !!(c && c.km != null);
+      leg.caduca = rutaCaducada(c);
       const long = dispKm >= 30 || min >= 50;
       chip.classList.toggle('leg-long', long);
       let txt = (long ? `${MODE_EMOJI[mode] || MODE_EMOJI.car} Trayecto · ~${fmtDur(min)} · ${fmtKm(dispKm)}` : `${MODE_EMOJI[mode] || MODE_EMOJI.car} ~${fmtDur(min)} · ${fmtKm(dispKm)}`);
@@ -15257,6 +15264,7 @@ const TripDetail = {
             return;
           }
           const k = routeKey(a, b);
+          sembrarRutasDelViaje(t);              // lo que el viaje ya trae medido
           const c = _routeCache[k];
           const real = !!(c && c.km != null);
           const off = legBetween(a, b);
@@ -15267,7 +15275,7 @@ const TripDetail = {
           // este cerrojo se pediría en bucle.
           if (!real && pedido !== k && navigator.onLine) {
             pedido = k;
-            enqueueDayRoute({ pts:[a, b], token:null, done: () => { if (aviso.isConnected) pintarTramo(); } });
+            enqueueDayRoute({ pts:[a, b], token:null, trip: t.id, done: () => { if (aviso.isConnected) pintarTramo(); } });
           }
         };
         // Un enlace no es el nombre del sitio: se le saca el punto y en el campo
@@ -23820,14 +23828,64 @@ function saveRouteCache() {
   clearTimeout(_routeCacheSaveT);
   _routeCacheSaveT = setTimeout(() => {
     try {
-      // Cap de tamaño: si crece mucho, nos quedamos con las últimas ~800 entradas.
+      // Cap de tamaño: si crece mucho, se van las MENOS RECIENTES. Antes se iban
+      // las primeras que entraron, así que una ruta que se mira todos los días
+      // podía caer solo por ser antigua y volver a salir en línea recta.
       const keys = Object.keys(_routeCache);
-      if (keys.length > 800) keys.slice(0, keys.length - 800).forEach(k => delete _routeCache[k]);
+      if (keys.length > 800) {
+        keys.sort((a, b) => (_routeCache[a].ts || 0) - (_routeCache[b].ts || 0))
+            .slice(0, keys.length - 800).forEach(k => delete _routeCache[k]);
+      }
       localStorage.setItem('viajes_routecache', JSON.stringify(_routeCache));
     } catch (_) {}
   }, 500);
 }
 function routeKey(a, b) { return `${(+a.lat).toFixed(5)},${(+a.lng).toFixed(5)};${(+b.lat).toFixed(5)},${(+b.lng).toFixed(5)}`; }
+// Una ruta real caduca al mes: las carreteras cambian poco, pero algo cambian, y
+// con conexión no cuesta nada rehacerla. Sin conexión, la vieja sigue mandando.
+const CADUCA_RUTA = 30 * 24 * 3600 * 1000;
+const rutaCaducada = (c) => !!(c && c.km != null && (!c.ts || (Date.now() - c.ts) > CADUCA_RUTA));
+// Las rutas que se pidieron CON conexión son un dato del viaje, no del aparato:
+// guardarlas solo en el localStorage dejaba al portátil enseñando la estimación
+// en línea recta de un trayecto que el móvil ya tenía medido por carretera, y
+// las perdía enteras al limpiar el navegador. Van en `settings` del viaje, que
+// viaja por la misma cola que todo lo demás.
+function sembrarRutasDelViaje(t) {
+  const r = (tripSettings(t) || {}).rutas;
+  if (!r || typeof r !== 'object') return;
+  Object.keys(r).forEach(k => {
+    const v = r[k];
+    if (!v || v.km == null) return;
+    const c = _routeCache[k];
+    if (c && c.km != null && !rutaCaducada(c)) return;   // la del aparato ya vale
+    _routeCache[k] = Object.assign({}, c, { km: v.km, drivingMin: v.min, ts: v.ts || 0 });
+  });
+}
+async function guardarRutasEnViaje(tripId, claves) {
+  if (!tripId || !claves || !claves.length || !canEdit()) return;
+  try {
+    const t = await DB.get('trips', tripId);
+    if (!t) return;
+    const s = tripSettingsMut(t);
+    const r = (s.rutas && typeof s.rutas === 'object' && !Array.isArray(s.rutas)) ? s.rutas : (s.rutas = {});
+    let cambio = false;
+    claves.forEach(k => {
+      const c = _routeCache[k];
+      if (!c || c.km == null) return;
+      const v = { km: +(+c.km).toFixed(3), min: c.drivingMin, ts: c.ts || Date.now() };
+      const ant = r[k];
+      if (!ant || ant.km !== v.km || ant.min !== v.min) { r[k] = v; cambio = true; }
+    });
+    // Tope: un viaje de tres semanas no puede acabar cargando con mil rutas.
+    // Se van las menos recientes, que son las de los días que ya nadie mira.
+    const ks = Object.keys(r);
+    if (ks.length > 500) {
+      ks.sort((x, y) => (r[x].ts || 0) - (r[y].ts || 0)).slice(0, ks.length - 500).forEach(k => delete r[k]);
+      cambio = true;
+    }
+    if (cambio) await DB.put('trips', t);
+  } catch (e) { console.warn('guardarRutasEnViaje', e); }
+}
 // Convierte un tramo de OSRM (siempre perfil coche, lo único fiable en el servidor
 // demo) en { km, drivingMin }: la distancia REAL por carretera y el tiempo en coche.
 // El modo/tiempo a mostrar lo decide legView() según el modo elegido por el usuario.
@@ -23860,16 +23918,23 @@ async function drainDayRouteQueue() {
   while (_dayRouteQueue.length) {
     const job = _dayRouteQueue.shift();
     const stale = job.token && TripDetail._planRenderToken && job.token !== TripDetail._planRenderToken;
-    // Falta el coche si no hay entrada o la entrada solo tiene datos de pie (km null).
-    const missing = job.pts.some((p, i) => { if (i >= job.pts.length - 1) return false; const c = _routeCache[routeKey(job.pts[i], job.pts[i + 1])]; return !(c && c.km != null); });
+    // Hay que pedirla si falta (no hay entrada, o solo tiene datos de pie) o si
+    // la que hay ya ha caducado. Sin conexión no se intenta: la guardada manda.
+    const missing = navigator.onLine && job.pts.some((p, i) => {
+      if (i >= job.pts.length - 1) return false;
+      const c = _routeCache[routeKey(job.pts[i], job.pts[i + 1])];
+      return !(c && c.km != null) || rutaCaducada(c);
+    });
     if (!stale && missing) {
       const legs = await fetchDayRoute(job.pts);
       if (legs) {
         for (let i = 0; i < legs.length; i++) {
           const k = routeKey(job.pts[i], job.pts[i + 1]);
-          _routeCache[k] = Object.assign({}, _routeCache[k], legs[i]); // conserva datos de pie si los hubiera
+          _routeCache[k] = Object.assign({}, _routeCache[k], legs[i], { ts: Date.now() }); // conserva datos de pie si los hubiera
         }
         saveRouteCache();
+        // Y con el viaje, para que no dependan de este navegador.
+        guardarRutasEnViaje(job.trip, job.pts.slice(0, -1).map((p, i) => routeKey(p, job.pts[i + 1])));
       }
       await new Promise(res => setTimeout(res, 300));
     }
