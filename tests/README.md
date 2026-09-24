@@ -49,6 +49,7 @@ tests/
     ├── coche-alquiler.js    "Coche alquilado" los días de en medio y la devolución
     ├── correr-dia.js        correr las horas de un día y la hora real vs. planeada
     ├── dias-pasados.js      días pasados apagados pero accesibles; abrir en hoy
+    ├── dialogos-apple.js    el diálogo al estilo de iOS y la alerta de confirmar
     ├── editor-parada.js     el asistente de dos pasos y el orden del formulario
     ├── escritorio.js        en pantalla ancha el día se queda en una columna
     ├── etiqueta-dia.js      la pastilla del día ("Tulum"), y que se lea
