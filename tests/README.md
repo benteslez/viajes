@@ -64,6 +64,7 @@ tests/
     ├── menu-parada.js       el menú único (••• y pulsación larga)
     ├── mover-dia.js         pasar un día entero a otra fecha
     ├── nota-formato.js      negrita, cursiva, subrayado y enlaces en la nota
+    ├── parada-nueva.js      el día que propone, el nombre del enlace y el trayecto
     ├── proximo.js           el cartel "Próximo", solo a tres días del viaje
     └── tarjetas.js          billete, llave del hotel y postal de playa
 ```

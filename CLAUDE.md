@@ -87,7 +87,11 @@ hay que respetar si tocas eso:
   están declarados en `PLANNING_METADATA`, y `collect()` reconstruye `metadata`
   desde los campos del tipo. Por eso existe `CAMPOS_FICHA`: sin conservarlos a
   mano, guardar desde el editor los borraba. Si añades otro campo que solo pida
-  la ficha, mételo ahí.
+  la ficha, mételo ahí. `CAMPOS_TRAMO` (`origen_lat`, `origen_lng`,
+  `destino_lat`, `destino_lng`) es lo mismo para las coordenadas que deja un
+  enlace del mapa pegado en Origen/Destino de un trayecto por carretera: son las
+  que hacen que el trayecto cuente en el total de trayectos del día
+  (`tramoCoche`), así que perderlas es perder el cálculo.
 - El orden de los bloques lo decide `ordenFicha()` y se guarda en `Prefs`, no en
   el registro: es cómo quiere ver la app quien mira, no un dato del viaje.
 
