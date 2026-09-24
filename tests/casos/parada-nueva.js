@@ -41,6 +41,93 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   await p.screenshot({ path: captura('parada-nueva-dia.png') });
   await cerrarHoja();
 
+  titulo('EL DÍA SALE DEL CARRUSEL, NO DE `_diaVisible`');
+  // Al entrar al viaje desde fuera, `_diaVisible` se pone a null a propósito, y
+  // se rellena cuando el deslizamiento se asienta. En ese hueco la parada nueva
+  // se iba al primer día del viaje aunque estuvieras mirando el quinto.
+  const sinMarca = await p.evaluate(async () => {
+    TripDetail._diaVisible = null;
+    const k = TripDetail._diaActual();
+    const t = await DB.get('trips', 'trip-demo-1');
+    await TripDetail.openPlanningEditor(t, null, { day: TripDetail._diaActual() });
+    return { carrusel: k, propuesto: document.getElementById('f-day')?.value };
+  });
+  await sleep(p, 900);
+  const sinMarcaDia = await p.evaluate(() => document.getElementById('f-day')?.value);
+  ok(sinMarca.carrusel === dias.pasado,
+    'sin `_diaVisible`, el carrusel sigue sabiendo qué día se ve', sinMarca);
+  ok(sinMarcaDia === dias.pasado && sinMarcaDia !== dias.inicio,
+    'y la parada nueva cae ahí, no en el primer día del viaje',
+    { propuesto: sinMarcaDia, inicio: dias.inicio });
+  await cerrarHoja();
+
+  titulo('LA HORA QUE SE PROPONE: 15 MIN DESPUÉS DE LO ÚLTIMO');
+  // D+1 acaba con la cena de 19:30 a 21:00.
+  await p.evaluate((d) => TripDetail._irADia(d), dias.manana);
+  await sleep(p, 1600);
+  await abrirDesdeElFab(); await sleep(p, 800);
+  await celda('Lugar'); await sleep(p, 900);
+  const sug = await p.evaluate(() => ({
+    dia: document.getElementById('f-day')?.value,
+    hora: document.getElementById('f-time')?.value,
+    aviso: [...document.querySelectorAll('#dates-block .field-hint')].map((x) => x.textContent).join(' '),
+  }));
+  ok(sug.hora === '21:15',
+    'la última del día acaba a las 21:00, así que propone las 21:15', sug);
+  ok(/15 min después/.test(sug.aviso), 'y dice de dónde sale esa hora', sug.aviso);
+  await cerrarHoja();
+
+  // Un día vacío no tiene nada después de lo cual ponerse.
+  const vacio = await p.evaluate(async (d) => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    await TripDetail.openPlanningEditor(t, null, { day: d });
+    return document.getElementById('f-time')?.value;
+  }, dias.antesDeAyer);
+  await sleep(p, 900);
+  ok(await p.evaluate(() => document.getElementById('f-time')?.value) === '',
+    'en un día vacío no se inventa ninguna hora', JSON.stringify(vacio));
+  await cerrarHoja();
+
+  titulo('DÓNDE, TÍTULO Y LUEGO CUÁNDO');
+  await abrirDesdeElFab(); await sleep(p, 800);
+  await celda('Lugar'); await sleep(p, 900);
+  const orden = await p.evaluate(() => {
+    const paso = document.querySelector('.wz-step.on');
+    const y = (n) => Math.round(n.getBoundingClientRect().top);
+    const vis = [...paso.children].filter((n) => n.offsetParent && n.getBoundingClientRect().height > 0);
+    return {
+      bloques: vis.map((n) => n.id || n.className.split(' ')[0]),
+      donde: y(document.getElementById('place-block')),
+      titulo: y(document.getElementById('title-row')),
+      cuando: y(document.getElementById('dates-block')),
+      // La duración y el modo de llegada bajan a "Más": se tocan una vez de
+      // cada veinte y ocupaban media pantalla del camino corto. Se pregunta con
+      // `checkVisibility()`, que es lo único que responde bien dentro de un
+      // <details> cerrado: ni `offsetParent` ni el alto del rectángulo lo hacen.
+      duracion: (() => {
+        const d = document.getElementById('f-duration');
+        const sec = d && d.closest('.wz-sec');
+        return { seVe: !!d && d.checkVisibility(),
+                 seccion: sec?.querySelector('.wz-sec-t')?.textContent, abierta: !!sec?.open };
+      })(),
+    };
+  });
+  ok(orden.donde < orden.titulo && orden.titulo < orden.cuando,
+    'el orden es dónde → título → fecha y hora', orden);
+  ok(orden.duracion.seccion === 'Más' && !orden.duracion.abierta && !orden.duracion.seVe,
+    'y la duración de la visita baja a "Más", plegada, sin ocupar el camino corto', orden.duracion);
+
+  titulo('LA CABECERA, ARRIBA DEL TODO');
+  const cab = await p.evaluate(() => {
+    const h = document.querySelector('.sheet-header').getBoundingClientRect();
+    const s = document.querySelector('.sheet').getBoundingClientRect();
+    const b = document.querySelector('.sheet-body').getBoundingClientRect();
+    return { desdeArriba: Math.round(h.top - s.top), encimaDelCuerpo: Math.round(b.top - h.bottom) };
+  });
+  ok(cab.desdeArriba < 30 && cab.encimaDelCuerpo >= 0,
+    'la cabecera va pegada arriba y el cuerpo empieza debajo, no detrás', cab);
+  await cerrarHoja();
+
   titulo('EL DÍA DE FIN, IGUAL AL DE INICIO');
   await abrirDesdeElFab(); await sleep(p, 800);
   await celda('Tren'); await sleep(p, 900);
@@ -48,7 +135,7 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     d1: document.getElementById('tr-d1')?.value,
     d2: document.getElementById('tr-d2')?.value,
   }));
-  ok(rango.d1 === dias.pasado && rango.d2 === rango.d1,
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(rango.d1) && rango.d2 === rango.d1,
     'un traslado nuevo empieza y acaba el mismo día, sin rellenar nada', rango);
   await cerrarHoja();
 
@@ -312,6 +399,54 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   });
   ok(traGuardar.lat != null && traGuardar.lng != null,
     'guardar la parada no borra las coordenadas del trayecto', traGuardar);
+
+  titulo('EL AVISO DE "PUEDE ESTAR CERRADO" NO SE CONFUNDE CON EL DEL GASTO');
+  // Los dos son un ⚠️. Estando en la misma fila del subtítulo, no había manera
+  // de saber cuál de los dos te hablaba. El del horario se va a la hora, que es
+  // justo de lo que avisa.
+  await p.evaluate(async (d) => {
+    // OSM de mentira: cerrado siempre, para no depender de Overpass.
+    window.fetchOpeningHours = async () => 'Mo-Su 09:00-10:00';
+    window.ohIsOpen = () => false;
+    const its = (await DB.listByTrip('planning_items', 'trip-demo-1'))
+      .filter((x) => x.day_date === d && x.time && !x.deleted_at);
+    const x = its[0];
+    x.lat = 6.6357; x.lng = -73.2264; x.expense_reminder = true;   // los dos avisos a la vez
+    await DB.put('planning_items', x);
+    await Router.render();
+    return x.id;
+  }, dias.manana);
+  await p.evaluate((d) => TripDetail._irADia(d), dias.manana);
+  await sleep(p, 2000);
+  // El repaso de horarios corre al pintar; el día se acaba de montar, así que se
+  // le pide otra vez sobre lo que hay ahora en pantalla.
+  await p.evaluate(async (d) => {
+    const its = await DB.listByTrip('planning_items', 'trip-demo-1');
+    const byId = {}; its.forEach((x) => { byId[x.id] = x; });
+    const g = [...document.querySelectorAll('.day-group')].find((x) => x.dataset.day === d);
+    await TripDetail._checkVisibleOpeningHours(g.closest('.plan-page') || document, byId);
+  }, dias.manana);
+  await sleep(p, 1200);
+  const avisos = await p.evaluate(() => {
+    const w = document.querySelector('.oh-warn');
+    if (!w) return null;
+    const card = w.closest('.timeline-item');
+    const gasto = card.querySelector('.expense-warn-flag, .tk-warn');
+    const r = (n) => n.getBoundingClientRect();
+    return {
+      enLaHora: !!w.closest('.li-time'),
+      enElSubtitulo: !!w.closest('.li-subrow'),
+      hayGasto: !!gasto,
+      gastoEnLaHora: gasto ? !!gasto.closest('.li-time') : null,
+      separados: gasto ? Math.round(Math.abs(r(w).left - r(gasto).left)) : null,
+    };
+  });
+  ok(avisos, 'el aviso de horario aparece', JSON.stringify(avisos));
+  ok(avisos.enLaHora && !avisos.enElSubtitulo,
+    'y va pegado a la hora, no en la fila del subtítulo', avisos);
+  ok(avisos.hayGasto && !avisos.gastoEnLaHora && avisos.separados > 40,
+    'mientras el del gasto se queda donde estaba, bien lejos del otro', avisos);
+  await p.screenshot({ path: captura('parada-nueva-avisos.png') });
 
   terminar(errs);
   await cerrar();
