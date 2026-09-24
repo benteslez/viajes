@@ -1285,13 +1285,25 @@ a.day-hotel-chip:hover { border-color: var(--tipo-hotel); }
 }
 /* El punto que dejó el enlace pegado, en la propia etiqueta del campo: ahí se ve
    de un vistazo qué extremo tiene ubicación y cuál no, sin robar una fila. */
-.ruta-lbl { display:flex; align-items:center; gap:2px; }
+.ruta-lbl { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; }
 .ruta-lbl > label { margin:0; }
 .ruta-punto {
-  border:0; background:none; padding:0; cursor:pointer;
-  font-size:12px; line-height:1; opacity:.9;
+  flex-shrink:0; display:inline-flex; align-items:center; gap:3px;
+  border:1px solid var(--line); background:var(--bg-elev); color:var(--text-muted);
+  border-radius:var(--r-pill); padding:2px 7px; cursor:pointer;
+  font-family:inherit; font-size:11px; font-weight:600; line-height:1.5;
 }
-.ruta-punto:hover { opacity:1; }
+.ruta-punto .rp-ico { display:flex; }
+.ruta-punto .rp-ico svg { width:11px; height:11px; }
+.ruta-punto:active { background:var(--bg-soft); }
+/* Puesto: verde, como el "lugar seleccionado" del resto del editor. */
+.ruta-punto.puesto {
+  border-color:color-mix(in srgb, #10b981 55%, var(--line));
+  background:color-mix(in srgb, #10b981 14%, var(--bg-elev));
+  color:#047857;
+}
+:root[data-tema="oscuro"] .ruta-punto.puesto,
+:root:not([data-tema]) .ruta-punto.puesto { color:#6ee7b7; }
 .tramo-aviso { margin-top:6px; }
 /* Muy estrecho: la flecha baja a su propia línea y los campos se apilan, que es
    mejor que dos cajas de 110 px donde no cabe ni "Aeropuerto". */
@@ -2372,6 +2384,22 @@ main:has(.plan-pager) { padding-bottom:0; }
 #dates-block .form-grid-2 + .form-grid-2,
 #dates-block .form-grid-2 + .form-row,
 #dates-block .form-row + .form-row { margin-top:8px; }
+/* Fecha y hora de un rango (Salida / Llegada), con la etiqueta a la izquierda:
+   una línea por dato. La hora es fija y estrecha; lo que sobra se lo queda la
+   fecha, que es la que puede quedarse sin sitio. */
+.fecha-hora {
+  display:grid; grid-template-columns:minmax(52px, auto) minmax(0, 1fr) 112px;
+  gap:8px; align-items:center;
+}
+.fecha-hora + .fecha-hora { margin-top:8px; }
+.fecha-hora > .sub-lbl { margin:0; }
+/* Sin la hora borrable, la caja de la hora es solo el input. */
+.fecha-hora .time-with-clear { min-width:0; }
+/* Muy estrecho: la etiqueta se sube y la pareja se reparte la fila, como antes. */
+@media (max-width: 379px) {
+  .fecha-hora { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .fecha-hora > .sub-lbl { grid-column:1 / -1; }
+}
 /* Alinear fecha/hora (Salida–Hora, Llegada–Hora) por la base del input. */
 #dates-block .form-grid-2 { align-items:end; }
 #dates-block .form-grid-2 .form-row { margin:0; }
@@ -14845,6 +14873,12 @@ const TripDetail = {
       const inp = el('input', { id, type:'time', value: value || '' });
       const clr = el('button', { type:'button', class:'time-clear', title:'Quitar hora', 'aria-label':'Quitar hora',
         onclick: () => { inp.value = ''; inp.dispatchEvent(new Event('change')); } }, '✕');
+      // Un botón de borrar la hora al lado de una hora vacía no borra nada y se
+      // come 34 px de una fila que en móvil ya va justa. Aparece con la hora.
+      const sync = () => { clr.style.display = inp.value ? '' : 'none'; };
+      inp.addEventListener('input', sync);
+      inp.addEventListener('change', sync);
+      sync();
       return el('div', { class:'time-with-clear' }, [ inp, clr ]);
     };
     const renderDatesBlock = () => {
@@ -14865,12 +14899,17 @@ const TripDetail = {
         const inD2 = el('input', { id:'tr-d2', type:'date', value:d2 });
         if (d1) inD2.min = d1;
         const cell = (lbl, inp) => el('div', { class:'form-row' }, [ el('label', { class:'sub-lbl', text:lbl }), inp ]);
-        const row1 = R.withTime
-          ? el('div', { class:'form-grid-2' }, [ cell(R.d1, inD1), cell('Hora', timeInput('tr-t1', t1)) ])
-          : cell(R.d1, inD1);
-        const row2 = R.withTime
-          ? el('div', { class:'form-grid-2' }, [ cell(R.d2, inD2), cell('Hora', timeInput('tr-t2', t2)) ])
-          : cell(R.d2, inD2);
+        // La etiqueta a la izquierda y la fecha y la hora a su derecha, en una
+        // sola línea. Antes eran cuatro etiquetas para dos datos —"Salida |
+        // Hora" y "Llegada | Hora"—, con "Hora" repetida sin decir de qué, y
+        // dos líneas por fila: el horario de un traslado no cabía en pantalla.
+        const par = (lbl, inp, tid, tval) => el('div', { class:'fecha-hora' }, [
+          el('label', { class:'sub-lbl', text:lbl }),
+          inp,
+          timeInput(tid, tval),
+        ]);
+        const row1 = R.withTime ? par(R.d1, inD1, 'tr-t1', t1) : cell(R.d1, inD1);
+        const row2 = R.withTime ? par(R.d2, inD2, 'tr-t2', t2) : cell(R.d2, inD2);
         datesBlock.appendChild(el('span', { class:'grupo-tit', text: R.titulo || 'Fechas' }));
         datesBlock.appendChild(row1);
         datesBlock.appendChild(row2);
@@ -15156,19 +15195,29 @@ const TripDetail = {
         // el día se lo saltaba como si no se moviera nadie.
         const conPuntos = type === 'transporte' && MODOS_CARRETERA.includes(meta.modo || '');
         const aviso = el('div', { class:'field-hint tramo-aviso' });
+        const botones = {};
         let pedido = '';
         const puntoDe = (id) => {
           const md = it.metadata || {};
           const la = parseFloat(md[id + '_lat']), ln = parseFloat(md[id + '_lng']);
           return (Number.isFinite(la) && Number.isFinite(ln)) ? { lat: la, lng: ln } : null;
         };
-        const pintarTramo = () => {
-          rutaBlock.querySelectorAll('.ruta-punto').forEach(ch => {
-            ch.style.display = puntoDe(ch.dataset.campo) ? '' : 'none';
+        const pintarTramo = (msg) => {
+          // El botón siempre está: puesto o no, es lo que cuenta que aquí se
+          // puede pegar un enlace. Escondido hasta tener punto, la función
+          // existía y no la encontraba nadie.
+          Object.keys(botones).forEach(id => {
+            const b = botones[id], hay = !!puntoDe(id);
+            b.classList.toggle('puesto', hay);
+            b.lastChild.textContent = hay ? 'ubicado' : 'enlace';
+            b.title = hay ? 'Quitar la ubicación de este extremo' : 'Pegar el enlace del mapa de este sitio';
           });
           const a = puntoDe('origen'), b = puntoDe('destino');
+          if (msg) { aviso.textContent = msg; return; }
           if (!a || !b) {
-            aviso.textContent = 'Pega el enlace del mapa en origen y destino y el tiempo del trayecto se calcula solo.';
+            aviso.textContent = a || b
+              ? 'Falta el otro extremo para calcular el tiempo.'
+              : 'Con el enlace de Google Maps de cada extremo, el tiempo del trayecto sale solo y cuenta en el día.';
             return;
           }
           const k = routeKey(a, b);
@@ -15177,7 +15226,7 @@ const TripDetail = {
           const off = legBetween(a, b);
           const v = legView(real ? c.km : off.km,
             real && c.drivingMin != null ? c.drivingMin : off.drivingMin, 'car');
-          aviso.textContent = `🚗 ${fmtDur(v.min)} · ${fmtKm(v.km)} · ${real ? 'por carretera' : 'estimado'}`;
+          aviso.textContent = `🚗 ${fmtDur(v.min)} · ${fmtKm(v.km)} · ${real ? 'por carretera' : 'estimado'} · cuenta en el total del día`;
           // Una petición por par: si OSRM no contesta, `done()` vuelve aquí y sin
           // este cerrojo se pediría en bucle.
           if (!real && pedido !== k && navigator.onLine) {
@@ -15185,12 +15234,12 @@ const TripDetail = {
             enqueueDayRoute({ pts:[a, b], token:null, done: () => { if (aviso.isConnected) pintarTramo(); } });
           }
         };
-        // Un enlace pegado aquí no es el nombre del sitio: se le saca el punto y
-        // en el campo queda el nombre corto, no la URL entera de Google.
-        const tomarPunto = async (f, input) => {
-          const v = String(input.value || '').trim();
-          if (!/^(https?:\/\/|geo:)/i.test(v)) return;
-          aviso.textContent = 'Leyendo el enlace…';
+        // Un enlace no es el nombre del sitio: se le saca el punto y en el campo
+        // queda el nombre corto, no la URL entera de Google.
+        const tomarPunto = async (f, input, texto) => {
+          const v = String(texto != null ? texto : input.value || '').trim();
+          if (!/^(https?:\/\/|geo:)/i.test(v)) return false;
+          pintarTramo('Leyendo el enlace…');
           let pt = parseMapsLink(v);
           if (pt && pt.lat == null && pt.url) {
             const largo = await expandirEnlaceMapa(pt.url);
@@ -15199,37 +15248,51 @@ const TripDetail = {
           }
           const nombre = nombreCorto(pt && pt.nombre);
           if (!pt || pt.lat == null) {
-            input.value = nombre || '';
-            aviso.textContent = 'Ese enlace es de los cortos y el navegador no puede seguirlo: abre el sitio en Google Maps y pega la dirección larga, o sus coordenadas.';
-            return;
+            if (input.value.trim() === v) input.value = nombre || '';
+            pintarTramo('Ese enlace es de los cortos y el navegador no puede seguirlo: ábrelo en Google Maps y pega la dirección larga de la barra, o las coordenadas del sitio.');
+            return false;
           }
           it.metadata = it.metadata || {};
           it.metadata[f.id + '_lat'] = pt.lat;
           it.metadata[f.id + '_lng'] = pt.lng;
           input.value = nombre || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`;
           pintarTramo();
+          return true;
+        };
+        // El botón lee el portapapeles, que es donde acaba de dejarlo "Compartir →
+        // Copiar enlace". Si el navegador no lo deja (Safari lo pide cada vez, y
+        // en algún caso lo niega), se cae a lo de siempre: el foco en el campo.
+        const pegarEnlace = async (f, input) => {
+          if (puntoDe(f.id)) {
+            delete (it.metadata || {})[f.id + '_lat'];
+            delete (it.metadata || {})[f.id + '_lng'];
+            pintarTramo();
+            return;
+          }
+          let txt = '';
+          try { txt = await navigator.clipboard.readText(); } catch (_) {}
+          if (await tomarPunto(f, input, txt)) return;
+          input.focus();
+          pintarTramo(txt && !/^(https?:\/\/|geo:)/i.test(txt)
+            ? 'En el portapapeles no hay un enlace de mapa. Copia el sitio en Google Maps (Compartir → Copiar enlace) y pégalo en el campo.'
+            : 'Pega aquí el enlace del sitio (en Google Maps: Compartir → Copiar enlace).');
         };
         const campo = (f) => {
           const input = el('input', { id:`meta-${f.id}`, type:'text', value: meta[f.id] || '',
-            placeholder: conPuntos ? 'Nombre o enlace del mapa' : (f.placeholder || '') });
-          // Al pegar y también al salir del campo: hay quien escribe el enlace o
-          // lo suelta con el ratón, y entonces no hay evento de pegado.
-          if (conPuntos) {
-            input.onpaste  = (e) => setTimeout(() => tomarPunto(f, e.target), 0);
-            input.onchange = (e) => tomarPunto(f, e.target);
-          }
-          const chip = conPuntos ? el('button', { type:'button', class:'ruta-punto', data:{ campo: f.id },
-            title:'Quitar el punto de este extremo', 'aria-label':`Quitar el punto de ${f.label}`, text:'📍',
-            onclick: () => {
-              delete (it.metadata || {})[f.id + '_lat'];
-              delete (it.metadata || {})[f.id + '_lng'];
-              pintarTramo();
-            } }) : null;
+            placeholder: conPuntos ? 'Nombre o enlace' : (f.placeholder || '') });
           const etiqueta = el('label', { class:'muted', style:{fontSize:'12px'}, text: f.label });
+          if (!conPuntos) return el('div', { class:'form-row' }, [ etiqueta, input ]);
+          input.onpaste  = (e) => setTimeout(() => tomarPunto(f, e.target), 0);
+          input.onchange = (e) => tomarPunto(f, e.target);
+          const bt = el('button', { type:'button', class:'ruta-punto', onclick: () => pegarEnlace(f, input) }, [
+            el('span', { class:'rp-ico', html: svg('pin') }),
+            el('span', { text:'enlace' }),
+          ]);
+          botones[f.id] = bt;
           return el('div', { class:'form-row' }, [
-            // El chip va FUERA de la etiqueta: dentro, su emoji se colaba en el
-            // texto del campo ("Origen📍") para cualquiera que lo lea.
-            chip ? el('div', { class:'ruta-lbl' }, [ etiqueta, chip ]) : etiqueta,
+            // El botón va FUERA de la etiqueta: dentro, su texto se colaba en el
+            // nombre del campo ("Origen enlace") para cualquiera que lo lea.
+            el('div', { class:'ruta-lbl' }, [ etiqueta, bt ]),
             input,
           ]);
         };

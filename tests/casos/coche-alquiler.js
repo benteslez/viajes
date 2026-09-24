@@ -150,12 +150,23 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
       subLbl: [...document.querySelectorAll('#dates-block .sub-lbl')].map((x) => x.textContent),
       t1: vis(document.getElementById('tr-t1')), t2: vis(document.getElementById('tr-t2')),
       tipoT1: document.getElementById('tr-t1')?.type,
+      // Cada hora va en la misma fila que SU fecha, bajo la única etiqueta de la
+      // fila: "Recogida" manda sobre la fecha y la hora de recoger.
+      filas: [...document.querySelectorAll('#dates-block .fecha-hora')].map((f) => ({
+        lbl: f.querySelector('.sub-lbl')?.textContent,
+        d: f.querySelector('input[type=date]')?.id,
+        t: f.querySelector('input[type=time]')?.id,
+      })),
     };
   });
   ok(campos.t1 && campos.t2 && campos.tipoT1 === 'time',
     'el editor pide las dos horas', campos);
-  ok(JSON.stringify(campos.subLbl) === '["Recogida","Hora","Devolución","Hora"]',
-    'cada una al lado de su fecha', campos.subLbl);
+  ok(JSON.stringify(campos.subLbl) === '["Recogida","Devolución"]',
+    'una etiqueta por fila, sin el "Hora" repetido', campos.subLbl);
+  ok(JSON.stringify(campos.filas) === JSON.stringify([
+      { lbl:'Recogida',   d:'tr-d1', t:'tr-t1' },
+      { lbl:'Devolución', d:'tr-d2', t:'tr-t2' }]),
+    'cada hora al lado de su fecha, bajo la etiqueta que las manda a las dos', campos.filas);
   ok(campos.titulo === 'Alquiler', 'bajo su propia cabecera', campos.titulo);
 
   titulo('EL SITIO Y LA FECHA NO SE LLAMAN IGUAL');
