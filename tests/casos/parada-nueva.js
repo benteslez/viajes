@@ -170,6 +170,9 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     puestos: [...document.querySelectorAll('.ruta-punto.puesto')].length,
     texto: [...document.querySelectorAll('.ruta-punto')].map((b) => b.textContent.trim()),
     aviso: document.querySelector('.tramo-aviso')?.textContent || '',
+    pruebas: [...document.querySelectorAll('.ruta-prueba')]
+      .filter((x) => x.offsetParent)
+      .map((x) => ({ coords: x.querySelector('.rp-coords').textContent, ver: x.querySelector('.rp-ver').href })),
   }));
   ok(pegados.campos[0] === 'Mérida' && pegados.campos[1] === 'Chichén Itzá',
     'en el campo queda el nombre del sitio, no la URL de Google', pegados.campos);
@@ -177,6 +180,24 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     'los dos botones dicen que ya tienen ubicación', pegados);
   ok(/🚗/.test(pegados.aviso) && /cuenta en el total del día/.test(pegados.aviso),
     'y sale el tiempo del trayecto, diciendo que cuenta en el día', pegados.aviso);
+  // "Ubicado" a secas no dice a dónde: el enlace pegado en el campo equivocado
+  // se veía igual de verde que el correcto.
+  ok(pegados.pruebas.length === 2
+    && pegados.pruebas[0].coords === '20.9674, -89.5926'
+    && pegados.pruebas[1].coords === '20.6829, -88.5686',
+    'cada extremo enseña las coordenadas a las que ha ido a parar', pegados.pruebas);
+  ok(pegados.pruebas.every((x) => /google\.com\/maps/.test(x.ver)),
+    'con su enlace para abrirlo y comprobarlo', pegados.pruebas.map((x) => x.ver));
+  // La flecha va entre los dos campos. Con la línea de coordenadas debajo se
+  // iba a la altura de las coordenadas, que no separa nada.
+  const flecha = await p.evaluate(() => {
+    const c = (n) => { const b = n.getBoundingClientRect(); return b.top + b.height / 2; };
+    const f = document.querySelector('.ruta-flecha');
+    const ins = [...document.querySelectorAll('#ruta-block input')];
+    return { desvio: Math.round(c(f) - (c(ins[0]) + c(ins[1])) / 2) };
+  });
+  ok(Math.abs(flecha.desvio) <= 8, 'y la flecha sigue entre los dos campos',
+    flecha.desvio + ' px de desvío');
   await p.screenshot({ path: captura('parada-nueva-coche.png') });
 
   // El mismo botón quita el punto: es lo único que puede deshacerlo.
@@ -190,6 +211,8 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(quitado.puestos === 1 && /Falta el otro extremo/.test(quitado.aviso),
     'pulsarlo otra vez quita esa ubicación y lo dice', quitado);
   ok(quitado.campo === 'Chichén Itzá', 'pero el nombre escrito se queda', quitado.campo);
+  ok(await p.evaluate(() => [...document.querySelectorAll('.ruta-prueba')].filter((x) => x.offsetParent).length) === 1,
+    'y su línea de coordenadas se va con él');
   await cerrarHoja();
 
   titulo('EL HORARIO, UNA LÍNEA POR DATO');
@@ -225,6 +248,47 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(await p.evaluate(() => [...document.querySelectorAll('.time-clear')].filter((b) => b.offsetParent).length) === 1,
     'aparece en cuanto hay una hora que borrar');
   await cerrarHoja();
+
+  titulo('EL RESUMEN DEL DÍA SE COLOCA AUNQUE LA LISTA TARDE EN COLGARSE');
+  // `_dayListEl` devuelve la lista y quien llama la cuelga DESPUÉS. Aquí se
+  // retrasa ese enganche a propósito: con el carrusel montando páginas y el hilo
+  // ocupado —justo al volver de guardar— pasa de verdad, y el total del día se
+  // quedaba sin aparecer hasta recargar la página.
+  const tarde = await p.evaluate(async (d) => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    const its = (await DB.listByTrip('planning_items', 'trip-demo-1'))
+      .filter((x) => x.day_date === d && !x.deleted_at);
+    // Un contenedor con la misma forma que una página del carrusel.
+    const pag = el('div', { class:'plan-page', data:{ day:d } }, [
+      el('div', { class:'day-group', data:{ day:d } }, [
+        el('div', { class:'day-head' }, [ el('div', { class:'day-meta-row' }) ]),
+      ]),
+    ]);
+    const lista = TripDetail._dayListEl(t, d, its, { todayStr: todayIso(), renderToken: {} });
+    const g = pag.querySelector('.day-group');
+    document.body.appendChild(pag);
+    const leer = () => {
+      const s = pag.querySelector('.day-route-summary');
+      return { hay: !!s, enMeta: !!s?.closest('.day-meta-row'), txt: s?.textContent || '' };
+    };
+    const antes = leer();
+    // 20 fotogramas después: mucho más de lo que esperaba el código viejo.
+    await new Promise((res) => {
+      let n = 0;
+      const tic = () => (++n < 20 ? requestAnimationFrame(tic) : res());
+      requestAnimationFrame(tic);
+    });
+    g.appendChild(lista);
+    await new Promise((res) => setTimeout(res, 600));
+    const despues = leer();
+    pag.remove();
+    return { antes, despues };
+  }, dias.ayer);
+  ok(!tarde.antes.hay, 'antes de colgarla no hay resumen, como debe ser', tarde.antes);
+  ok(tarde.despues.hay && tarde.despues.enMeta,
+    'al colgarla, el resumen aparece en la fila del día sin recargar nada', tarde.despues);
+  ok(/🚗/.test(tarde.despues.txt) && /min/.test(tarde.despues.txt),
+    'y con el tiempo de trayectos ya calculado', tarde.despues.txt);
 
   titulo('Y LOS PUNTOS SOBREVIVEN A GUARDAR DESDE EL EDITOR');
   await p.evaluate(async () => {
