@@ -867,9 +867,12 @@ h2.section-title {
 .sheet-handle { width:36px; height:5px; background:var(--ios-sep); margin:6px auto 2px; opacity:.6; }
 
 /* Cabecera translúcida: el contenido se ve pasar por debajo al desplazar, que
-   es lo que hace que una hoja de iOS parezca una capa y no un recorte. */
+   es lo que hace que una hoja de iOS parezca una capa y no un recorte.
+   SIN `position:sticky`: quien hace scroll es `.sheet-body`, no la hoja, así que
+   la cabecera se pegaba al scroll de la PÁGINA y aparecía flotando en mitad del
+   diálogo. Siendo una fila más del flex de la hoja ya se queda arriba sola. */
 .sheet-header {
-  position:sticky; top:0; z-index:2;
+  position:relative; z-index:2;
   padding:10px 16px 12px;
   background:color-mix(in srgb, var(--ios-bg) 82%, transparent);
   -webkit-backdrop-filter:saturate(180%) blur(20px);
@@ -921,15 +924,22 @@ h2.section-title {
 .sheet-body .form-row:not(.wz-chip-row),
 .sheet-body .wz-sec,
 .sheet-body #ruta-block,
-.sheet-body #place-block,
 .sheet-body .ios-grupo {
   background:var(--ios-card); border-radius:10px;
   padding:12px 16px; margin:0 0 16px;
 }
-/* Los bloques con cabecera no son la tarjeta: la tarjeta es su `.ios-grupo` de
-   dentro, y el título queda encima, sobre el gris, como en Ajustes. */
+/* Los bloques con cabecera o con nota al pie no son la tarjeta: la tarjeta es su
+   `.ios-grupo` de dentro, y el título y la explicación quedan fuera, sobre el
+   gris, como en Ajustes. Dentro, la caja blanca se hacía el doble de alta por
+   una frase que no es un campo. */
 .sheet-body #metadata-block,
-.sheet-body #dates-block { background:none; padding:0; margin:0 0 16px; }
+.sheet-body #dates-block,
+.sheet-body #place-block { background:none; padding:0; margin:0 0 16px; }
+.sheet-body #place-block > .field-hint,
+.sheet-body #dates-block > .field-hint,
+.sheet-body #metadata-block > .field-hint { padding:0 4px; margin:6px 0 0; }
+/* El desplegable de resultados no pinta su caja si no hay nada dentro. */
+.sheet-body .search-results:empty { display:none !important; }
 /* Una tarjeta dentro de otra sería una caja dentro de una caja: las de dentro
    se quedan en filas, con su separador. */
 .sheet-body .form-row .form-row,
@@ -3497,8 +3507,15 @@ body:has(.wrf-overlay) #view-root .leaflet-container { visibility: hidden !impor
 .day-fit-warn .dfw-body { display:flex; flex-direction:column; gap:7px; min-width:0; }
 .day-fit-warn .dfw-msg { font-size:12.5px; color:var(--text); line-height:1.4; }
 .day-fit-warn .dfw-ok { align-self:flex-start; }
-/* Aviso de horario (posible cierre). */
+/* Aviso de horario (posible cierre): una chapa en la esquina de la hora. Dentro
+   de la columna ocuparía una tercera línea y desmontaría la pastilla. */
 .oh-warn { flex-shrink:0; font-size:12px; }
+.timeline-item .li-time { position:relative; overflow:visible; }
+.timeline-item .li-time > .oh-warn {
+  position:absolute; top:-6px; right:-6px;
+  font-size:11px; line-height:1; pointer-events:auto;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));
+}
 
 /* ========================================================================
    Resumen — tiles métricas
@@ -11890,7 +11907,7 @@ const TripDetail = {
       // Con el día que se está viendo: sin él, estando en el 26 de diciembre la
       // parada nueva salía al 22, que es el primero del viaje, y había que
       // corregir la fecha a mano cada vez.
-      fab.onclick = () => TripDetail.openPlanningEditor(t, null, { day: TripDetail._diaVisible || null });
+      fab.onclick = () => TripDetail.openPlanningEditor(t, null, { day: TripDetail._diaActual() });
     }
 
     // Chips de filtro
@@ -12258,8 +12275,11 @@ const TripDetail = {
       const oh = await fetchOpeningHours(it.lat, it.lng);
       if (TripDetail._ohToken !== token) return;
       if (ohIsOpen(oh, it.day_date, it.time) === false) {
-        const sub = card.querySelector('.li-subrow');
-        if (sub && !sub.querySelector('.oh-warn')) sub.appendChild(el('span', { class:'oh-warn', title:'Puede estar cerrado a esa hora (según OpenStreetMap)', text:'⚠️' }));
+        // Va PEGADO A LA HORA, que es de lo que avisa. En el subtítulo era el
+        // mismo ⚠️ y en el mismo sitio que el de "falta apuntar el gasto", y no
+        // había forma de saber cuál de los dos te estaba hablando.
+        const dest = card.querySelector('.li-time') || card.querySelector('.li-subrow');
+        if (dest && !dest.querySelector('.oh-warn')) dest.appendChild(el('span', { class:'oh-warn', title:'Puede estar cerrado a esa hora (según OpenStreetMap)', text:'⚠️' }));
       }
       await new Promise(r => setTimeout(r, 250));
     }
@@ -12381,6 +12401,24 @@ const TripDetail = {
 
   // El día que se ve y los dos de al lado: así al llegar deslizando ya está
   // montado y no se ve aparecer nada.
+  // El día que se está viendo AHORA. `_diaVisible` se actualiza cuando el
+  // deslizamiento se asienta, así que puede ir un paso por detrás; y al entrar
+  // al viaje desde fuera se pone a null a propósito, que es cuando la parada
+  // nueva se iba al primer día del viaje aunque estuvieras mirando el quinto.
+  // Preguntándole al carrusel dónde está no hace falta acertar con el momento.
+  _diaActual() {
+    const pager = TripDetail._pager;
+    if (pager && pager.isConnected) {
+      const ps = TripDetail._paginasVisibles(pager);
+      const centro = pager.scrollLeft + pager.clientWidth / 2;
+      const p = ps.find(x => x.offsetLeft <= centro && (x.offsetLeft + x.offsetWidth) > centro)
+        || ps[0];
+      if (p && p.dataset.day && p.dataset.day !== 'sin-fecha') return p.dataset.day;
+    }
+    const k = TripDetail._diaVisible;
+    return (k && k !== 'sin-fecha') ? k : null;
+  },
+
   _pintarCerca(k) {
     const pager = TripDetail._pager;
     if (!pager || !TripDetail._pintores || !TripDetail._pintores.size) return false;
@@ -14991,7 +15029,7 @@ const TripDetail = {
       // el primer día del viaje —que es lo que menos se suele querer—. El
       // filtro de fecha deja fuera el cajón 'sin-fecha', que es un grupo de la
       // lista, no un día.
-      day_date: [(opts && opts.day), TripDetail._diaVisible,
+      day_date: [(opts && opts.day), TripDetail._diaActual(),
         (t.start_date && t.end_date && todayIso() >= t.start_date && todayIso() <= t.end_date) ? todayIso() : null,
         t.start_date, todayIso()].find(d => /^\d{4}-\d{2}-\d{2}$/.test(d || '')), time:'', title:'',
       place_name:'', lat:null, lng:null, gmaps_url:'', address:'', notes:'', order_index:0,
@@ -15007,6 +15045,10 @@ const TripDetail = {
     // Estado inicial: el valor crudo manda (incluido el centinela 'ninguno' = Sin estado);
     // si no hay nada, derivamos el efectivo (reservas legacy → por_iniciar).
     let currentStatus = it.status || itemStatus(it);
+    // Al crear, la hora que se propone: un cuarto de hora después de lo último
+    // del día. Solo para paradas sueltas: la hora de un vuelo o de un hotel la
+    // manda la reserva, no lo que hubiera antes.
+    const horaSug = existing ? '' : await horaSugerida(t.id, it.day_date);
 
     let searchTimer = null;
     // Coloca un punto en la parada (venga del buscador o de un enlace pegado).
@@ -15220,9 +15262,13 @@ const TripDetail = {
         datesBlock.appendChild(el('div', { class:'ios-grupo' }, [
           el('div', { class:'form-grid-2' }, [
             cell('Día', dayInput),
-            cell(showEnd ? 'Hora inicio' : 'Hora', timeInput('f-time', it.time)),
+            cell(showEnd ? 'Hora inicio' : 'Hora', timeInput('f-time', it.time || horaSug)),
           ]),
         ]));
+        if (!it.time && horaSug) {
+          datesBlock.appendChild(el('div', { class:'field-hint',
+            text:`Propuesta: ${MIN_ENTRE_PARADAS} min después de lo último de ese día. Cámbiala si no te vale.` }));
+        }
         // "Día fin" + "Hora fin": la parada normal empieza y acaba el mismo día,
         // así que van plegados. Se abren solos si ya traen algo, para que al
         // editar no desaparezca de la vista nada de lo que hay guardado.
@@ -15708,16 +15754,18 @@ const TripDetail = {
     };
 
     const placeBlock = el('div', { id:'place-block' }, [
-      el('div', { class:'form-row' }, [
-        el('label', { text:'Dónde' }),
-        el('input', { id:'f-search', type:'text', placeholder:'Busca el sitio o pega su enlace del mapa',
-          oninput: (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => doSearch(e.target.value), 800); },
-          // Al pegar no se espera: el enlace se resuelve al momento.
-          onpaste: (e) => { clearTimeout(searchTimer); setTimeout(() => doSearch(e.target.value), 0); } }),
-        el('div', { id:'plan-search-results', class:'search-results', style:{display:'block'} }),
-        selectedPlaceBlock,
-        el('div', { class:'field-hint', text:'Si no lo encuentra, pega el enlace del mapa o unas coordenadas.' }),
+      el('div', { class:'ios-grupo' }, [
+        el('div', { class:'form-row' }, [
+          el('label', { text:'Dónde' }),
+          el('input', { id:'f-search', type:'text', placeholder:'Busca el sitio o pega su enlace del mapa',
+            oninput: (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => doSearch(e.target.value), 800); },
+            // Al pegar no se espera: el enlace se resuelve al momento.
+            onpaste: (e) => { clearTimeout(searchTimer); setTimeout(() => doSearch(e.target.value), 0); } }),
+          el('div', { id:'plan-search-results', class:'search-results', style:{display:'block'} }),
+          selectedPlaceBlock,
+        ]),
       ]),
+      el('div', { class:'field-hint', text:'Si no lo encuentra, pega el enlace del mapa o unas coordenadas.' }),
       // Escribirlo a mano es el respaldo de cuando el buscador no acierta. Se
       // abre solo si hay algo escrito que NO se vea ya en la confirmación de
       // arriba: con el punto puesto, abrirlo repetía el nombre y la dirección y
@@ -15769,7 +15817,7 @@ const TripDetail = {
           arriveSel,
         ]),
       ]),
-      el('div', { class:'field-hint', text:'La duración ajusta el aviso de “quizá no dé tiempo”. El modo se usa para el tiempo del trayecto hasta esta parada.' }),
+      el('div', { class:'field-hint', text:'Ajustan el aviso de “quizá no dé tiempo” y el tramo hasta esta parada.' }),
     ]);
     const refreshTravelVisibility = () => {
       const type = $('#f-type')?.value || it.type;
@@ -16012,7 +16060,7 @@ const TripDetail = {
     // ---- Filas sueltas (título, notas, importe): antes iban inline dentro de
     //      `body`; ahora son nodos con nombre para poder repartirlos por pasos. ----
     const titleRow = el('div', { class:'form-row', id:'title-row' }, [
-      el('label', { text:'Título (auto si lo dejas vacío)' }),
+      el('label', { text:'Título' }),
       el('input', { id:'f-title', type:'text', value: it.title || '' }),
     ]);
     const notesRow = el('div', { class:'form-row' }, [
@@ -16365,27 +16413,35 @@ const TripDetail = {
       const subMas = [
         (Array.isArray(it.people) && it.people.length) ? fmtList(it.people) : null,
         it.notes ? 'con nota' : null,
-      ].filter(Boolean).join(' · ') || 'Personas, notas, color';
+        (it.metadata && it.metadata.duration_min != null) ? `${it.metadata.duration_min} min` : null,
+      ].filter(Boolean).join(' · ') || 'Duración, personas, notas, color';
       return el('div', { class:'wz' + (isWizard ? '' : ' wz-edit') }, [
         el('div', { class:'wz-head' }, [ wzBar, wzKicker, wzTitle, wzHint ]),
         wzStep('tipo', [ typeGrid, typeRow ]),
         wzStep('form', [
           wzChip, typeRow, peopleSlotTop,
-          // El orden en que se piensa una parada: QUÉ/DÓNDE, luego CUÁNDO, y al
-          // final los datos. De un vuelo lo primero que se sabe es de dónde a
-          // dónde vas; la hora viene después y la aerolínea, la última.
+          // El orden en que se piensa una parada: DÓNDE, cómo se llama, CUÁNDO,
+          // y al final los datos. De un vuelo lo primero que se sabe es de dónde
+          // a dónde vas; la hora viene después y la aerolínea, la última.
+          //
+          // El título va pegado al sitio y no al final: sale de él —el buscador
+          // lo rellena solo— y verlo a diez campos de distancia de donde se
+          // escribe no ayudaba a nadie.
           //
           // El atajo de pegar la reserva va arriba del todo: si lo vas a usar,
           // lo usas ANTES de empezar a teclear, no cuando ya llevas medio
           // formulario relleno.
           importBlock,
           rutaBlock,
-          placeBlock, travelBlock,
+          placeBlock,
+          titleRow,
           datesBlock,
           modeExtra, metadataBlock, returnFlightWrap, tzBlock,
-          titleRow,
           plegable('Reserva y gasto', subReserva, [ statusRow, consultaBlock, adjBlock, amountRow ], hayReserva),
-          plegable('Más', subMas, [ peopleSlotBottom, notesRow, colorRow ], hayMas),
+          // La duración y el modo de llegada afinan el aviso de "quizá no dé
+          // tiempo": se tocan una vez de cada veinte, así que bajan aquí en vez
+          // de ocupar media pantalla en el camino corto.
+          plegable('Más', subMas, [ travelBlock, peopleSlotBottom, notesRow, colorRow ], hayMas),
           wzSummary,
         ]),
       ]);
@@ -23961,6 +24017,39 @@ async function expandirEnlaceMapa(url) {
     if (fin && !/goo\.gl|g\.co/i.test(fin)) return fin;
   } catch (_) {}
   return null;
+}
+
+// Hora sugerida para una parada nueva: un cuarto de hora después de que acabe
+// lo último que ya hay ese día. Encadenar planes obligaba a cerrar el editor,
+// mirar a qué hora acababa lo anterior, sumar de cabeza y volver a escribirlo.
+// Vacío si el día está vacío o si la cuenta se pasa de medianoche: en esos dos
+// casos no hay nada que sugerir y una hora inventada es peor que ninguna.
+const MIN_ENTRE_PARADAS = 15;
+async function horaSugerida(tripId, dia) {
+  if (!tripId || !dia) return '';
+  const min = (x) => { const m = String(x || '').match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; };
+  try {
+    const its = (await DB.listByTrip('planning_items', tripId))
+      .filter(x => !x.deleted_at && x.day_date === dia);
+    let fin = null;
+    its.forEach(x => {
+      const ini = min(x.time);
+      if (ini == null) return;
+      let acaba = min(x.end_time);
+      // Un transporte acaba cuando llega, si llega el mismo día.
+      if (acaba == null && ['transporte', 'vuelo', 'coche'].includes(x.type)) {
+        const d1 = x.consultation_planned_d1 || x.day_date;
+        if (!x.consultation_planned_d2 || x.consultation_planned_d2 === d1) acaba = min(x.consultation_planned_t2);
+      }
+      if (acaba == null) acaba = ini + (visitMinutes(x) || 60);
+      if (acaba < ini) acaba = ini;               // llegada al día siguiente
+      if (fin == null || acaba > fin) fin = acaba;
+    });
+    if (fin == null) return '';
+    const t = fin + MIN_ENTRE_PARADAS;
+    if (t >= 24 * 60) return '';
+    return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+  } catch (_) { return ''; }
 }
 
 // Del punto a la dirección (Nominatim al revés), para rellenar el campo cuando
