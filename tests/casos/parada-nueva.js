@@ -323,8 +323,6 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   });
   ok(horario.filas === 2 && horario.etiquetas.join('/') === 'Salida/Llegada',
     'dos filas y dos etiquetas: se acabó el "Hora" repetido sin decir de qué', horario.etiquetas);
-  ok(horario.enLinea && horario.alto < 60,
-    'etiqueta, fecha y hora en la misma línea', horario.alto + ' px de alto');
   ok(horario.borrarVisible === 0,
     'y sin horas puestas, ningún botón de borrar la hora ocupando sitio', horario.borrarVisible);
   await p.evaluate(() => {
@@ -334,6 +332,23 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   await sleep(p, 400);
   ok(await p.evaluate(() => [...document.querySelectorAll('.time-clear')].filter((b) => b.offsetParent).length) === 1,
     'aparece en cuanto hay una hora que borrar');
+  // Con sitio, la etiqueta vuelve a la izquierda y la fila es una sola línea.
+  // En el móvil no: ahí los cuatro no caben y la hora se quedaba recortada.
+  await p.setViewportSize({ width: 560, height: 900 });
+  await sleep(p, 600);
+  const ancha = await p.evaluate(() => {
+    const f = document.querySelector('.fecha-hora');
+    const c = (n) => { const b = n.getBoundingClientRect(); return Math.round(b.top + b.height / 2); };
+    const l = f.querySelector('.sub-lbl'), d = f.querySelector('input[type=date]'), h = f.querySelector('input[type=time]');
+    return { enLinea: Math.abs(c(l) - c(d)) <= 2 && Math.abs(c(d) - c(h)) <= 2,
+             hora: Math.round(h.getBoundingClientRect().width),
+             alto: Math.round(f.getBoundingClientRect().height) };
+  });
+  ok(ancha.enLinea && ancha.alto < 60,
+    'en pantalla ancha vuelven a la misma línea', ancha);
+  ok(ancha.hora >= 110, 'y la hora sigue teniendo sitio', ancha);
+  await p.setViewportSize({ width: 390, height: 844 });
+  await sleep(p, 600);
   await cerrarHoja();
 
   titulo('EL RESUMEN DEL DÍA SE COLOCA AUNQUE LA LISTA TARDE EN COLGARSE');
@@ -399,6 +414,101 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   });
   ok(traGuardar.lat != null && traGuardar.lng != null,
     'guardar la parada no borra las coordenadas del trayecto', traGuardar);
+
+  titulo('LA HORA SE LEE ENTERA');
+  // Con la etiqueta, la fecha, la hora y el botón de vaciarla en una línea, en
+  // un móvil la hora se quedaba en 72 px y salía "1⁴ 🕐".
+  await p.evaluate(async () => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    const x = await DB.get('planning_items', 'i3');
+    x.consultation_planned_t1 = '14:00'; x.consultation_planned_t2 = '15:45';
+    await DB.put('planning_items', x);
+    await TripDetail.openPlanningEditor(t, x);
+  });
+  await sleep(p, 1100);
+  const anchos = await p.evaluate(() => {
+    const f = document.querySelector('.fecha-hora');
+    const w = (sel) => { const n = f.querySelector(sel); return n ? Math.round(n.getBoundingClientRect().width) : -1; };
+    return { fecha: w('input[type=date]'), hora: w('input[type=time]'), borrar: w('.time-clear'),
+      etiquetaArriba: Math.round(f.querySelector('.sub-lbl').getBoundingClientRect().bottom)
+        <= Math.round(f.querySelector('input[type=time]').getBoundingClientRect().top) + 1 };
+  });
+  ok(anchos.hora >= 110, 'en el móvil la hora tiene sitio para "14:50" y su reloj', anchos);
+  ok(anchos.fecha >= 130, 'y la fecha sigue cabiendo entera', anchos);
+  ok(anchos.etiquetaArriba, 'porque la etiqueta se sube: los cuatro no caben en una línea');
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 500);
+
+  titulo('LA DURACIÓN, EN MINUTOS');
+  const conv = await p.evaluate(() => ({
+    dosHoras: minutosDeTexto('2 h'), unaMedia: minutosDeTexto('1h30'), reloj: minutosDeTexto('1:30'),
+    yaMin: minutosDeTexto('90'), conMin: minutosDeTexto('90 min'), decimal: minutosDeTexto('1.5 horas'),
+    raro: minutosDeTexto('dos horas'), vacio: minutosDeTexto(''),
+  }));
+  ok(conv.dosHoras === 120 && conv.unaMedia === 90 && conv.reloj === 90 && conv.decimal === 90,
+    'lo escrito a mano se entiende: "2 h", "1h30", "1:30", "1.5 horas"', conv);
+  ok(conv.yaMin === 90 && conv.conMin === 90, 'y lo que ya eran minutos se queda igual', conv);
+  ok(conv.raro === null && conv.vacio === null,
+    'lo que no se entiende se deja pasar en vez de inventar un número', conv);
+
+  // Una actividad guardada con "2 h" a mano abre con 120, no en blanco.
+  await p.evaluate(async () => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    const x = await DB.get('planning_items', 'act-demo');
+    x.metadata = Object.assign({}, x.metadata, { duracion: '2 h' });
+    await DB.put('planning_items', x);
+    await TripDetail.openPlanningEditor(t, x);
+  });
+  await sleep(p, 1100);
+  const dur = await p.evaluate(() => {
+    const n = document.getElementById('meta-duracion');
+    return { tipo: n?.type, valor: n?.value, etiqueta: n?.closest('.form-row')?.querySelector('label')?.textContent };
+  });
+  ok(dur.tipo === 'number' && /min/i.test(dur.etiqueta), 'el campo pide minutos, no texto libre', dur);
+  ok(dur.valor === '120', 'y un "2 h" de antes se abre convertido, no en blanco', dur);
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 500);
+
+  titulo('LA LLEGADA SE CALCULA CON EL TIEMPO DEL TRAYECTO');
+  await p.evaluate(async () => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    const x = await DB.get('planning_items', 'i3');
+    x.metadata = Object.assign({}, x.metadata, {
+      origen_lat: 6.7621, origen_lng: -73.1727, destino_lat: 6.6357, destino_lng: -73.2264,
+    });
+    x.consultation_planned_t1 = ''; x.consultation_planned_t2 = '';
+    await DB.put('planning_items', x);
+    await TripDetail.openPlanningEditor(t, x);
+  });
+  await sleep(p, 1300);
+  const min = await p.evaluate(() => TripDetail._minTramo);
+  ok(min > 0, 'el editor sabe cuánto dura el trayecto', min);
+  await p.evaluate(() => {
+    const t1 = document.getElementById('tr-t1');
+    t1.value = '09:00'; t1.dispatchEvent(new Event('change'));
+  });
+  await sleep(p, 500);
+  const auto = await p.evaluate(() => ({
+    llegada: document.getElementById('tr-t2')?.value,
+    aviso: document.getElementById('tr-auto')?.offsetParent ? document.getElementById('tr-auto').textContent : '',
+  }));
+  const esperada = await p.evaluate((m) => {
+    const tot = 9 * 60 + Math.round(m);
+    return String(Math.floor(tot / 60)).padStart(2, '0') + ':' + String(tot % 60).padStart(2, '0');
+  }, min);
+  ok(auto.llegada === esperada, 'poner la salida rellena la llegada con lo que se tarda',
+    { llegada: auto.llegada, esperada, min });
+  ok(/Cámbiala/.test(auto.aviso), 'y se avisa de que es un cálculo', auto.aviso);
+
+  // Una llegada escrita a mano manda: la del billete no la pisa ningún cálculo.
+  await p.evaluate(() => {
+    const t2 = document.getElementById('tr-t2');
+    t2.value = '23:30'; t2.dispatchEvent(new Event('change'));
+    const t1 = document.getElementById('tr-t1');
+    t1.value = '10:00'; t1.dispatchEvent(new Event('change'));
+  });
+  await sleep(p, 500);
+  ok(await p.evaluate(() => document.getElementById('tr-t2')?.value) === '23:30',
+    'pero una llegada puesta a mano no se pisa');
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 500);
 
   titulo('EL AVISO DE "PUEDE ESTAR CERRADO" NO SE CONFUNDE CON EL DEL GASTO');
   // Los dos son un ⚠️. Estando en la misma fila del subtítulo, no había manera

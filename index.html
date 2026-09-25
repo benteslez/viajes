@@ -2746,22 +2746,25 @@ main:has(.plan-pager) { padding-bottom:0; }
 #dates-block .form-grid-2 + .form-grid-2,
 #dates-block .form-grid-2 + .form-row,
 #dates-block .form-row + .form-row { margin-top:8px; }
-/* Fecha y hora de un rango (Salida / Llegada), con la etiqueta a la izquierda:
-   una línea por dato. La hora es fija y estrecha; lo que sobra se lo queda la
-   fecha, que es la que puede quedarse sin sitio. */
+/* Fecha y hora de un rango (Salida / Llegada). En un móvil no caben en una
+   línea la etiqueta, la fecha, la hora y el botón de vaciarla: la hora se
+   quedaba en 72 px y salía "1⁴ 🕐", recortada. Así que por defecto la etiqueta
+   va encima y la pareja se reparte la fila entera; a partir de 460 px, donde sí
+   caben los cuatro, vuelve a una sola línea. */
 .fecha-hora {
-  display:grid; grid-template-columns:minmax(52px, auto) minmax(0, 1fr) 112px;
-  gap:8px; align-items:center;
+  display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:4px 8px; align-items:center;
 }
-.fecha-hora + .fecha-hora { margin-top:8px; }
-.fecha-hora > .sub-lbl { margin:0; }
-/* Sin la hora borrable, la caja de la hora es solo el input. */
+.fecha-hora > .sub-lbl { grid-column:1 / -1; margin:0; }
+.fecha-hora + .fecha-hora { margin-top:10px; }
 .fecha-hora .time-with-clear { min-width:0; }
-/* Muy estrecho: la etiqueta se sube y la pareja se reparte la fila, como antes. */
-@media (max-width: 379px) {
-  .fecha-hora { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
-  .fecha-hora > .sub-lbl { grid-column:1 / -1; }
+@media (min-width: 460px) {
+  .fecha-hora { grid-template-columns:minmax(56px, auto) minmax(0, 1fr) minmax(150px, 1fr); }
+  .fecha-hora > .sub-lbl { grid-column:auto; }
 }
+/* El botón de vaciar, más justo: cada píxel que se lleva se lo quita a la hora. */
+.fecha-hora .time-clear { width:30px; height:30px; }
+.fecha-hora .time-with-clear { gap:5px; }
 /* Alinear fecha/hora (Salida–Hora, Llegada–Hora) por la base del input. */
 #dates-block .form-grid-2 { align-items:end; }
 #dates-block .form-grid-2 .form-row { margin:0; }
@@ -5009,7 +5012,11 @@ const PLANNING_METADATA = {
   actividad: {
     label:'Datos de la actividad',
     fields: [
-      { id:'duracion',   label:'Duración',         placeholder:'2 h' },
+      // En minutos y no en texto libre: "2 h", "2h", "120min" y "dos horas"
+      // convivían en el mismo campo y ninguno se podía sumar. Lo que ya
+      // estuviera escrito se convierte al abrir (ver `minutosDeTexto`).
+      { id:'duracion',   label:'Duración (min)',   type:'number', min:'0', step:'5',
+        inputmode:'numeric', placeholder:'120' },
       { id:'organizador',label:'Organizador',      placeholder:'GetYourGuide, Civitatis…' },
       { id:'localizador',label:'Referencia',       placeholder:'XYZ123' },
     ],
@@ -15657,6 +15664,33 @@ const TripDetail = {
                     hint:'El coche aparece como "Coche alquilado" en los días de en medio, y la devolución —con su hora— el último.' },
     };
     const datesBlock = el('div', { id:'dates-block', class:'form-row' });
+    // Con los dos puntos del trayecto pegados ya se sabe cuánto se tarda: poner
+    // la hora de salida rellena la de llegada. Solo si está vacía o si la puso
+    // esto mismo: una llegada escrita a mano —la que pone el billete— manda
+    // sobre cualquier cálculo.
+    let llegadaAuto = null;
+    const rellenarLlegada = () => {
+      const min = TripDetail._minTramo;
+      const t1 = document.getElementById('tr-t1');
+      const t2 = document.getElementById('tr-t2');
+      const d1 = document.getElementById('tr-d1');
+      const d2 = document.getElementById('tr-d2');
+      if (!min || !t1 || !t2 || !t1.value) return;
+      if (t2.value && t2.value !== llegadaAuto) return;
+      const m = t1.value.match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return;
+      const total = (+m[1]) * 60 + (+m[2]) + Math.round(min);
+      const hh = String(Math.floor(total / 60) % 24).padStart(2, '0');
+      t2.value = llegadaAuto = `${hh}:${String(total % 60).padStart(2, '0')}`;
+      t2.dispatchEvent(new Event('input'));
+      // Pasada la medianoche, la llegada es al día siguiente.
+      if (total >= 24 * 60 && d1 && d1.value && d2) {
+        const d = parseDate(d1.value); d.setDate(d.getDate() + Math.floor(total / (24 * 60)));
+        d2.value = isoLocal(d);
+      }
+      const av = document.getElementById('tr-auto');
+      if (av) av.style.display = '';
+    };
     // Input de hora con botón ✕ para vaciarlo (en iOS el time nativo no se puede
     // dejar en blanco una vez tiene valor; este botón lo borra por JS).
     const timeInput = (id, value) => {
@@ -15700,9 +15734,17 @@ const TripDetail = {
         ]);
         const row1 = R.withTime ? par(R.d1, inD1, 'tr-t1', t1) : cell(R.d1, inD1);
         const row2 = R.withTime ? par(R.d2, inD2, 'tr-t2', t2) : cell(R.d2, inD2);
+        llegadaAuto = null;
         datesBlock.appendChild(el('span', { class:'grupo-tit', text: R.titulo || 'Fechas' }));
         const grupo = el('div', { class:'ios-grupo' }, [ row1, row2 ]);
         datesBlock.appendChild(grupo);
+        datesBlock.appendChild(el('div', { class:'field-hint', id:'tr-auto',
+          style:{ display:'none' }, text:'Llegada calculada con el tiempo del trayecto. Cámbiala si no te cuadra.' }));
+        if (R.withTime) {
+          const inT1 = grupo.querySelector('#tr-t1');
+          if (inT1) { inT1.addEventListener('change', rellenarLlegada); inT1.addEventListener('input', rellenarLlegada); }
+          rellenarLlegada();
+        }
         // "Hasta" no puede ser anterior a "Desde", y al fijar "Desde" arranca ahí.
         inD1.addEventListener('change', () => {
           inD2.min = inD1.value || '';
@@ -15965,6 +16007,9 @@ const TripDetail = {
     const renderMetadata = () => {
       const type = $('#f-type')?.value || it.type;
       const def = PLANNING_METADATA[type];
+      // A cero antes de repintar: si no, el tramo del transporte que se acaba de
+      // mirar rellenaría la hora de salida de un HOTEL al cambiar de tipo.
+      TripDetail._minTramo = null;
       metadataBlock.innerHTML = '';
       rutaBlock.innerHTML = '';
       rutaBlock.style.display = 'none';
@@ -16035,6 +16080,10 @@ const TripDetail = {
           const v = legView(real ? c.km : off.km,
             real && c.drivingMin != null ? c.drivingMin : off.drivingMin, 'car');
           aviso.textContent = `🚗 ${fmtDur(v.min)} · ${fmtKm(v.km)} · ${real ? 'por carretera' : 'estimado'} · cuenta en el total del día`;
+          // El horario de abajo usa esto para rellenar la llegada: si el tramo
+          // dura 1 h, poner la salida a las 9:00 ya da las 10:00.
+          TripDetail._minTramo = v.min;
+          rellenarLlegada();
           // Una petición por par: si OSRM no contesta, `done()` vuelve aquí y sin
           // este cerrojo se pediría en bucle.
           if (!real && pedido !== k && navigator.onLine) {
@@ -16136,9 +16185,15 @@ const TripDetail = {
           // ser "Compañía o app" y sugiere Uber/Cabify).
           const byMode = (f.byMode && f.byMode[meta.modo]) || null;
           const listId = (byMode && byMode.suggest) ? `meta-${f.id}-list` : null;
+          // Un número que viene escrito a mano ("2 h") se convierte al pintarlo:
+          // si no, el navegador deja el campo vacío y el dato se pierde al guardar.
+          const valor = (f.type === 'number')
+            ? (minutosDeTexto(meta[f.id]) ?? '')
+            : (meta[f.id] || '');
           node = el('div', { class:'form-row' }, [
             el('label', { class:'muted', style:{fontSize:'12px'}, text: (byMode && byMode.label) || f.label }),
-            el('input', { id:`meta-${f.id}`, type: f.type || 'text', value: meta[f.id] || '',
+            el('input', { id:`meta-${f.id}`, type: f.type || 'text', value: valor,
+              min: f.min || null, step: f.step || null, inputmode: f.inputmode || null,
               placeholder: (byMode && byMode.placeholder) || f.placeholder || '', list: listId }),
             listId ? el('datalist', { id: listId }, byMode.suggest.map(o => el('option', { value:o }))) : null,
           ].filter(Boolean));
@@ -24472,6 +24527,23 @@ async function expandirEnlaceMapa(url) {
     const fin = r && r.url;
     if (fin && !/goo\.gl|g\.co/i.test(fin)) return fin;
   } catch (_) {}
+  return null;
+}
+
+// "2 h", "1h30", "90 min", "1:30" → minutos. Lo que no se entiende se deja
+// pasar (null) en vez de inventarse un número: perder el dato es peor que
+// dejarlo como estaba.
+function minutosDeTexto(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.round(v);
+  const t = String(v).trim().toLowerCase().replace(',', '.');
+  if (/^\d+$/.test(t)) return +t;                                  // ya son minutos
+  let m = t.match(/^(\d{1,2})\s*[:h]\s*(\d{1,2})$/);              // 1:30 · 1h30
+  if (m) return (+m[1]) * 60 + (+m[2]);
+  m = t.match(/^(\d+(?:\.\d+)?)\s*h(?:oras?|rs?)?$/);              // 2 h · 1.5 horas
+  if (m) return Math.round(parseFloat(m[1]) * 60);
+  m = t.match(/^(\d+)\s*(?:min(?:utos?)?|m)$/);                    // 90 min
+  if (m) return +m[1];
   return null;
 }
 
