@@ -34,6 +34,12 @@ function construir() {
   copiarDep('idb/build/umd.js', 'idb.js');
   copiarDep('leaflet/dist/leaflet.js', 'leaflet.js');
   copiarDep('leaflet/dist/leaflet.css', 'leaflet.css');
+  // Una imagen de verdad que servir: los casos que prueban fotos por URL
+  // necesitan una que CARGUE. Con una que falle se mide la red, no la app.
+  // PNG de 1x1 en gris, escrito a mano para no arrastrar un binario al repo.
+  fs.writeFileSync(path.join(APP, 'foto.png'), Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64'));
 
   let s = fs.readFileSync(path.join(RAIZ, 'index.html'), 'utf8');
 
