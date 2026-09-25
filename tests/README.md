@@ -48,6 +48,7 @@ tests/
     ├── carrusel-perezoso.js los días de al lado no se pintan hasta que hacen falta
     ├── coche-alquiler.js    "Coche alquilado" los días de en medio y la devolución
     ├── correr-dia.js        correr las horas de un día y la hora real vs. planeada
+    ├── dia-extras.js        platos típicos, nota del día y el menú del tramo
     ├── dias-pasados.js      días pasados apagados pero accesibles; abrir en hoy
     ├── dialogos-apple.js    el diálogo al estilo de iOS y la alerta de confirmar
     ├── editor-parada.js     el asistente de dos pasos y el orden del formulario

@@ -1042,6 +1042,119 @@ h2.section-title {
 }
 
 
+
+/* ========================================================================
+   Lo que se apunta de un día y no es una parada
+   ====================================================================== */
+/* Botón de los platos, pegado a la etiqueta del sitio. Sin texto: la fila ya va
+   llena y el icono del cubierto se entiende solo. */
+.day-gastro-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:26px; height:26px; flex-shrink:0; padding:0; cursor:pointer;
+  border:1px solid var(--line); border-radius:var(--r-pill);
+  background:var(--bg-elev); color:var(--text-muted);
+}
+.day-gastro-btn svg { width:14px; height:14px; }
+.day-gastro-btn.tiene { border-color:#f59e0b; background:color-mix(in srgb, #f59e0b 16%, var(--bg-elev)); color:#b45309; }
+:root[data-tema="oscuro"] .day-gastro-btn.tiene { color:#fcd34d; }
+@media (prefers-color-scheme: dark) { :root:not([data-tema]) .day-gastro-btn.tiene { color:#fcd34d; } }
+
+/* Recordatorio del día: amarillo de papel pegado, al principio del día. */
+.nota-dia {
+  margin:8px 0; padding:10px 12px; border-radius:var(--r-md);
+  background:color-mix(in srgb, #facc15 22%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, #facc15 55%, var(--line));
+  color:var(--text);
+}
+.nota-dia .nd-cab { display:flex; align-items:center; gap:7px; }
+.nota-dia .nd-ico { display:flex; color:#b45309; }
+.nota-dia .nd-ico svg { width:14px; height:14px; }
+.nota-dia .nd-tit { flex:1; font-size:11.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#b45309; }
+.nota-dia .nd-edit {
+  border:0; background:none; padding:2px; cursor:pointer; color:#b45309; display:flex;
+}
+.nota-dia .nd-edit svg { width:14px; height:14px; }
+.nota-dia .nd-texto { margin-top:5px; font-size:13.5px; line-height:1.45; white-space:pre-wrap; }
+.nota-dia .nd-lista { margin-top:7px; display:flex; flex-direction:column; gap:5px; }
+.nota-dia .nd-t { display:flex; align-items:flex-start; gap:8px; font-size:13.5px; line-height:1.4; cursor:pointer; }
+.nota-dia .nd-t input { margin:2px 0 0; width:17px; height:17px; flex-shrink:0; accent-color:#b45309; }
+.nota-dia .nd-t.hecha > span { text-decoration:line-through; opacity:.55; }
+:root[data-tema="oscuro"] .nota-dia .nd-ico,
+:root[data-tema="oscuro"] .nota-dia .nd-tit,
+:root[data-tema="oscuro"] .nota-dia .nd-edit { color:#fde68a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema]) .nota-dia .nd-ico,
+  :root:not([data-tema]) .nota-dia .nd-tit,
+  :root:not([data-tema]) .nota-dia .nd-edit { color:#fde68a; }
+}
+
+/* La nota de una parada, colgando de ella. Verde azulado para que no se
+   confunda con el amarillo del día: uno es del día, la otra de una parada. */
+.nota-parada {
+  display:flex; align-items:flex-start; gap:8px;
+  margin:-2px 0 6px 46px; padding:8px 11px;
+  border-radius:var(--r-sm);
+  background:color-mix(in srgb, #14b8a6 14%, var(--bg-elev));
+  border:1px solid color-mix(in srgb, #14b8a6 34%, var(--line));
+  font-size:13px; line-height:1.45; color:var(--text); cursor:pointer;
+}
+.nota-parada .np-ico { display:flex; flex-shrink:0; color:#0f766e; margin-top:1px; }
+.nota-parada .np-ico svg { width:13px; height:13px; }
+.nota-parada .np-txt { white-space:pre-wrap; min-width:0; }
+:root[data-tema="oscuro"] .nota-parada .np-ico { color:#5eead4; }
+@media (prefers-color-scheme: dark) { :root:not([data-tema]) .nota-parada .np-ico { color:#5eead4; } }
+@media (max-width:420px) { .nota-parada { margin-left:0; } }
+
+/* Carta de platos: dos columnas, foto 4:3 y el nombre debajo. */
+.gastro-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
+@media (min-width:560px) { .gastro-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } }
+.gastro-card {
+  display:flex; flex-direction:column; min-width:0;
+  background:var(--ios-card, var(--bg-elev)); border-radius:12px; overflow:hidden;
+  border:0; padding:0; text-align:left; font-family:inherit; color:inherit;
+}
+.gastro-card.interactive { cursor:pointer; }
+.gastro-card.interactive:active { transform:scale(.98); }
+.gastro-foto { aspect-ratio:4/3; background:var(--ios-fill, var(--bg-soft)); position:relative; }
+.gastro-foto img { width:100%; height:100%; object-fit:cover; display:block; }
+.gastro-foto.sin::after {
+  content:'🍽'; position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center; font-size:26px; opacity:.35;
+}
+.gastro-nom {
+  padding:9px 11px; font-size:14px; font-weight:600; line-height:1.3;
+  overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
+  -webkit-line-clamp:2; -webkit-box-orient:vertical;
+}
+.gastro-add {
+  align-items:center; justify-content:center; gap:7px; min-height:120px;
+  border:1.5px dashed var(--line); background:transparent; color:var(--accent);
+  cursor:pointer; font-size:14px; font-weight:600;
+}
+.gastro-add .ga-mas { display:flex; }
+.gastro-add .ga-mas svg { width:20px; height:20px; }
+.gastro-previo { margin-top:12px; border-radius:12px; overflow:hidden; }
+.gastro-previo img { width:100%; max-height:220px; object-fit:cover; display:block; }
+.gastro-mal { padding:12px; font-size:13px; color:var(--danger); }
+
+/* Tareas dentro del editor de la nota del día. */
+.nd-tareas { display:flex; flex-direction:column; gap:8px; }
+.nd-fila { display:flex; align-items:center; gap:10px; }
+.nd-fila input[type="checkbox"] { width:22px; height:22px; flex-shrink:0; accent-color:var(--accent); }
+.nd-fila .nd-txt { flex:1; min-width:0; }
+.nd-add { align-self:flex-start; }
+
+/* Interruptor "verla en el planning" de la hoja de nota. */
+.nd-switch { display:flex; align-items:flex-start; gap:10px; margin-top:14px; cursor:pointer; }
+.nd-switch input { width:22px; height:22px; margin:1px 0 0; flex-shrink:0; accent-color:var(--accent); }
+.nd-switch .nds-t { display:block; font-size:15px; }
+.nd-switch .nds-s { display:block; font-size:12.5px; color:var(--text-muted); margin-top:1px; }
+
+/* Un tramo con menú avisa de que se puede mantener pulsado. */
+.leg-chip.leg-menu { -webkit-touch-callout:none; }
+.menu-parada .mp-fila.elegida .mp-t { font-weight:700; }
+.menu-parada .mp-fila.elegida .mp-chev { color:var(--status-curso); }
+
 /* ========================================================================
    Status pill (online / sync)
    ====================================================================== */
@@ -4936,7 +5049,9 @@ const CAMPOS_CONTACTO = ['telefono', 'whatsapp'];
 // `notes`, que se queda en texto plano. Media app lee `notes` —el buscador, el
 // PDF, la guía, el subtítulo de la tarjeta, el .ics— y ninguna de esas sabe
 // pintar HTML: guardarlo ahí habría sacado `<b>` por todas partes.
-const CAMPOS_FICHA = [...CAMPOS_CONTACTO, 'notes_html'];
+// `nota_visible` la enciende el interruptor "Verla en el planning" de la hoja
+// de nota rápida: sin él la nota solo se ve abriendo la parada.
+const CAMPOS_FICHA = [...CAMPOS_CONTACTO, 'notes_html', 'nota_visible'];
 
 // Modos de transporte que van por carretera: son los únicos en los que el
 // tiempo entre dos puntos se puede calcular (un tren no sigue la carretera).
@@ -5111,6 +5226,21 @@ const budgetCategoryForType = (type) => (
 // `tripSettings` lee sin mutar; `tripSettingsMut` garantiza el objeto para escribir.
 const tripSettings = (t) => (t && t.settings && typeof t.settings === 'object' && !Array.isArray(t.settings)) ? t.settings : {};
 const tripSettingsMut = (t) => { if (!t.settings || typeof t.settings !== 'object' || Array.isArray(t.settings)) t.settings = {}; return t.settings; };
+// Lo que se apunta de un día y no es una parada: el recordatorio amarillo con
+// sus tareas y los platos típicos del sitio. Va en `settings` del viaje —jsonb,
+// que ya sincroniza— y no en `day_notes`, que es una tabla de columnas fijas:
+// tres campos nuevos ahí serían una migración que ejecutar a mano en Supabase.
+const datosDia = (t, k) => {
+  const d = tripSettings(t).dias;
+  const x = (d && typeof d === 'object') ? d[k] : null;
+  return (x && typeof x === 'object' && !Array.isArray(x)) ? x : {};
+};
+const datosDiaMut = (t, k) => {
+  const s = tripSettingsMut(t);
+  if (!s.dias || typeof s.dias !== 'object' || Array.isArray(s.dias)) s.dias = {};
+  if (!s.dias[k] || typeof s.dias[k] !== 'object' || Array.isArray(s.dias[k])) s.dias[k] = {};
+  return s.dias[k];
+};
 
 // Modos de transporte → emoji. El icono del evento cambia según metadata.modo.
 const TRANSPORT_EMOJI = { tren:'🚆', bus:'🚌', coche:'🚗', ferry:'⛴️', metro:'🚇', taxi:'🚕', barco:'🚢', teleferico:'🚡', shuttle:'🚐' };
@@ -9187,13 +9317,23 @@ const TripDetail = {
           placeholder:'Lo que quieras recordar de este sitio: recomendaciones, horarios, con quién fuiste…' }, it.notes || ''),
       ]),
       el('div', { class:'field-hint', text:'Se ve en la app y en el viaje compartido, debajo del nombre del sitio.' }),
+      // Verla sin abrir la parada. No por defecto: en un día de diez paradas con
+      // nota, el planning dejaría de leerse de un vistazo.
+      el('label', { class:'nd-switch' }, [
+        el('input', { type:'checkbox', id:'qn-ver', checked: (it.metadata && it.metadata.nota_visible) ? true : null }),
+        el('span', {}, [
+          el('span', { class:'nds-t', text:'Verla en el planning' }),
+          el('span', { class:'nds-s', text:'La enseña debajo del evento, sin tener que abrirlo' }),
+        ]),
+      ]),
     ]);
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
       try {
         it.notes = ($('#qn-text')?.value || '').trim();
+        const mdQn = it.metadata = it.metadata || {};
+        if ($('#qn-ver')?.checked && it.notes) mdQn.nota_visible = true; else delete mdQn.nota_visible;
         // Esta hoja escribe en plano; si el texto ya no es el del HTML con
         // formato, ese HTML sobra (ver `collect()`).
-        const mdQn = it.metadata || {};
         if (mdQn.notes_html && notaTexto(mdQn.notes_html) !== it.notes) delete mdQn.notes_html;
         await DB.put('planning_items', it);
         UI.toast('Nota guardada');
@@ -11503,6 +11643,47 @@ const TripDetail = {
   // offline (punto naranja) y, cuando hay caché o se recalcula online, la
   // distancia/tiempo REAL por carretera (punto verde, persistente). Los tramos
   // largos se muestran como "Trayecto" (informativo, sin alarma).
+  // Menú de un tramo: en qué se va y el enlace al mapa. El chip ya abría Google
+  // Maps al tocarlo, pero cambiar de coche a pie había que ir a buscarlo dentro
+  // del editor de la parada de destino, que no es donde a nadie se le ocurre.
+  openMenuTramo(t, dueño, href, modoActual) {
+    const MODOS = [
+      { id:'auto',    ico:'compass', txt:'Automático', sub:'A pie si está cerca, en coche si no' },
+      { id:'walk',    ico:'walk',    txt:'🚶 A pie',   sub:'Ruta peatonal real cuando hay conexión' },
+      { id:'car',     ico:'car',     txt:'🚗 Coche',   sub:'Por carretera' },
+      { id:'bike',    ico:'compass', txt:'🚴 Bici',    sub:'Estimado a 15 km/h' },
+      { id:'transit', ico:'train',   txt:'🚇 Transporte público', sub:'Estimado, con espera' },
+    ];
+    const filas = [];
+    if (dueño && canEdit()) {
+      MODOS.forEach(m => filas.push(el('button', { class:'mp-fila' + (m.id === modoActual ? ' elegida' : ''), type:'button',
+        onclick: async () => {
+          UI.closeSheet();
+          try {
+            // La parada puede ser una copia virtual: se escribe sobre la de verdad.
+            const real = await DB.get('planning_items', dueño.it.id);
+            if (!real) return;
+            real.metadata = real.metadata || {};
+            if (m.id === 'auto') delete real.metadata[dueño.campo]; else real.metadata[dueño.campo] = m.id;
+            await DB.put('planning_items', real);
+          } catch (e) { console.error('modo del tramo', e); UI.toast('No se pudo cambiar'); return; }
+          Router.renderKeepScroll();
+        } }, [
+        el('span', { class:'mp-ico', html: svg(m.ico) }),
+        el('span', { class:'mp-txt' }, [ el('span', { class:'mp-t', text:m.txt }), el('span', { class:'mp-s', text:m.sub }) ]),
+        el('span', { class:'mp-chev', html: m.id === modoActual ? svg('check') : svg('chevron') }),
+      ])));
+    }
+    if (href) filas.push(TripDetail._filaMenu('map', 'Cómo llegar', 'Abre la ruta en Google Maps',
+      () => window.open(href, '_blank', 'noopener')));
+    if (!filas.length) { UI.toast('Modo lector — no hay acciones para este tramo'); return; }
+    UI.openSheet({
+      title: 'Este tramo',
+      body: el('div', {}, [ el('div', { class:'res-panel menu-parada' }, filas) ]),
+      footer: [ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar') ],
+    });
+  },
+
   _legChip(a, b, route, opts) {
     opts = opts || {};
     const hotelSide = opts.hotel || null;               // 'from' | 'to' | null
@@ -11550,6 +11731,14 @@ const TripDetail = {
       chip.href = `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${b.lat},${b.lng}&travelmode=${travel(mode)}`;
       leg.val = { km: dispKm, min, mode }; leg.online = online;
     };
+    // Pulsación larga: el menú del tramo. El toque corto sigue abriendo el mapa.
+    if (opts.trip && (opts.dueño || true)) {
+      chip.classList.add('leg-menu');
+      TripDetail._attachLongPress(chip, () => {
+        TripDetail.openMenuTramo(opts.trip, opts.dueño || null, chip.href,
+          (opts.dueño && opts.dueño.it.metadata && opts.dueño.it.metadata[opts.dueño.campo]) || 'auto');
+      });
+    }
     leg.setPending = (on) => dot.classList.toggle('pending', on && !leg.online);
     leg.applyFromCache = () => { const c = _routeCache[key]; if (c && c.km != null) render(c.km, drivingOf(c)); maybeFetchFoot(); };
     const cached = _routeCache[key];
@@ -11628,6 +11817,40 @@ const TripDetail = {
       const dur = x.metadata && x.metadata.duration_min;
       if (dur != null && !isNaN(dur) && +dur > 0) return { min: (_timeMin(x.time) || 0) + (+dur), moving:false };
       return { min:null, moving:false };
+    };
+    // Recuadro amarillo con el recordatorio del día y sus tareas. Las casillas
+    // se guardan al tocarlas: tachar algo hecho no es "editar el día", es usarlo.
+    let _notaPuesta = false;
+    const _cajaNota = () => {
+      const d = datosDia(t, k);
+      const tareas = Array.isArray(d.tareas) ? d.tareas : [];
+      if (!d.recordatorio && !tareas.length) return null;
+      const marcar = async (id, val) => {
+        try {
+          const fresco = await DB.get('trips', t.id);
+          const dd = datosDiaMut(fresco, k);
+          const x = (dd.tareas || []).find(y => y.id === id);
+          if (!x) return;
+          x.hecha = val;
+          await DB.put('trips', fresco);
+        } catch (e) { console.warn('tarea del día', e); }
+      };
+      return el('div', { class:'nota-dia' }, [
+        el('div', { class:'nd-cab' }, [
+          el('span', { class:'nd-ico', html: svg('note') }),
+          el('span', { class:'nd-tit', text:'Nota del día' }),
+          canEdit() ? el('button', { class:'nd-edit', type:'button', title:'Editar la nota del día',
+            'aria-label':'Editar la nota del día', html: svg('edit'),
+            onclick: (e) => { e.stopPropagation(); TripDetail.openNotaDia(t, k); } }) : null,
+        ].filter(Boolean)),
+        d.recordatorio ? el('div', { class:'nd-texto', text: d.recordatorio }) : null,
+        tareas.length ? el('div', { class:'nd-lista' }, tareas.map(x => {
+          const cb = el('input', { type:'checkbox', checked: x.hecha ? true : null, disabled: canEdit() ? null : 'disabled',
+            onchange: (e) => { fila.classList.toggle('hecha', e.target.checked); marcar(x.id, e.target.checked); } });
+          const fila = el('label', { class:'nd-t' + (x.hecha ? ' hecha' : '') }, [ cb, el('span', { text: x.txt }) ]);
+          return fila;
+        })) : null,
+      ].filter(Boolean));
     };
     const _isToday = (k === todayStr);
     const _nowM = _isToday ? (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })() : null;
@@ -11710,6 +11933,11 @@ const TripDetail = {
           }
         }
       }
+      // El recordatorio del día va DESPUÉS de las bandas finas de arriba
+      // ("Coche alquilado", noches de hotel) y ANTES de la primera parada de
+      // verdad: es lo que hay que leer antes de empezar el día, no una parada
+      // más metida en la cola.
+      if (!_notaPuesta && !it._virtual) { _notaPuesta = true; const n = _cajaNota(); if (n) list.appendChild(n); }
       // Lugares numerados: el día se lee como una ruta 1 → 2 → 3.
       const _num = (!it._virtual && _PLACE_TYPES.includes(it.type)) ? ++_placeN : null;
       const card = this._planningItem(it, t, { num: _num, win: _win, est: _moveEst[it.id] });
@@ -11720,6 +11948,13 @@ const TripDetail = {
       }
       TripDetail._wireNextCard(card, it, nextEv);
       list.appendChild(card);
+      // La nota de la parada, colgando de ella, si se ha pedido verla aquí.
+      if (!it._virtual && it.notes && it.metadata && it.metadata.nota_visible) {
+        list.appendChild(el('div', { class:'nota-parada', onclick: (e) => { e.stopPropagation(); if (canEdit()) TripDetail.openQuickNote(t, it); } }, [
+          el('span', { class:'np-ico', html: svg('note') }),
+          el('span', { class:'np-txt', text: it.notes }),
+        ]));
+      }
       if (!it._virtual && it.time) _prevTimed = it;
       if (it._virtual === 'night' && !nightCard) nightCard = card;
       // Las "noches" de hotel y las copias 'span' no cuentan como parada para rutas.
@@ -11734,7 +11969,8 @@ const TripDetail = {
       // su tarjeta y su tiempo entra en el total del día como uno más.
       if (tramo) {
         waypoints.push(tramo.a, tramo.b);
-        list.appendChild(this._legChip(tramo.a, tramo.b, route, { forceMode:'car' }));
+        list.appendChild(this._legChip(tramo.a, tramo.b, route,
+          { forceMode: (it.metadata && it.metadata.tramo_modo) || 'car', trip: t, dueño: { it, campo:'tramo_modo' } }));
         lastStopCoords = tramo.b;
         if (!firstStopCard) { firstStopCard = card; firstStopCoords = tramo.a; firstStopItem = it; }
       }
@@ -11744,21 +11980,26 @@ const TripDetail = {
       const desde = tramo ? tramo.b : ((it.lat != null && it.lng != null) ? { lat: it.lat, lng: it.lng } : null);
       if (nx && desde && nx.lat != null && nx.lng != null && !skipLeg(it) && !skipLeg(nx)) {
         const b = { lat: nx.lat, lng: nx.lng };
-        if (legBetween(desde, b).km > 0.03) list.appendChild(this._legChip(desde, b, route, { forceMode: arriveMode(nx) }));
+        if (legBetween(desde, b).km > 0.03) list.appendChild(this._legChip(desde, b, route,
+          { forceMode: arriveMode(nx), trip: t, dueño: nx._virtual ? null : { it: nx, campo:'arrive_mode' } }));
       }
     }
+    // Un día sin paradas de verdad no ha pasado por el bucle de arriba, pero su
+    // nota tiene que salir igual: es justo el día en el que solo hay apuntes.
+    if (!_notaPuesta) { _notaPuesta = true; const n = _cajaNota(); if (n) list.appendChild(n); }
     // "Ahora" al final si todas las paradas de hoy ya pasaron.
     if (_isToday && _timed.length && !_nowInserted) list.appendChild(_nowLine());
     // Tramo "desde el alojamiento" hasta la primera parada del día (si hay hotel).
     const hotelC = morningHotel(k);
     if (hotelC && firstStopCoords && firstStopCard && legBetween(hotelC, firstStopCoords).km > 0.03) {
-      list.insertBefore(this._legChip(hotelC, firstStopCoords, route, { hotel:'from', forceMode: arriveMode(firstStopItem) }), firstStopCard);
+      list.insertBefore(this._legChip(hotelC, firstStopCoords, route, { hotel:'from', forceMode: arriveMode(firstStopItem),
+        trip: t, dueño: (firstStopItem && !firstStopItem._virtual) ? { it: firstStopItem, campo:'arrive_mode' } : null }), firstStopCard);
       waypoints.unshift(hotelC);
     }
     // Tramo "de vuelta al alojamiento" desde la última parada (hotel donde se duerme).
     const nightC = nightMap[k];
     if (nightC && lastStopCoords && legBetween(lastStopCoords, nightC).km > 0.03) {
-      const back = this._legChip(lastStopCoords, nightC, route, { hotel:'to' });
+      const back = this._legChip(lastStopCoords, nightC, route, { hotel:'to', trip: t });
       if (nightCard) list.insertBefore(back, nightCard); else list.appendChild(back);
       waypoints.push(nightC);
     }
@@ -12116,6 +12357,19 @@ const TripDetail = {
       // paradas, resumen de ruta (lo añade `route.finalize`) y alojamiento.
       const metaKids = [];
       if (_dayPill) metaKids.push(_dayPill);
+      // Los platos van pegados a la etiqueta del sitio ("Mérida"), que es de
+      // quien son. Solo sale si ese día tiene la carta abierta: un icono más en
+      // todos los días para algo que se usa en tres no compensa.
+      const _dd = datosDia(t, k);
+      if (k !== 'sin-fecha' && Array.isArray(_dd.platos)) {
+        metaKids.push(el('button', {
+          class:'day-gastro-btn' + (_dd.platos.length ? ' tiene' : ''),
+          title: _dd.platos.length ? `${_dd.platos.length} plato${_dd.platos.length === 1 ? '' : 's'} tipicos` : 'Platos tipicos',
+          'aria-label':'Platos tipicos de este dia',
+          onclick: (e) => { e.stopPropagation(); TripDetail.openGastronomia(t, k); },
+          html: svg('food'),
+        }));
+      }
       if (k !== 'sin-fecha') metaKids.push(el('span', { class:'wx-chip', id:`wx-${k}` }));
       if (k !== 'sin-fecha' && _stops > 0) metaKids.push(el('span', { class:'day-meta-stops', text: `${_stops} ${_stops === 1 ? 'parada' : 'paradas'}` }));
       const metaRow = el('div', { class:'day-meta-row' }, metaKids);
@@ -12148,10 +12402,12 @@ const TripDetail = {
             'aria-label':'Mover este día a otra fecha',
           }) : null,
           canEdit() ? el('button', {
-            class:'icon-btn', title:'Añadir evento a este día',
-            onclick: () => TripDetail.openPlanningEditor(t, null, { day: k !== 'sin-fecha' ? k : null }),
+            class:'icon-btn', title:'Añadir a este día',
+            onclick: () => (k === 'sin-fecha')
+              ? TripDetail.openPlanningEditor(t, null, { day: null })
+              : TripDetail.openMenuAnadir(t, k),
             html: svg('plus'),
-            'aria-label':'Añadir evento a este día',
+            'aria-label':'Añadir a este día',
           }) : null,
         ].filter(Boolean));
       const head = el('div', { class:'day-head' }, [ headMain ]);
@@ -14079,6 +14335,206 @@ const TripDetail = {
       title: titulo.length > 42 ? titulo.slice(0, 41) + '…' : titulo,
       body: el('div', {}, [ el('div', { class:'res-panel menu-parada' }, filas) ]),
       footer: [ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar') ],
+    });
+  },
+
+
+  // Filas de menú con icono, título y explicación. Mismo patrón que el menú de
+  // la parada, para que un menú de la app se lea siempre igual.
+  _filaMenu(icono, titulo, sub, accion, clase) {
+    return el('button', { class:'mp-fila' + (clase ? ' ' + clase : ''), type:'button',
+      onclick: () => { UI.closeSheet(); setTimeout(accion, 240); } }, [
+      el('span', { class:'mp-ico', html: svg(icono) }),
+      el('span', { class:'mp-txt' }, [
+        el('span', { class:'mp-t', text: titulo }),
+        sub ? el('span', { class:'mp-s', text: sub }) : null,
+      ].filter(Boolean)),
+      el('span', { class:'mp-chev', html: svg('chevron') }),
+    ]);
+  },
+
+  // Qué se puede añadir a un día. El "+" abría el editor de parada directo, y
+  // ahora cuelgan de él dos cosas más que son del día entero y no de una parada.
+  openMenuAnadir(t, k) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const d = datosDia(t, k);
+    const hayPlatos = Array.isArray(d.platos);
+    const hayNota = !!(d.recordatorio || (Array.isArray(d.tareas) && d.tareas.length));
+    UI.openSheet({
+      title: 'Añadir a este día',
+      body: el('div', {}, [ el('div', { class:'res-panel menu-parada' }, [
+        TripDetail._filaMenu('plus', 'Parada', 'Un sitio, una comida, un traslado…',
+          () => TripDetail.openPlanningEditor(t, null, { day: k })),
+        TripDetail._filaMenu('food', 'Gastronomía',
+          hayPlatos ? 'Ver los platos típicos de este sitio' : 'Abre la carta de platos típicos de este sitio',
+          () => TripDetail.openGastronomia(t, k)),
+        TripDetail._filaMenu('note', 'Nota del día',
+          hayNota ? 'Editar el recordatorio y sus tareas' : 'Un recordatorio y una lista de tareas para el día',
+          () => TripDetail.openNotaDia(t, k)),
+      ]) ]),
+      footer: [ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar') ],
+    });
+  },
+
+  // Recordatorio del día: texto libre y tareas con casilla. Es lo que se apunta
+  // la víspera —"llevar mosquitera", "sacar dinero"— y no encaja como parada:
+  // no tiene hora ni sitio, y en el planning estorbaría entre las de verdad.
+  openNotaDia(t, k) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const d = datosDia(t, k);
+    let tareas = (Array.isArray(d.tareas) ? d.tareas : []).map(x => ({ id: x.id || uuid(), txt: x.txt || '', hecha: !!x.hecha }));
+    const lista = el('div', { class:'nd-tareas' });
+    const pintar = () => {
+      lista.innerHTML = '';
+      tareas.forEach((x, i) => {
+        const chk = el('input', { type:'checkbox', checked: x.hecha ? true : null,
+          onchange: (e) => { x.hecha = e.target.checked; } });
+        const txt = el('input', { type:'text', class:'nd-txt', value: x.txt, placeholder:'Qué hay que hacer',
+          oninput: (e) => { x.txt = e.target.value; } });
+        lista.appendChild(el('div', { class:'nd-fila' }, [
+          chk, txt,
+          el('button', { type:'button', class:'icon-btn', 'aria-label':'Quitar esta tarea',
+            html: svg('trash'), onclick: () => { tareas.splice(i, 1); pintar(); } }),
+        ]));
+      });
+      lista.appendChild(el('button', { type:'button', class:'btn btn-sm nd-add',
+        onclick: () => { tareas.push({ id: uuid(), txt:'', hecha:false }); pintar();
+          lista.querySelectorAll('.nd-txt')[tareas.length - 1]?.focus(); } },
+        [ el('span', { html: svg('plus') }), 'Añadir tarea' ]));
+    };
+    pintar();
+    const body = el('div', {}, [
+      el('div', { class:'ios-grupo' }, [
+        el('div', { class:'form-row' }, [
+          el('label', { htmlFor:'nd-text', text:'Recordatorio' }),
+          el('textarea', { id:'nd-text', style:{minHeight:'110px'},
+            placeholder:'Llevar mosquitera, sacar efectivo, el museo cierra a las 14:00…' }, d.recordatorio || ''),
+        ]),
+      ]),
+      el('span', { class:'grupo-tit', text:'Tareas' }),
+      el('div', { class:'ios-grupo' }, [ lista ]),
+      el('div', { class:'field-hint', text:'Sale en un recuadro amarillo al principio del día, antes de las paradas.' }),
+    ]);
+    const guardar = async (vaciar) => {
+      try {
+        const fresco = await DB.get('trips', t.id) || t;
+        const dd = datosDiaMut(fresco, k);
+        if (vaciar) { delete dd.recordatorio; delete dd.tareas; }
+        else {
+          const txt = ($('#nd-text')?.value || '').trim();
+          const lim = tareas.filter(x => x.txt.trim());
+          if (txt) dd.recordatorio = txt; else delete dd.recordatorio;
+          if (lim.length) dd.tareas = lim; else delete dd.tareas;
+        }
+        // Un día sin nada apuntado no deja su rastro en los ajustes del viaje.
+        if (!Object.keys(dd).length) delete tripSettingsMut(fresco).dias[k];
+        await DB.put('trips', fresco);
+        UI.toast(vaciar ? 'Nota borrada' : 'Guardado');
+      } catch (e) { console.error('nota del día', e); UI.toast('No se pudo guardar'); }
+      finally { UI.closeSheet(); Router.renderKeepScroll(); }
+    };
+    const borrar = (d.recordatorio || (Array.isArray(d.tareas) && d.tareas.length))
+      ? el('button', { class:'btn btn-danger', onclick: async () => {
+          if (await UI.confirm('¿Borrar la nota de este día y sus tareas?')) guardar(true);
+        } }, 'Borrar') : null;
+    UI.openSheet({
+      title: 'Nota del día',
+      body,
+      footer: [ borrar, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'),
+        el('button', { class:'btn btn-primary', onclick: () => guardar(false) }, 'Guardar') ].filter(Boolean),
+    });
+  },
+
+  // Carta de platos típicos del sitio. Una foto pegada de la web (la misma idea
+  // que la portada del viaje: una URL, no un archivo) y el nombre debajo.
+  openGastronomia(t, k) {
+    const lector = !canEdit();
+    const d = datosDia(t, k);
+    let platos = (Array.isArray(d.platos) ? d.platos : []).map(x => ({ id: x.id || uuid(), nombre: x.nombre || '', url: x.url || '' }));
+    const grid = el('div', { class:'gastro-grid' });
+    const guardar = async () => {
+      try {
+        const fresco = await DB.get('trips', t.id) || t;
+        datosDiaMut(fresco, k).platos = platos;
+        await DB.put('trips', fresco);
+        // El `t` que tenemos en la mano es otro objeto: sin copiarle lo guardado,
+        // volver a abrir la carta la enseñaba como estaba antes.
+        if (fresco !== t) datosDiaMut(t, k).platos = platos;
+      } catch (e) { console.error('gastronomía', e); UI.toast('No se pudo guardar'); }
+    };
+    const editarPlato = (plato) => {
+      const nuevo = !plato;
+      const p = plato || { id: uuid(), nombre:'', url:'' };
+      const iNom = el('input', { id:'gp-nom', type:'text', value: p.nombre, placeholder:'Cochinita pibil' });
+      const iUrl = el('input', { id:'gp-url', type:'url', value: p.url, placeholder:'https://…  (enlace de una foto)' });
+      const previo = el('div', { class:'gastro-previo' });
+      const verPrevio = () => {
+        previo.innerHTML = '';
+        const u = (iUrl.value || '').trim();
+        if (!/^https?:\/\//i.test(u)) return;
+        previo.appendChild(el('img', { src: u, alt:'', loading:'lazy',
+          onerror: () => { previo.innerHTML = ''; previo.appendChild(el('div', { class:'gastro-mal', text:'Esa dirección no carga como imagen.' })); } }));
+      };
+      iUrl.addEventListener('change', verPrevio);
+      iUrl.addEventListener('paste', () => setTimeout(verPrevio, 0));
+      verPrevio();
+      UI.openSheet({
+        title: nuevo ? 'Nuevo plato' : (p.nombre || 'Plato'),
+        body: el('div', {}, [
+          el('div', { class:'ios-grupo' }, [
+            el('div', { class:'form-row' }, [ el('label', { text:'Nombre' }), iNom ]),
+            el('div', { class:'form-row' }, [ el('label', { text:'Foto (enlace)' }), iUrl ]),
+          ]),
+          el('div', { class:'field-hint', text:'Copia la dirección de una imagen de la web (clic derecho → "Copiar dirección de la imagen"). Se carga desde ahí, no se guarda en el aparato.' }),
+          previo,
+        ]),
+        footer: [
+          (!nuevo) ? el('button', { class:'btn btn-danger', onclick: async () => {
+            if (!await UI.confirm(`¿Quitar "${p.nombre || 'este plato'}" de la carta?`, 'Sí, quitar')) return;
+            platos = platos.filter(x => x.id !== p.id);
+            await guardar(); UI.closeSheet(); setTimeout(() => TripDetail.openGastronomia(t, k), 240);
+          } }, 'Quitar') : null,
+          el('button', { class:'btn btn-ghost', onclick: () => { UI.closeSheet(); setTimeout(() => TripDetail.openGastronomia(t, k), 240); } }, 'Cancelar'),
+          el('button', { class:'btn btn-primary', onclick: async () => {
+            p.nombre = (iNom.value || '').trim();
+            p.url = (iUrl.value || '').trim();
+            if (!p.nombre && !p.url) { UI.toast('Ponle al menos un nombre'); return; }
+            if (nuevo) platos.push(p);
+            await guardar(); UI.closeSheet(); setTimeout(() => TripDetail.openGastronomia(t, k), 240);
+          } }, 'Guardar'),
+        ].filter(Boolean),
+      });
+      setTimeout(() => iNom.focus(), 140);
+    };
+    const pintar = () => {
+      grid.innerHTML = '';
+      platos.forEach(p => {
+        const foto = /^https?:\/\//i.test(p.url)
+          ? el('img', { src: p.url, alt: p.nombre || '', loading:'lazy',
+              onerror: (e) => { e.target.closest('.gastro-foto')?.classList.add('sin'); e.target.remove(); } })
+          : null;
+        grid.appendChild(el('div', { class:'gastro-card' + (lector ? '' : ' interactive'), tabindex: lector ? null : '0',
+          onclick: lector ? null : () => editarPlato(p) }, [
+          el('div', { class:'gastro-foto' + (foto ? '' : ' sin') }, [ foto ].filter(Boolean)),
+          el('div', { class:'gastro-nom', text: p.nombre || 'Sin nombre' }),
+        ]));
+      });
+      if (!lector) {
+        grid.appendChild(el('button', { class:'gastro-card gastro-add', type:'button', onclick: () => editarPlato(null) }, [
+          el('span', { class:'ga-mas', html: svg('plus') }),
+          el('span', { class:'ga-txt', text:'Añadir plato' }),
+        ]));
+      }
+      if (lector && !platos.length) grid.appendChild(el('div', { class:'field-hint', text:'Todavía no hay platos apuntados.' }));
+    };
+    pintar();
+    // Abrir la carta por primera vez la deja creada: así el icono aparece en la
+    // fila del día aunque se cierre sin apuntar nada.
+    if (!Array.isArray(d.platos) && !lector) guardar().then(() => Router.renderKeepScroll());
+    UI.openSheet({
+      title: 'Platos típicos',
+      body: el('div', {}, [ grid ]),
+      footer: [ el('button', { class:'btn btn-primary', onclick: () => { UI.closeSheet(); Router.renderKeepScroll(); } }, 'Listo') ],
     });
   },
 
