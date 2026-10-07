@@ -102,6 +102,95 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(pintado.hayPablo, 'el grupo "Pablo" sale en la pestaña Maleta', pintado.grupos);
   await p.screenshot({ path: captura('maleta-plantillas.png'), fullPage: true });
 
+  titulo('EL EDITOR: RENOMBRAR, AÑADIR Y QUITAR DESDE PERFIL');
+  await p.evaluate(() => Router.go('perfil'));
+  await sleep(p, 1800);
+  const perfil = await p.evaluate(() => ({
+    secciones: [...document.querySelectorAll('.section-title')].map((x) => x.textContent),
+    nueva: [...document.querySelectorAll('button')].some((b) => /Nueva plantilla/.test(b.textContent)),
+    sistema: [...document.querySelectorAll('.list-item .li-title')].map((x) => x.textContent),
+  }));
+  ok(perfil.secciones.includes('Mis plantillas de maleta') && perfil.secciones.includes('Plantillas del sistema'),
+    'Perfil separa las tuyas de las del sistema', perfil.secciones);
+  ok(perfil.nueva, 'y ofrece crear una nueva');
+  ok(perfil.sistema.includes('Pablo · bebé de 6 a 12 meses'),
+    'las del sistema se listan para poder copiarlas', perfil.sistema.length + ' en total');
+
+  // Copiar una del sistema: la copia ya es tuya y se edita.
+  await p.evaluate(() => {
+    const f = [...document.querySelectorAll('.list-item')].find((x) => /Pablo · beb/.test(x.textContent));
+    f.querySelector('.icon-btn').click();
+  });
+  await sleep(p, 1000);
+  const ed = await p.evaluate(() => ({
+    titulo: document.querySelector('.sheet-title')?.textContent,
+    grupos: [...document.querySelectorAll('.tpl-g-nom')].map((x) => x.value),
+    items: document.querySelectorAll('.tpl-fila').length,
+  }));
+  ok(ed.titulo === 'Copiar plantilla', 'se abre como copia, no pisando la del sistema', ed.titulo);
+  ok(ed.grupos.length === 1 && ed.grupos[0] === 'Pablo',
+    'y los 40 elementos van bajo UNA cabecera de grupo, no 40 veces "Pablo"', ed);
+  ok(ed.items === 40, 'con sus 40 elementos', ed.items);
+
+  // Renombrar el grupo, quitar un elemento y añadir otro.
+  await p.evaluate(() => {
+    const g = document.querySelector('.tpl-g-nom');
+    g.value = 'Cosas de Pablo'; g.dispatchEvent(new Event('change'));
+  });
+  await sleep(p, 400);
+  await p.evaluate(() => document.querySelector('.tpl-fila .icon-btn').click());
+  await sleep(p, 400);
+  await p.evaluate(() => [...document.querySelectorAll('button')]
+    .find((b) => /Añadir elemento/.test(b.textContent)).click());
+  await sleep(p, 400);
+  await p.evaluate(() => {
+    const vacios = [...document.querySelectorAll('.tpl-nom')].filter((x) => !x.value);
+    const i = vacios[vacios.length - 1];
+    i.value = 'Orinal de viaje'; i.dispatchEvent(new Event('input'));
+    const n = document.getElementById('tpl-nombre');
+    n.value = 'Pablo en Colombia'; n.dispatchEvent(new Event('input'));
+  });
+  await p.evaluate(() => [...document.querySelectorAll('#sheet-foot button')]
+    .find((x) => /^Guardar$/.test(x.textContent.trim())).click());
+  await sleep(p, 1500);
+  const guardada = await p.evaluate(async () => {
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const t = ts.find((x) => x.name === 'Pablo en Colombia');
+    return t ? { n: t.items.length, grupos: [...new Set(t.items.map((i) => i.grupo))],
+                 nuevo: t.items.some((i) => i.name === 'Orinal de viaje'),
+                 porId: t.items.some((i) => /^cg_/.test(i.category || '')) } : null;
+  });
+  ok(guardada && guardada.n === 40, 'se guarda con 40 (quitado uno, añadido otro)', guardada);
+  ok(guardada.grupos.length === 1 && guardada.grupos[0] === 'Cosas de Pablo',
+    'el grupo renombrado, de una vez para todos sus elementos', guardada.grupos);
+  ok(guardada.nuevo, 'y el elemento nuevo dentro');
+  ok(!guardada.porId,
+    'guardada por NOMBRE de grupo, no por el id de un viaje concreto', guardada);
+
+  titulo('Y SIRVE PARA CUALQUIER VIAJE');
+  // El id `cg_pablo_*` solo existe en el viaje donde se creó. Una plantilla
+  // guardada con ese id dejaba sus cosas en un grupo que el otro viaje no
+  // conoce; por eso se guarda la etiqueta.
+  const otro = await p.evaluate(async () => {
+    const id = 'trip-otro-' + Date.now();
+    await DB.put('trips', { id, profile: dataProfile(), name:'Otro viaje', city:'X',
+      start_date: todayIso(), end_date: todayIso(), default_currency:'EUR', in_preparation:true, settings:{} });
+    const t = await DB.get('trips', id);
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const tpl = ts.find((x) => x.name === 'Pablo en Colombia');
+    await TripDetail.applyTemplate(t, tpl.name, tpl.items);
+    const fresco = await DB.get('trips', id);
+    const its = (await DB.listByTrip('packing_items', id)).filter((x) => !x.deleted_at);
+    const g = (fresco.packing_categories || []).find((c) => c.label === 'Cosas de Pablo');
+    return { grupos: (fresco.packing_categories || []).map((c) => c.label),
+             dentro: g ? its.filter((x) => x.category === g.id).length : 0,
+             huerfanos: its.filter((x) => /^cg_/.test(x.category) && (!g || x.category !== g.id)).length };
+  });
+  ok(otro.grupos.includes('Cosas de Pablo'),
+    'al aplicarla en un viaje nuevo, el grupo se crea allí', otro.grupos);
+  ok(otro.dentro === 40 && otro.huerfanos === 0,
+    'con sus 40 cosas dentro y ninguna en un grupo sin nombre', otro);
+
   terminar(errs);
   await cerrar();
 })();
