@@ -1155,6 +1155,27 @@ h2.section-title {
 .menu-parada .mp-fila.elegida .mp-t { font-weight:700; }
 .menu-parada .mp-fila.elegida .mp-chev { color:var(--status-curso); }
 
+
+/* Editor de plantillas de maleta: un bloque por grupo, con su nombre editable
+   arriba y sus elementos debajo. */
+.tpl-grupos { display:flex; flex-direction:column; gap:18px; }
+.tpl-g-cab { display:flex; align-items:center; gap:8px; margin:0 4px 8px; }
+/* Con la especificidad de `.sheet-body input`, que gana a una sola clase: la
+   cabecera del grupo se tiene que ver como una cabecera, no como otro campo. */
+.sheet-body .tpl-g-nom, .tpl-g-nom {
+  flex:1; min-width:0; background:none; border:0;
+  border-bottom:1.5px solid var(--ios-sep, var(--line));
+  border-radius:0; padding:2px 0; min-height:28px;
+  font-family:var(--font-apple); font-size:13px; font-weight:600;
+  letter-spacing:.02em; text-transform:uppercase; color:var(--ios-label-2, var(--text-muted));
+}
+.sheet-body .tpl-g-nom:focus { outline:0; border-bottom-color:var(--ios-blue, var(--accent)); }
+.tpl-items { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+.tpl-fila { display:flex; align-items:center; gap:8px; }
+.tpl-fila .tpl-nom { flex:1; min-width:0; }
+.tpl-add { align-self:flex-start; }
+.li-chev { display:flex; align-items:center; color:var(--text-muted); flex-shrink:0; }
+.li-chev svg { width:16px; height:16px; }
 /* ========================================================================
    Status pill (online / sync)
    ====================================================================== */
@@ -5376,6 +5397,139 @@ const TYPES_DOC = [
 ];
 
 // Plantillas de maleta por defecto
+
+// Plantillas de maleta: crearlas, renombrarlas y tocar sus elementos sin pasar
+// por un viaje. Antes solo se podían guardar desde una maleta concreta y
+// borrarlas: para cambiar una coma había que aplicarla, ajustar la lista,
+// volver a guardarla con otro nombre y borrar la vieja.
+const PlantillasMaleta = {
+  // El grupo se escribe por NOMBRE (con sugerencias), no se elige de una lista
+  // cerrada: una plantilla puede traer grupos que ningún viaje tiene todavía,
+  // que es lo que hace que sirva para cualquiera.
+  _etiquetaDe(it) {
+    if (it.grupo) return it.grupo;
+    const fija = CATS_PACKING.find(c => c.id === it.category);
+    if (fija) return fija.label;
+    return it.category || '';          // un `cg_*` viejo: se enseña para poder renombrarlo
+  },
+  _aItem(nombre, grupo) {
+    const g = (grupo || '').trim();
+    if (!g) return { category: 'otros', name: nombre };
+    const fija = CATS_PACKING.find(c => c.label.toLowerCase() === g.toLowerCase());
+    return fija ? { category: fija.id, name: nombre } : { grupo: g, name: nombre };
+  },
+
+  // `tpl` existente, o null para una nueva. `copiaDe` precarga los elementos de
+  // una del sistema para poder retocarla (las del sistema viven en el código).
+  abrir(tpl, copiaDe) {
+    if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    const nueva = !tpl;
+    let filas = ((tpl ? tpl.items : copiaDe ? copiaDe.items : []) || [])
+      .map(i => ({ id: uuid(), name: i.name || '', grupo: PlantillasMaleta._etiquetaDe(i) }));
+    const nombre = el('input', { id:'tpl-nombre', type:'text',
+      value: tpl ? tpl.name : (copiaDe ? copiaDe.name + ' (mía)' : ''),
+      placeholder:'Mi semana corta' });
+    const lista = el('div', { class:'tpl-grupos' });
+    const cuenta = el('span', { class:'grupo-tit' });
+
+    // Por grupos y no una fila por elemento con su grupo al lado: con cuarenta
+    // cosas de Pablo, "Pablo" salía escrito cuarenta veces y no se entendía de
+    // quién era cada cosa. Así el nombre del grupo se escribe —y se cambia—
+    // una vez, que es lo que de verdad se quiere renombrar.
+    const pintar = (foco) => {
+      lista.innerHTML = '';
+      cuenta.textContent = filas.length === 1 ? '1 elemento' : `${filas.length} elementos`;
+      const orden = [];
+      filas.forEach(f => { if (!orden.includes(f.grupo)) orden.push(f.grupo); });
+      if (!orden.length) orden.push('');
+      orden.forEach(g => {
+        const suyas = filas.filter(f => f.grupo === g);
+        const cab = el('input', { class:'tpl-g-nom', type:'text', value: g, placeholder:'Nombre del grupo',
+          'aria-label':'Nombre del grupo',
+          onchange: (e) => {
+            const nuevoN = e.target.value.trim();
+            // Fundirse con un grupo que ya existe es legítimo: mover todo de
+            // "Aseo" a "Baño" cuando ya hay "Baño" es juntarlos, no un error.
+            filas.forEach(f => { if (f.grupo === g) f.grupo = nuevoN; });
+            pintar();
+          } });
+        const items = el('div', { class:'tpl-items' });
+        suyas.forEach(f => {
+          const iNom = el('input', { class:'tpl-nom', type:'text', value: f.name, placeholder:'Qué llevar',
+            oninput: (e) => { f.name = e.target.value; } });
+          items.appendChild(el('div', { class:'tpl-fila' }, [
+            iNom,
+            el('button', { type:'button', class:'icon-btn', 'aria-label':`Quitar ${f.name || 'este elemento'}`,
+              html: svg('trash'), onclick: () => { filas.splice(filas.indexOf(f), 1); pintar(); } }),
+          ]));
+          if (foco === f.id) setTimeout(() => iNom.focus(), 0);
+        });
+        lista.appendChild(el('div', { class:'tpl-grupo' }, [
+          el('div', { class:'tpl-g-cab' }, [
+            cab,
+            el('button', { type:'button', class:'icon-btn', title:'Quitar el grupo entero',
+              'aria-label':`Quitar el grupo ${g || 'sin nombre'} y sus ${suyas.length} elementos`,
+              html: svg('trash'), onclick: async () => {
+                if (suyas.length > 1 && !await UI.confirm(`¿Quitar "${g || 'el grupo sin nombre'}" y sus ${suyas.length} elementos de la plantilla?`, 'Sí, quitar')) return;
+                filas = filas.filter(f => f.grupo !== g); pintar();
+              } }),
+          ]),
+          el('div', { class:'ios-grupo' }, [
+            items,
+            el('button', { type:'button', class:'btn btn-sm tpl-add', onclick: () => {
+              const f = { id: uuid(), name:'', grupo: g };
+              filas.push(f); pintar(f.id);
+            } }, [ el('span', { html: svg('plus') }), 'Añadir elemento' ]),
+          ]),
+        ]));
+      });
+    };
+    pintar();
+    const anadirGrupo = el('button', { type:'button', class:'btn btn-sm', onclick: () => {
+      let n = 'Grupo nuevo', i = 2;
+      while (filas.some(f => f.grupo === n)) n = `Grupo nuevo ${i++}`;
+      const f = { id: uuid(), name:'', grupo: n };
+      filas.push(f); pintar(f.id);
+    } }, [ el('span', { html: svg('folderplus') }), 'Añadir grupo' ]);
+
+    const guardar = el('button', { class:'btn btn-primary', onclick: async () => {
+      const n = (nombre.value || '').trim();
+      if (!n) { UI.toast('Ponle un nombre'); return; }
+      const items = filas.filter(f => f.name.trim())
+        .map(f => PlantillasMaleta._aItem(f.name.trim(), f.grupo));
+      if (!items.length) { UI.toast('Ponle al menos un elemento'); return; }
+      try {
+        await DB.put('packing_templates', {
+          id: tpl ? tpl.id : uuid(), profile: dataProfile(), name: n, items,
+        });
+        UI.toast('Plantilla guardada');
+      } catch (e) { console.error('plantilla', e); UI.toast('No se pudo guardar'); return; }
+      finally { UI.closeSheet(); }
+      Router.render();
+    } }, 'Guardar');
+    const borrar = tpl ? el('button', { class:'btn btn-danger', onclick: async () => {
+      if (!await UI.confirm(`¿Borrar la plantilla "${tpl.name}"?\n\nLas maletas que ya la hayan usado se quedan como están.`, 'Sí, borrar')) return;
+      await DB.remove('packing_templates', tpl.id);
+      UI.closeSheet(); UI.toast('Plantilla borrada'); Router.render();
+    } }, 'Borrar') : null;
+
+    UI.openSheet({
+      title: nueva ? (copiaDe ? 'Copiar plantilla' : 'Nueva plantilla') : 'Editar plantilla',
+      body: el('div', {}, [
+        el('div', { class:'ios-grupo' }, [
+          el('div', { class:'form-row' }, [ el('label', { text:'Nombre' }), nombre ]),
+        ]),
+        cuenta,
+        lista,
+        anadirGrupo,
+        el('div', { class:'field-hint', style:{marginTop:'10px'}, text:'Los grupos son los que saldrán en la maleta. Si uno no existe en el viaje, se crea al aplicar la plantilla: por eso vale para cualquier viaje.' }),
+      ]),
+      footer: [ borrar, el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar'), guardar ].filter(Boolean),
+    });
+    if (nueva) setTimeout(() => nombre.focus(), 140);
+  },
+};
+
 const PACKING_TEMPLATES = {
   // Santander (Barichara, San Gil, el Chicamocha) está a ~1.300 m: días de 28°
   // y noches de 17°, sol fuerte de altura y, en octubre, aguacero casi todas
@@ -19197,9 +19351,18 @@ const TripDetail = {
     const save = el('button', { class:'btn btn-primary', onclick: async () => {
       const name = ($('#tpl-name').value || '').trim();
       if (!name) { UI.toast('Pon un nombre'); return; }
-      const items = currentItems.map(i => ({ category: i.category, name: i.name }));
+      // Un grupo personalizado se guarda por su NOMBRE, no por su id. El id
+      // (`cg_pablo_df28`) solo existe en ESTE viaje: guardado tal cual, aplicar
+      // la plantilla en otro viaje dejaba sus cosas en un grupo que ese viaje
+      // no conoce. Y una plantilla es justamente lo que se reutiliza en otro.
+      const etiqueta = {}; (t.packing_categories || []).forEach(c => { etiqueta[c.id] = c.label; });
+      const items = currentItems.map(i => etiqueta[i.category]
+        ? { grupo: etiqueta[i.category], name: i.name }
+        : { category: i.category, name: i.name });
       await DB.put('packing_templates', {
-        id: uuid(), profile: STATE.profile, name, items,
+        // El cajón del dueño, igual que al leerlas: con `STATE.profile`, lo que
+        // guardaba Sergio no volvía a salirle en su propia lista.
+        id: uuid(), profile: dataProfile(), name, items,
       });
       UI.closeSheet(); UI.toast('Plantilla guardada');
     }}, 'Guardar plantilla');
@@ -21070,23 +21233,52 @@ const PerfilView = {
     // Plantillas maleta
     root.appendChild(el('h2', { class:'section-title', text:'Mis plantillas de maleta' }));
     const tpls = await DB.listByProfile('packing_templates', dataProfile());
-    if (!tpls.length) root.appendChild(el('p', { class:'muted', text:'No has creado plantillas propias. Las del sistema (Playa, Ciudad fría, Bebé) están siempre disponibles.' }));
-    else {
+    const resumen = (items) => {
+      const n = (items || []).length;
+      const grupos = [...new Set((items || []).map(i => PlantillasMaleta._etiquetaDe(i)).filter(Boolean))];
+      return `${n} ${n === 1 ? 'elemento' : 'elementos'}` + (grupos.length ? ' · ' + grupos.slice(0, 3).join(', ') + (grupos.length > 3 ? '…' : '') : '');
+    };
+    if (!tpls.length) {
+      root.appendChild(el('p', { class:'muted', text:'No has creado plantillas propias. Las del sistema están abajo: cópialas para tener una tuya que puedas cambiar.' }));
+    } else {
       const list = el('div', { class:'list' });
       tpls.forEach(t => {
-        list.appendChild(el('div', { class:'list-item' }, [
+        // La fila entera abre el editor; la papelera vive dentro de él para no
+        // tener un botón de borrar al alcance del pulgar en una lista.
+        list.appendChild(el('div', { class:'list-item interactive', tabindex:'0',
+          onclick: () => PlantillasMaleta.abrir(t) }, [
           el('div', { class:'li-main' }, [
             el('div', { class:'li-title', text: t.name }),
-            el('div', { class:'li-sub', text: `${(t.items||[]).length} items` }),
+            el('div', { class:'li-sub', text: resumen(t.items) }),
           ]),
-          el('button', { class:'icon-btn', onclick: async () => {
-            const ok = await UI.confirm(`¿Borrar plantilla "${t.name}"?`); if (!ok) return;
-            await DB.remove('packing_templates', t.id); Router.render();
-          }, html: svg('trash') }),
+          el('span', { class:'li-chev', html: svg('chevron') }),
         ]));
       });
       root.appendChild(list);
     }
+    if (canEdit()) {
+      root.appendChild(el('button', { class:'btn btn-sm', style:{marginTop:'10px'},
+        onclick: () => PlantillasMaleta.abrir(null) },
+        [ el('span', { html: svg('plus') }), 'Nueva plantilla' ]));
+    }
+
+    // Las del sistema viven en el código y no se pueden tocar desde aquí. Se
+    // listan igual, con un botón para copiarlas: la copia ya es tuya y sí se
+    // edita, que es como se retoca una sin tener que escribirla entera.
+    root.appendChild(el('h2', { class:'section-title', text:'Plantillas del sistema' }));
+    const sys = el('div', { class:'list' });
+    Object.entries(PACKING_TEMPLATES).forEach(([nombre, items]) => {
+      sys.appendChild(el('div', { class:'list-item' }, [
+        el('div', { class:'li-main' }, [
+          el('div', { class:'li-title', text: nombre }),
+          el('div', { class:'li-sub', text: resumen(items) }),
+        ]),
+        canEdit() ? el('button', { class:'icon-btn', title:'Copiar para poder editarla',
+          'aria-label':`Copiar "${nombre}" a mis plantillas`, html: svg('copy'),
+          onclick: (e) => { e.stopPropagation(); PlantillasMaleta.abrir(null, { name: nombre, items }); } }) : null,
+      ].filter(Boolean)));
+    });
+    root.appendChild(sys);
 
     // === Estadísticas ===
     root.appendChild(el('h2', { class:'section-title', text:'Estadísticas' }));
