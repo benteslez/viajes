@@ -61,6 +61,7 @@ tests/
     ├── fotos-copia.js       la copia en JSON y el ZIP de fotos
     ├── gasto-rapido.js      apuntar un gasto en dos toques y el conversor
     ├── llego.js             cuánto queda hasta la próxima parada, con GPS
+    ├── maleta-plantillas.js plantillas de maleta que traen su propio grupo
     ├── mapa-offline.js      guardar las teselas del mapa para verlo sin datos
     ├── marcar-visto.js      marcar paradas y el resumen con pestañas deslizables
     ├── menu-parada.js       el menú único (••• y pulsación larga)
