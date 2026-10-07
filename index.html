@@ -5377,6 +5377,92 @@ const TYPES_DOC = [
 
 // Plantillas de maleta por defecto
 const PACKING_TEMPLATES = {
+  // Santander (Barichara, San Gil, el Chicamocha) está a ~1.300 m: días de 28°
+  // y noches de 17°, sol fuerte de altura y, en octubre, aguacero casi todas
+  // las tardes. Y el pueblo entero es piedra suelta, que decide el calzado.
+  'Colombia · clima cálido y lluvias': [
+    {category:'ropa', name:'Camisetas de algodón o lino'},
+    {category:'ropa', name:'Pantalón largo ligero'},
+    {category:'ropa', name:'Pantalón corto'},
+    {category:'ropa', name:'Camisa de manga larga fina (sol y mosquitos al atardecer)'},
+    {category:'ropa', name:'Sudadera o jersey fino (las noches bajan a 17°)'},
+    {category:'ropa', name:'Chubasquero ligero o poncho'},
+    {category:'ropa', name:'Zapatillas con suela que agarre (Barichara es todo empedrado)'},
+    {category:'ropa', name:'Sandalias'},
+    {category:'ropa', name:'Sombrero de ala o gorra'},
+    {category:'ropa', name:'Bañador'},
+    {category:'ropa', name:'Ropa interior y calcetines'},
+    {category:'ropa', name:'Pijama'},
+    {category:'aseo', name:'Crema solar alta (a 1.300 m pega más)'},
+    {category:'aseo', name:'After-sun'},
+    {category:'aseo', name:'Repelente de mosquitos'},
+    {category:'aseo', name:'Cacao de labios con factor'},
+    {category:'aseo', name:'Neceser básico'},
+    {category:'aseo', name:'Toalla de secado rápido'},
+    {category:'aseo', name:'Suero oral para rehidratación'},
+    {category:'aseo', name:'Analgésico y antidiarreico'},
+    {category:'aseo', name:'Tiritas y antiséptico'},
+    {category:'documentos', name:'Pasaporte (y una copia aparte)'},
+    {category:'documentos', name:'Seguro de viaje con asistencia médica'},
+    {category:'documentos', name:'Carné de conducir (+ internacional si hay coche)'},
+    {category:'documentos', name:'Tarjetas y algo de efectivo en pesos'},
+    {category:'documentos', name:'Reservas descargadas en el móvil'},
+    {category:'documentos', name:'Comprobar requisitos de vacunación de las zonas que visitáis'},
+    {category:'tecnología', name:'Adaptador de enchufe (Colombia: 110 V, clavija tipo A/B)'},
+    {category:'tecnología', name:'Cargadores'},
+    {category:'tecnología', name:'Power bank'},
+    {category:'tecnología', name:'Auriculares'},
+    {category:'tecnología', name:'Soporte y cargador de coche'},
+    {category:'otros', name:'Mochila pequeña de día'},
+    {category:'otros', name:'Botella de agua reutilizable'},
+    {category:'otros', name:'Gafas de sol'},
+    {category:'otros', name:'Bolsas para ropa sucia'},
+    {category:'otros', name:'Paraguas plegable'},
+  ],
+  // Todo lo de Pablo junto y en su propio grupo: en una maleta compartida, un
+  // body perdido entre las camisetas de los adultos no lo encuentra nadie.
+  'Pablo · bebé de 6 a 12 meses': [
+    {grupo:'Pablo', name:'Leche de fórmula de la suya (no contéis con encontrarla allí)'},
+    {grupo:'Pablo', name:'Biberones y tetinas de repuesto'},
+    {grupo:'Pablo', name:'Cepillo de biberones y jabón neutro'},
+    {grupo:'Pablo', name:'Termo para el agua caliente'},
+    {grupo:'Pablo', name:'Agua embotellada para preparar biberones'},
+    {grupo:'Pablo', name:'Potitos o papillas de viaje'},
+    {grupo:'Pablo', name:'Cuchara blanda y plato'},
+    {grupo:'Pablo', name:'Baberos plastificados (varios)'},
+    {grupo:'Pablo', name:'Vaso de aprendizaje'},
+    {grupo:'Pablo', name:'Pañales: talla actual y una más'},
+    {grupo:'Pablo', name:'Toallitas'},
+    {grupo:'Pablo', name:'Crema para el culete'},
+    {grupo:'Pablo', name:'Cambiador portátil'},
+    {grupo:'Pablo', name:'Bolsas para pañales usados'},
+    {grupo:'Pablo', name:'Mochila portabebés (mejor que el carrito en el empedrado)'},
+    {grupo:'Pablo', name:'Silla de coche homologada (si hay coche de alquiler)'},
+    {grupo:'Pablo', name:'Carrito ligero y plegable, si lo lleváis'},
+    {grupo:'Pablo', name:'Cuna de viaje'},
+    {grupo:'Pablo', name:'Saco de dormir o su manta de siempre'},
+    {grupo:'Pablo', name:'Sábanas'},
+    {grupo:'Pablo', name:'Su peluche o doudou'},
+    {grupo:'Pablo', name:'Luz nocturna'},
+    {grupo:'Pablo', name:'Mosquitera para la cuna y para el carrito'},
+    {grupo:'Pablo', name:'Crema solar de bebé'},
+    {grupo:'Pablo', name:'Gorro de ala ancha'},
+    {grupo:'Pablo', name:'Repelente apto para su edad (preguntad al pediatra)'},
+    {grupo:'Pablo', name:'Bodies de manga corta y de manga larga'},
+    {grupo:'Pablo', name:'Pijamas'},
+    {grupo:'Pablo', name:'Chaqueta fina para las noches'},
+    {grupo:'Pablo', name:'Calcetines y patucos'},
+    {grupo:'Pablo', name:'Mudas de más de las que creáis que hacen falta'},
+    {grupo:'Pablo', name:'Toalla con capucha'},
+    {grupo:'Pablo', name:'Termómetro'},
+    {grupo:'Pablo', name:'Suero oral de rehidratación infantil'},
+    {grupo:'Pablo', name:'Analgésico infantil con la dosis que os diga el pediatra'},
+    {grupo:'Pablo', name:'Suero fisiológico y aspirador nasal'},
+    {grupo:'Pablo', name:'Cartilla de vacunación e informe del pediatra'},
+    {grupo:'Pablo', name:'Seguro de viaje que le cubra a él'},
+    {grupo:'Pablo', name:'Juguetes pequeños y un libro de tela'},
+    {grupo:'Pablo', name:'Bolsa isoterma'},
+  ],
   'Playa': [
     {category:'ropa', name:'Bañador'}, {category:'ropa', name:'Toalla'},
     {category:'ropa', name:'Chanclas'}, {category:'ropa', name:'Gorra'},
@@ -19062,9 +19148,28 @@ const TripDetail = {
 
   async applyTemplate(t, name, items) {
     if (!canEdit()) { UI.toast('Modo lector — no puedes modificar'); return; }
+    // Una plantilla puede traer su propio grupo (`grupo:'Pablo'`): las cosas de
+    // una persona o de un botiquín no son "ropa" ni "otros", y tenerlas que
+    // separar a mano después de aplicar la plantilla es el trabajo que la
+    // plantilla venía a ahorrar. El grupo se crea en el viaje si no está, y se
+    // reutiliza por etiqueta si ya existe, para no acabar con dos "Pablo".
+    const grupoId = async (etiqueta) => {
+      t.packing_categories = Array.isArray(t.packing_categories) ? t.packing_categories : [];
+      const fijo = CATS_PACKING.find(c => c.label.toLowerCase() === etiqueta.toLowerCase());
+      if (fijo) return fijo.id;
+      const ya = t.packing_categories.find(c => (c.label || '').toLowerCase() === etiqueta.toLowerCase());
+      if (ya) return ya.id;
+      const id = 'cg_' + etiqueta.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '_' + uuid().slice(0, 4);
+      t.packing_categories.push({ id, label: etiqueta });
+      await DB.put('trips', t);
+      return id;
+    };
+    const cache = {};
     for (const it of items) {
+      let cat = it.category || 'otros';
+      if (it.grupo) cat = cache[it.grupo] || (cache[it.grupo] = await grupoId(it.grupo));
       await DB.put('packing_items', {
-        id: uuid(), trip_id: t.id, category: it.category || 'otros',
+        id: uuid(), trip_id: t.id, category: cat,
         name: it.name, checked: false, template_source: name,
         person: TripDetail._packingPerson || 'ruben',
       });
