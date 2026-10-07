@@ -21,6 +21,34 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     await TripDetail.applyTemplate(t, n, PACKING_TEMPLATES[n]);
   }, nombre);
 
+  titulo('CON LA MALETA VACÍA SE PUEDE LLEGAR A LAS PLANTILLAS');
+  // El estado vacío decía "o aplica una plantilla" y se iba con un `return`
+  // antes de pintar el botón que hace justo eso: en el único momento en que
+  // hace falta —empezar de cero— no había forma de llegar.
+  await p.evaluate(() => Router.go('trip', { tripId: 'trip-demo-1', tab: 'maleta' }));
+  await sleep(p, 2200);
+  const vacia = await p.evaluate(() => ({
+    sinNada: !!document.querySelector('.empty'),
+    items: document.querySelectorAll('.pack-group').length,
+    boton: [...document.querySelectorAll('.pack-templates button')].map((b) => b.textContent.trim()),
+    seVe: [...document.querySelectorAll('.pack-templates button')].some((b) => b.checkVisibility()),
+  }));
+  ok(vacia.sinNada && vacia.items === 0, 'la maleta del viaje empieza vacía', vacia);
+  ok(vacia.boton.some((x) => /Aplicar plantilla/.test(x)) && vacia.seVe,
+    'y aun así sale "Aplicar plantilla"', vacia.boton);
+  ok(!vacia.boton.some((x) => /Crear plantilla/.test(x)),
+    'pero no "Crear plantilla con esta lista", que no tendría qué guardar', vacia.boton);
+  // Y se llega de verdad al listado, no es un botón decorativo.
+  await p.evaluate(() => [...document.querySelectorAll('.pack-templates button')]
+    .find((b) => /Aplicar plantilla/.test(b.textContent)).click());
+  await sleep(p, 900);
+  const picker = await p.evaluate(() =>
+    [...document.querySelectorAll('#sheet .list-item .li-title')].map((x) => x.textContent));
+  ok(picker.includes('Pablo · bebé de 6 a 12 meses'),
+    'el botón abre el listado y la plantilla de Pablo está ahí', picker);
+  await p.evaluate(() => UI.closeSheet()); await sleep(p, 600);
+  await p.screenshot({ path: captura('maleta-vacia.png') });
+
   titulo('LAS DOS PLANTILLAS EXISTEN');
   const tpls = await p.evaluate(() => Object.keys(PACKING_TEMPLATES));
   ok(tpls.includes('Colombia · clima cálido y lluvias'), 'la del viaje', tpls);

@@ -18719,12 +18719,25 @@ const TripDetail = {
     ]));
     refreshProgress();
 
+    // Acciones de plantilla. Se construyen aquí porque hacen falta en los dos
+    // finales: con la maleta llena, al pie de los grupos; y con la maleta
+    // VACÍA, que es cuando más falta hacen y donde no salían —el estado vacío
+    // decía "o aplica una plantilla" y se iba con un `return` antes de pintar
+    // el botón que hace justo eso—.
+    const accionesPlantilla = () => el('div', { class:'pack-templates' }, [
+      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) },
+        [ el('span', { html: svg('suit') }), 'Aplicar plantilla' ]),
+      (canEdit() && items.length) ? el('button', { class:'btn btn-sm', onclick: () => TripDetail.openSaveTemplate(t, items) },
+        [ el('span', { html: svg('download') }), 'Crear plantilla con esta lista' ]) : null,
+    ].filter(Boolean));
+
     if (!items.length && !customCats.length) {
       root.appendChild(el('div', { class:'empty' }, [
         el('div', { class:'icon', html: svg('suit') }),
         el('h3', { text:'Maleta vacía' }),
         el('p', { text:'Añade cosas con el “+”, crea un grupo o aplica una plantilla.' }),
       ]));
+      root.appendChild(accionesPlantilla());
       return;
     }
 
@@ -18952,13 +18965,7 @@ const TripDetail = {
       root.appendChild(grp);
     }
 
-    // Al final: acciones de plantilla (aplicar una / guardar la lista como plantilla).
-    root.appendChild(el('div', { class:'pack-templates' }, [
-      el('button', { class:'btn btn-sm', onclick: () => TripDetail.openTemplatePicker(t) },
-        [ el('span', { html: svg('suit') }), 'Aplicar plantilla' ]),
-      (canEdit() && items.length) ? el('button', { class:'btn btn-sm', onclick: () => TripDetail.openSaveTemplate(t, items) },
-        [ el('span', { html: svg('download') }), 'Crear plantilla con esta lista' ]) : null,
-    ].filter(Boolean)));
+    root.appendChild(accionesPlantilla());
   },
 
   // Construye los grupos (categorías) de la maleta para una lista de items,
