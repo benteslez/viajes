@@ -18995,8 +18995,12 @@ const TripDetail = {
         // "+" para añadir a este grupo: siempre.
         canEdit() ? el('button', { class:'icon-btn pack-group-act', title:'Añadir a este grupo', html: svg('plus'),
           onclick: () => TripDetail.openPackingEditor(t, null, c.id) }) : null,
-        (editMode && canEdit() && c.custom) ? el('button', { class:'icon-btn pack-group-act', title:'Borrar grupo', html: svg('trash'),
-          onclick: () => TripDetail._deletePackingGroup(t, c.id) }) : null,
+        // En TODOS los grupos, no solo en los personalizados: "Ropa" se llena
+        // de cosas de una plantilla que no era igual que "Pablo", y vaciarla a
+        // mano elemento a elemento no es una forma de borrar un grupo.
+        (editMode && canEdit()) ? el('button', { class:'icon-btn pack-group-act', title:'Borrar grupo', html: svg('trash'),
+          'aria-label':`Borrar el grupo ${c.label}`,
+          onclick: () => TripDetail._deletePackingGroup(t, c.id, c.label) }) : null,
       ].filter(Boolean));
       grp.appendChild(head);
 
@@ -19231,15 +19235,52 @@ const TripDetail = {
   },
 
   // Borra un grupo personalizado; sus items pasan a "Otros".
-  async _deletePackingGroup(t, catId) {
+  // Borrar un grupo son dos cosas distintas y antes solo se hacía una: mandaba
+  // sus elementos a "Otros". Con las cuarenta cosas de un bebé eso no es
+  // borrarlas, es mudarlas de sitio. Así que se pregunta, salvo que esté vacío.
+  async _deletePackingGroup(t, catId, label) {
     if (!canEdit()) return;
-    const inCat = (await DB.listByTrip('packing_items', t.id)).filter(p => p.category === catId);
-    const ok = await UI.confirm(inCat.length ? `¿Borrar el grupo? Sus ${inCat.length} elemento(s) pasarán a "Otros".` : '¿Borrar este grupo vacío?');
-    if (!ok) return;
-    for (const p of inCat) { p.category = 'otros'; await DB.put('packing_items', p); }
-    t.packing_categories = (t.packing_categories || []).filter(c => c.id !== catId);
-    await DB.put('trips', t);
-    UI.toast('Grupo borrado'); Router.render();
+    const nombre = label || (CATS_PACKING.find(c => c.id === catId)?.label) || 'este grupo';
+    const inCat = (await DB.listByTrip('packing_items', t.id))
+      .filter(p => p.category === catId && !p.deleted_at);
+    // Quitar la fila del grupo y, si era una etiqueta puesta a un grupo fijo,
+    // también el renombrado: dejarlo colgando haría reaparecer "Mi ropa" la
+    // próxima vez que algo cayera en `ropa`.
+    const quitarGrupo = async () => {
+      t.packing_categories = (t.packing_categories || []).filter(c => c.id !== catId);
+      await DB.put('trips', t);
+    };
+    const soloGrupo = async () => {
+      for (const p of inCat) { p.category = 'otros'; await DB.put('packing_items', p); }
+      await quitarGrupo();
+      UI.toast(inCat.length ? `Sus ${inCat.length} cosas están en "Otros"` : 'Grupo borrado');
+      Router.render();
+    };
+    const todo = async () => {
+      for (const p of inCat) { try { await DB.remove('packing_items', p.id); } catch (_) {} }
+      await quitarGrupo();
+      UI.toast(inCat.length ? `${nombre} y sus ${inCat.length} cosas, a la papelera` : 'Grupo borrado');
+      Router.render();
+    };
+
+    if (!inCat.length) {
+      if (await UI.confirm(`¿Borrar el grupo "${nombre}"?\n\nEstá vacío.`, 'Sí, borrar')) todo();
+      return;
+    }
+    const filas = [
+      TripDetail._filaMenu('trash', `Borrar el grupo y sus ${inCat.length} cosas`,
+        'Van a la papelera del viaje; se pueden recuperar', todo, 'peligro'),
+    ];
+    // Mandar "Otros" a "Otros" no es una opción: es quedarse igual.
+    if (catId !== 'otros') {
+      filas.push(TripDetail._filaMenu('folderplus', 'Quitar solo el grupo',
+        `Sus ${inCat.length} cosas se quedan, en "Otros"`, soloGrupo));
+    }
+    UI.openSheet({
+      title: `Borrar "${nombre}"`,
+      body: el('div', {}, [ el('div', { class:'res-panel menu-parada' }, filas) ]),
+      footer: [ el('button', { class:'btn btn-ghost', onclick: () => UI.closeSheet() }, 'Cancelar') ],
+    });
   },
 
   openPackingEditor(t, existing=null, defaultCat=null) {

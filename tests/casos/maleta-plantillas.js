@@ -191,6 +191,112 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(otro.dentro === 40 && otro.huerfanos === 0,
     'con sus 40 cosas dentro y ninguna en un grupo sin nombre', otro);
 
+  // En modo edición el nombre del grupo es un <input>, y el valor de un input
+  // no está en `textContent`: buscar por texto no encontraba ningún grupo.
+  const grupoLlamado = (txt) => p.evaluate((n) => {
+    const g = [...document.querySelectorAll('.pack-group')].find((x) => {
+      const i = x.querySelector('.pack-group-title-input, .pack-group-title');
+      const nombre = (i && 'value' in i ? i.value : i?.textContent) || '';
+      return new RegExp(n).test(nombre);
+    });
+    if (!g) return false;
+    g.querySelector('.pack-group-act[title="Borrar grupo"]').click();
+    return true;
+  }, txt);
+
+  titulo('BORRAR UN GRUPO ENTERO DESDE EL MODO EDICIÓN');
+  await p.evaluate(() => Router.go('trip', { tripId: 'trip-demo-1', tab: 'maleta' }));
+  await sleep(p, 2200);
+  await p.evaluate(() => { TripDetail._packingEditMode = true; Router.render(); });
+  await sleep(p, 1600);
+  const botones = await p.evaluate(() => {
+    const gs = [...document.querySelectorAll('.pack-group')];
+    return gs.map((g) => ({
+      nombre: (g.querySelector('.pack-group-title-input')?.value
+        || g.querySelector('.pack-group-title')?.textContent || '').trim(),
+      borrar: !!g.querySelector('.pack-group-act[title="Borrar grupo"]'),
+    }));
+  });
+  ok(botones.length > 1, 'la maleta tiene varios grupos', botones.map((b) => b.nombre));
+  ok(botones.every((b) => b.borrar),
+    'TODOS llevan papelera, no solo los personalizados', botones);
+
+  // Con cosas dentro se pregunta qué hacer: no es lo mismo tirarlas que moverlas.
+  const antesTotal = await p.evaluate(async () =>
+    (await DB.listByTrip('packing_items', 'trip-demo-1')).filter((x) => !x.deleted_at).length);
+  // Lo que se borra es de ESTE viaje. La plantilla de la que salió no se toca:
+  // son dos sitios distintos y confundirlos sería perder la lista entera.
+  const tplAntes = await p.evaluate(async () => {
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const t = ts.find((x) => x.name === 'Pablo en Colombia');
+    return t ? { n: t.items.length, json: JSON.stringify(t.items) } : null;
+  });
+  ok(tplAntes && tplAntes.n === 40, 'antes de borrar, la plantilla tiene sus 40', tplAntes && tplAntes.n);
+  ok(await grupoLlamado('Pablo'), 'se abre el menú del grupo Pablo');
+  await sleep(p, 900);
+  const opciones = await p.evaluate(() =>
+    [...document.querySelectorAll('.menu-parada .mp-fila .mp-t')].map((x) => x.textContent));
+  ok(opciones.length === 2, 'salen las dos opciones, no un sí/no', opciones);
+  ok(opciones.some((x) => /Borrar el grupo y sus \d+ cosas/.test(x)),
+    'borrar el grupo con sus cosas', opciones);
+  ok(opciones.some((x) => /Quitar solo el grupo/.test(x)),
+    'o quitar solo el grupo y conservarlas', opciones);
+  await p.screenshot({ path: captura('maleta-borrar-grupo.png') });
+
+  await p.evaluate(() => [...document.querySelectorAll('.menu-parada .mp-fila')]
+    .find((b) => /Borrar el grupo y sus/.test(b.querySelector('.mp-t').textContent)).click());
+  await sleep(p, 1800);
+  const tras = await p.evaluate(async () => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    // `listByTrip` ya deja fuera lo borrado: para ver la papelera hay que leer
+    // el almacén en crudo, que es donde `DB.remove` deja el `deleted_at`.
+    const crudo = (await DB.db.getAll('packing_items')).filter((x) => x.trip_id === 'trip-demo-1');
+    return {
+      grupos: (t.packing_categories || []).map((c) => c.label),
+      vivos: (await DB.listByTrip('packing_items', 'trip-demo-1')).length,
+      enPapelera: crudo.filter((x) => x.deleted_at).length,
+    };
+  });
+  ok(!tras.grupos.includes('Pablo'), 'el grupo desaparece del viaje', tras.grupos);
+  ok(tras.vivos === antesTotal - 80, 'y sus cosas con él (80: se aplicó dos veces)',
+    { antes: antesTotal, ahora: tras.vivos });
+  ok(tras.enPapelera >= 80, 'a la papelera, recuperables, no borradas del todo', tras.enPapelera);
+  const tplDespues = await p.evaluate(async () => {
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const t = ts.find((x) => x.name === 'Pablo en Colombia');
+    return t ? { n: t.items.length, json: JSON.stringify(t.items) } : null;
+  });
+  ok(tplDespues && tplDespues.json === tplAntes.json,
+    'y la PLANTILLA se queda intacta: se ha borrado de este viaje, no de ella',
+    { antes: tplAntes.n, despues: tplDespues && tplDespues.n });
+  // Y se puede volver a aplicar, que es la prueba de que sigue sirviendo.
+  const rehecho = await p.evaluate(async () => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const tpl = ts.find((x) => x.name === 'Pablo en Colombia');
+    await TripDetail.applyTemplate(t, tpl.name, tpl.items);
+    const fresco = await DB.get('trips', 'trip-demo-1');
+    const its = await DB.listByTrip('packing_items', 'trip-demo-1');
+    const g = (fresco.packing_categories || []).find((c) => c.label === 'Cosas de Pablo');
+    return g ? its.filter((x) => x.category === g.id).length : 0;
+  });
+  ok(rehecho === 40, 'volver a aplicarla la devuelve entera al viaje', rehecho);
+
+  titulo('Y UN GRUPO FIJO TAMBIÉN');
+  // "Ropa" no es personalizado y antes no tenía ni botón.
+  ok(await grupoLlamado('Ropa'), 'se abre el menú del grupo Ropa');
+  await sleep(p, 900);
+  await p.evaluate(() => [...document.querySelectorAll('.menu-parada .mp-fila')]
+    .find((b) => /Quitar solo el grupo/.test(b.querySelector('.mp-t').textContent)).click());
+  await sleep(p, 1800);
+  const traRopa = await p.evaluate(async () => {
+    const its = (await DB.listByTrip('packing_items', 'trip-demo-1')).filter((x) => !x.deleted_at);
+    return { enRopa: its.filter((x) => x.category === 'ropa').length,
+             enOtros: its.filter((x) => x.category === 'otros').length };
+  });
+  ok(traRopa.enRopa === 0 && traRopa.enOtros > 0,
+    '"Quitar solo el grupo" vacía Ropa y sus cosas acaban en Otros', traRopa);
+
   terminar(errs);
   await cerrar();
 })();

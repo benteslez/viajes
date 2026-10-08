@@ -145,6 +145,13 @@ node run.js carrusel     # un archivo
 Antes de dar por bueno un cambio en `index.html`, pásala. Si el cambio toca algo
 que no estaba cubierto, añade el caso: `tests/README.md` explica cómo.
 
+**No la entera en cada push**: tarda ~10 minutos y esperarla antes de cada
+commit hace la sesión eterna. Pasa el caso o casos que tocan lo que acabas de
+cambiar (`node run.js <caso>`, unos segundos) y deja la suite completa para
+antes de mergear una tanda, o cuando el cambio sea transversal —CSS compartido,
+`el()`, el router, algo que toque todas las pantallas—. Un commit que solo toca
+`tests/` no necesita ni eso.
+
 Dos reglas de la suite: **comprobar con `ok()`, no imprimir** (un `console.log`
 no falla nunca) y **fechas relativas a hoy** (`window.__dias`), porque con
 fechas fijas la suite se pudre sola.
