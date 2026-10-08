@@ -224,6 +224,14 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   // Con cosas dentro se pregunta qué hacer: no es lo mismo tirarlas que moverlas.
   const antesTotal = await p.evaluate(async () =>
     (await DB.listByTrip('packing_items', 'trip-demo-1')).filter((x) => !x.deleted_at).length);
+  // Lo que se borra es de ESTE viaje. La plantilla de la que salió no se toca:
+  // son dos sitios distintos y confundirlos sería perder la lista entera.
+  const tplAntes = await p.evaluate(async () => {
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const t = ts.find((x) => x.name === 'Pablo en Colombia');
+    return t ? { n: t.items.length, json: JSON.stringify(t.items) } : null;
+  });
+  ok(tplAntes && tplAntes.n === 40, 'antes de borrar, la plantilla tiene sus 40', tplAntes && tplAntes.n);
   ok(await grupoLlamado('Pablo'), 'se abre el menú del grupo Pablo');
   await sleep(p, 900);
   const opciones = await p.evaluate(() =>
@@ -253,6 +261,26 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(tras.vivos === antesTotal - 80, 'y sus cosas con él (80: se aplicó dos veces)',
     { antes: antesTotal, ahora: tras.vivos });
   ok(tras.enPapelera >= 80, 'a la papelera, recuperables, no borradas del todo', tras.enPapelera);
+  const tplDespues = await p.evaluate(async () => {
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const t = ts.find((x) => x.name === 'Pablo en Colombia');
+    return t ? { n: t.items.length, json: JSON.stringify(t.items) } : null;
+  });
+  ok(tplDespues && tplDespues.json === tplAntes.json,
+    'y la PLANTILLA se queda intacta: se ha borrado de este viaje, no de ella',
+    { antes: tplAntes.n, despues: tplDespues && tplDespues.n });
+  // Y se puede volver a aplicar, que es la prueba de que sigue sirviendo.
+  const rehecho = await p.evaluate(async () => {
+    const t = await DB.get('trips', 'trip-demo-1');
+    const ts = await DB.listByProfile('packing_templates', dataProfile());
+    const tpl = ts.find((x) => x.name === 'Pablo en Colombia');
+    await TripDetail.applyTemplate(t, tpl.name, tpl.items);
+    const fresco = await DB.get('trips', 'trip-demo-1');
+    const its = await DB.listByTrip('packing_items', 'trip-demo-1');
+    const g = (fresco.packing_categories || []).find((c) => c.label === 'Cosas de Pablo');
+    return g ? its.filter((x) => x.category === g.id).length : 0;
+  });
+  ok(rehecho === 40, 'volver a aplicarla la devuelve entera al viaje', rehecho);
 
   titulo('Y UN GRUPO FIJO TAMBIÉN');
   // "Ropa" no es personalizado y antes no tenía ni botón.
