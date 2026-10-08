@@ -235,7 +235,7 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(await grupoLlamado('Pablo'), 'se abre el menú del grupo Pablo');
   await sleep(p, 900);
   const opciones = await p.evaluate(() =>
-    [...document.querySelectorAll('.menu-parada .mp-fila .mp-t')].map((x) => x.textContent));
+    [...document.querySelectorAll('.menu-parada .res-fila .res-fila-lbl')].map((x) => x.textContent));
   ok(opciones.length === 2, 'salen las dos opciones, no un sí/no', opciones);
   ok(opciones.some((x) => /Borrar el grupo y sus \d+ cosas/.test(x)),
     'borrar el grupo con sus cosas', opciones);
@@ -243,8 +243,8 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     'o quitar solo el grupo y conservarlas', opciones);
   await p.screenshot({ path: captura('maleta-borrar-grupo.png') });
 
-  await p.evaluate(() => [...document.querySelectorAll('.menu-parada .mp-fila')]
-    .find((b) => /Borrar el grupo y sus/.test(b.querySelector('.mp-t').textContent)).click());
+  await p.evaluate(() => [...document.querySelectorAll('.menu-parada .res-fila')]
+    .find((b) => /Borrar el grupo y sus/.test(b.querySelector('.res-fila-lbl').textContent)).click());
   await sleep(p, 1800);
   const tras = await p.evaluate(async () => {
     const t = await DB.get('trips', 'trip-demo-1');
@@ -283,11 +283,17 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
   ok(rehecho === 40, 'volver a aplicarla la devuelve entera al viaje', rehecho);
 
   titulo('Y UN GRUPO FIJO TAMBIÉN');
+  // Volver a aplicar la plantilla repinta y deja el modo edición fuera: sin
+  // esto no hay papeleras en las cabeceras y no se encuentra ningún grupo.
+  await p.evaluate(() => Router.go('trip', { tripId: 'trip-demo-1', tab: 'maleta' }));
+  await sleep(p, 2000);
+  await p.evaluate(() => { TripDetail._packingEditMode = true; Router.render(); });
+  await sleep(p, 1600);
   // "Ropa" no es personalizado y antes no tenía ni botón.
   ok(await grupoLlamado('Ropa'), 'se abre el menú del grupo Ropa');
   await sleep(p, 900);
-  await p.evaluate(() => [...document.querySelectorAll('.menu-parada .mp-fila')]
-    .find((b) => /Quitar solo el grupo/.test(b.querySelector('.mp-t').textContent)).click());
+  await p.evaluate(() => [...document.querySelectorAll('.menu-parada .res-fila')]
+    .find((b) => /Quitar solo el grupo/.test(b.querySelector('.res-fila-lbl').textContent)).click());
   await sleep(p, 1800);
   const traRopa = await p.evaluate(async () => {
     const its = (await DB.listByTrip('packing_items', 'trip-demo-1')).filter((x) => !x.deleted_at);

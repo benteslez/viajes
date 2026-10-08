@@ -1152,8 +1152,8 @@ h2.section-title {
 
 /* Un tramo con menú avisa de que se puede mantener pulsado. */
 .leg-chip.leg-menu { -webkit-touch-callout:none; }
-.menu-parada .mp-fila.elegida .mp-t { font-weight:700; }
-.menu-parada .mp-fila.elegida .mp-chev { color:var(--status-curso); }
+/* El modo en el que se va ahora mismo: el chevron pasa a ser un check verde. */
+.menu-parada .res-fila.elegida .res-fila-chev { color:var(--status-curso); }
 
 
 /* Editor de plantillas de maleta: un bloque por grupo, con su nombre editable
@@ -11903,7 +11903,7 @@ const TripDetail = {
     ];
     const filas = [];
     if (dueño && canEdit()) {
-      MODOS.forEach(m => filas.push(el('button', { class:'mp-fila' + (m.id === modoActual ? ' elegida' : ''), type:'button',
+      MODOS.forEach(m => filas.push(el('button', { class:'res-fila' + (m.id === modoActual ? ' elegida' : ''), type:'button',
         onclick: async () => {
           UI.closeSheet();
           try {
@@ -11916,9 +11916,12 @@ const TripDetail = {
           } catch (e) { console.error('modo del tramo', e); UI.toast('No se pudo cambiar'); return; }
           Router.renderKeepScroll();
         } }, [
-        el('span', { class:'mp-ico', html: svg(m.ico) }),
-        el('span', { class:'mp-txt' }, [ el('span', { class:'mp-t', text:m.txt }), el('span', { class:'mp-s', text:m.sub }) ]),
-        el('span', { class:'mp-chev', html: m.id === modoActual ? svg('check') : svg('chevron') }),
+        el('span', { class:'res-ic', html: svg(m.ico), 'aria-hidden':'true' }),
+        el('span', { class:'res-fila-txt' }, [
+          el('span', { class:'res-fila-lbl', text:m.txt }),
+          el('span', { class:'res-fila-sub', text:m.sub }),
+        ]),
+        el('span', { class:'res-fila-chev', html: m.id === modoActual ? svg('check') : svg('chevron'), 'aria-hidden':'true' }),
       ])));
     }
     if (href) filas.push(TripDetail._filaMenu('map', 'Cómo llegar', 'Abre la ruta en Google Maps',
@@ -14589,14 +14592,14 @@ const TripDetail = {
   // Filas de menú con icono, título y explicación. Mismo patrón que el menú de
   // la parada, para que un menú de la app se lea siempre igual.
   _filaMenu(icono, titulo, sub, accion, clase) {
-    return el('button', { class:'mp-fila' + (clase ? ' ' + clase : ''), type:'button',
+    return el('button', { class:'res-fila' + (clase ? ' ' + clase : ''), type:'button',
       onclick: () => { UI.closeSheet(); setTimeout(accion, 240); } }, [
-      el('span', { class:'mp-ico', html: svg(icono) }),
-      el('span', { class:'mp-txt' }, [
-        el('span', { class:'mp-t', text: titulo }),
-        sub ? el('span', { class:'mp-s', text: sub }) : null,
+      el('span', { class:'res-ic', html: svg(icono), 'aria-hidden':'true' }),
+      el('span', { class:'res-fila-txt' }, [
+        el('span', { class:'res-fila-lbl', text: titulo }),
+        sub ? el('span', { class:'res-fila-sub', text: sub }) : null,
       ].filter(Boolean)),
-      el('span', { class:'mp-chev', html: svg('chevron') }),
+      el('span', { class:'res-fila-chev', html: svg('chevron'), 'aria-hidden':'true' }),
     ]);
   },
 

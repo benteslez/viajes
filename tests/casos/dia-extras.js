@@ -36,12 +36,12 @@ const { abrir, espera: sleep, captura, ok, titulo, terminar } = require('../lib'
     return new Function('g', 'return (' + f + ')(g)')(g);
   }, [D, fn.toString()]);
   const filasMenu = () => p.evaluate(() =>
-    [...document.querySelectorAll('.menu-parada .mp-fila .mp-t')].map((x) => x.textContent));
+    [...document.querySelectorAll('.menu-parada .res-fila .res-fila-lbl')].map((x) => x.textContent));
   // Por el TÍTULO de la fila: "Automático" lleva "A pie si está cerca" en su
   // explicación, y buscando en todo el texto se pulsaba esa.
   const pulsarFila = (txt) => p.evaluate((t) => {
-    const b = [...document.querySelectorAll('.menu-parada .mp-fila')]
-      .find((x) => (x.querySelector('.mp-t')?.textContent || '').includes(t));
+    const b = [...document.querySelectorAll('.menu-parada .res-fila')]
+      .find((x) => (x.querySelector('.res-fila-lbl')?.textContent || '').includes(t));
     if (!b) return false; b.click(); return true;
   }, txt);
 
